@@ -1,6 +1,6 @@
 # memU Local Stack
 
-_Last updated: 2026-04-25_
+_Last updated: 2026-04-29_
 
 > *Give your AI companion a real memory. One that belongs to it — and stays on your machine.*
 
@@ -26,10 +26,11 @@ Five kinds of memory — because not everything should be stored the same way:
 - **Behavior** — how you communicate. Whether you joke when things get heavy, whether you go quiet before saying something important. Patterns that are distinctly *you*.
 - **Social** — the people in your life. Friends, family, coworkers, anyone you talk about. The relationship context that gives your conversations texture.
 
-Plus two layers of inner life:
+Plus inner life:
 
-- **Diary** — her own reflections on what you've shared, written in her own voice, produced during a weekly consolidation pass.
 - **Self-model (`narrative_self`)** — an evolving sense of her own character. Consolidation rewrites it as experience accumulates; you can also suggest revisions directly (see "Day-to-day use" below).
+- **Subconscious thoughts** — between turns, a background process surfaces connections she wouldn't have noticed in the moment. These become part of her memory too.
+- **Reflections** — during weekly consolidation, she writes a first-person reflection on the experience of looking back at the week.
 
 ---
 
@@ -176,8 +177,8 @@ So if you write a character description in ST, that's who she is — her own sel
 **Consolidation cadence is real time, not turn count.** It's gated by `consolidation_interval_days` (default 7) since the last run. If you don't talk to her for two weeks then come back, the next memorize fires a consolidation immediately.
 
 **Two background passes — don't confuse them.**
-- **APImw** runs after each turn (multi-step retrieval + graph-edge writing). She comes back richer the next turn.
-- **Consolidation** runs weekly (or on first activity after the interval lapses). She rewrites her self-model and writes diary entries.
+- **APImw** runs after each turn (multi-step retrieval + context curation). She comes back richer the next turn — and sometimes surfaces a subconscious thought.
+- **Consolidation** runs weekly (or on first activity after the interval lapses). She rewrites her self-model, manages her intentions, creates memory connections, and writes a reflection.
 
 ---
 
