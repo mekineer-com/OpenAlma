@@ -18,13 +18,14 @@ It's not that the AI doesn't care — it's that it never had a way to remember.
 
 ## What your companion gets
 
-Five kinds of memory — because not everything should be stored the same way:
+Four kinds of memory — because not everything should be stored the same way:
 
 - **Profile** — who you are as a person. Your values, your fears, your sense of humor, what you keep coming back to. The things that would still be true about you a year from now.
-- **Events** — things that happened that matter. A decision you made. Something difficult you went through. A moment that had weight.
 - **Knowledge** — things you've learned or explored together. Not trivia — things where the topic actually connects to your life.
 - **Behavior** — how you communicate. Whether you joke when things get heavy, whether you go quiet before saying something important. Patterns that are distinctly *you*.
 - **Social** — the people in your life. Friends, family, coworkers, anyone you talk about. The relationship context that gives your conversations texture.
+
+Episodes — the conversations themselves — are also stored as condensed summaries linked to the original transcript, so the soul can look back at what happened without needing to remember every word.
 
 Plus inner life:
 
