@@ -5,8 +5,8 @@
   <title>memU Stack</title>
   <style>
     :root { color-scheme: dark; }
-    body { font-family: system-ui, sans-serif; margin: 1.5rem 0; padding: 0 20px;
-           background: #181818; color: #ddd; }
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 1.5rem auto;
+           padding: 0 10px; background: #181818; color: #ddd; }
     h1 { margin: 0 0 0.5rem 0; color: #f0f0f0; }
     h2 { border-bottom: 1px solid #333; padding-bottom: 0.3rem; margin-top: 2rem; color: #f0f0f0; }
     p.muted, .muted { color: #888; }
@@ -38,11 +38,25 @@
       vertical-align: -2px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    .banner { padding: 0.6rem 0.8rem; margin: 1rem 0; border-radius: 3px;
+              background: #3a2415; color: #f5c084; border: 1px solid #6b3a16; }
+    .top-row { display: flex; justify-content: space-between; align-items: baseline; }
+    .top-row a { font-size: 0.9rem; }
   </style>
 </head>
 <body>
-  <h1>memU Stack</h1>
+  <div class="top-row">
+    <h1>memU Stack</h1>
+    <a href="/settings">settings</a>
+  </div>
   <p class="muted">Start, stop, and configure the local stack.</p>
+
+  {% if needs_setup %}
+  <div class="banner">
+    <strong>Setup needed:</strong> the apps-root directory wasn't auto-discovered.
+    <a href="/settings">Set it manually</a> — point at the parent of <code>mcp-memu-server</code>, <code>hermes-agent</code>, etc.
+  </div>
+  {% endif %}
 
   <h2>Services</h2>
   <table>

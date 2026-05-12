@@ -10,15 +10,10 @@ from fastapi.templating import Jinja2Templates
 
 import policy
 import services
+import settings
 
 ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
-
-EDITABLE_CONFIGS: dict[str, Path] = {
-    "memu-server-config": Path("/home/marcos/apps-codex/mcp-memu-server/config.json"),
-    "hermes-config": Path.home() / ".hermes" / "config.yaml",
-    "hermes-persona": Path.home() / ".hermes" / "SOUL.md",
-}
 
 CONFIG_LABELS: dict[str, str] = {
     "memu-server-config": "mcp-memu-server/config.json",
@@ -27,6 +22,17 @@ CONFIG_LABELS: dict[str, str] = {
 }
 
 app = FastAPI(title="memU Stack")
+
+
+def _editable_configs(apps_root: Path | None) -> dict[str, Path]:
+    """Resolve user-facing config file paths against the active apps_root."""
+    out: dict[str, Path] = {
+        "hermes-config": Path.home() / ".hermes" / "config.yaml",
+        "hermes-persona": Path.home() / ".hermes" / "SOUL.md",
+    }
+    if apps_root is not None:
+        out["memu-server-config"] = apps_root / "mcp-memu-server" / "config.json"
+    return out
 
 
 def _find_service(name: str) -> services.ServiceSpec:
@@ -38,6 +44,7 @@ def _find_service(name: str) -> services.ServiceSpec:
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
+    apps_root = settings.apps_root()
     specs = services.all_services()
     rows = [
         {
@@ -59,9 +66,10 @@ def index(request: Request) -> HTMLResponse:
         }
         for c in chats
     ]
+    editable_paths = _editable_configs(apps_root)
     editable = [
-        {"key": k, "label": CONFIG_LABELS[k], "path": str(p)}
-        for k, p in EDITABLE_CONFIGS.items()
+        {"key": k, "label": CONFIG_LABELS.get(k, k), "path": str(p)}
+        for k, p in editable_paths.items()
     ]
     return templates.TemplateResponse(
         request,
@@ -71,8 +79,37 @@ def index(request: Request) -> HTMLResponse:
             "chats": chat_rows,
             "policies": policy.ALL_POLICIES,
             "editable_configs": editable,
+            "apps_root": str(apps_root) if apps_root else "",
+            "needs_setup": apps_root is None,
         },
     )
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request) -> HTMLResponse:
+    apps_root = settings.apps_root()
+    stored = settings.read_paths().get("apps_root") or ""
+    return templates.TemplateResponse(
+        request,
+        "settings.html",
+        {
+            "apps_root_active": str(apps_root) if apps_root else "",
+            "apps_root_stored": str(stored),
+            "settings_path": str(settings.SETTINGS_PATH),
+        },
+    )
+
+
+@app.post("/settings")
+def settings_save(apps_root: str = Form(default="")) -> RedirectResponse:
+    current = settings.read_paths()
+    new_root = apps_root.strip()
+    if new_root:
+        current["apps_root"] = new_root
+    else:
+        current.pop("apps_root", None)
+    settings.write_paths(current)
+    return RedirectResponse("/", status_code=303)
 
 
 @app.get("/logs/{service_name}", response_class=HTMLResponse)
@@ -129,7 +166,7 @@ async def policy_save(request: Request) -> RedirectResponse:
 
 @app.post("/edit/{key}")
 def edit_config(key: str) -> RedirectResponse:
-    target = EDITABLE_CONFIGS.get(key)
+    target = _editable_configs(settings.apps_root()).get(key)
     if target is None:
         raise HTTPException(status_code=404, detail=f"Unknown config: {key}")
     subprocess.Popen(["xdg-open", str(target)], start_new_session=True)

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Settings — memU Stack</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 1.5rem auto;
+           padding: 0 10px; background: #181818; color: #ddd; }
+    h1 { margin: 0 0 0.5rem 0; color: #f0f0f0; }
+    h2 { border-bottom: 1px solid #333; padding-bottom: 0.3rem; margin-top: 2rem; color: #f0f0f0; }
+    p.muted, .muted { color: #888; }
+    label { display: block; margin: 1rem 0 0.3rem 0; color: #eee; }
+    input[type=text] { width: 100%; box-sizing: border-box; font: inherit;
+                       padding: 0.4rem 0.5rem; background: #2a2a2a; color: #eee;
+                       border: 1px solid #444; border-radius: 3px; }
+    .btn { padding: 0.4rem 0.9rem; font: inherit; cursor: pointer;
+           background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 3px; }
+    .btn:hover { background: #353535; border-color: #555; }
+    a { color: #7cb7ff; }
+    a:visited { color: #b18cd9; }
+    code { background: #2a2a2a; color: #f0f0f0; padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
+    .hint { font-size: 0.9em; color: #999; margin-top: 0.3rem; }
+  </style>
+</head>
+<body>
+  <p><a href="/">← back</a></p>
+  <h1>Settings</h1>
+
+  <h2>Apps root</h2>
+  <p class="muted">Directory that contains the four sibling repos: <code>mcp-memu-server</code>, <code>hermes-agent</code>, <code>sillytavern</code>, <code>memu</code>.</p>
+  <p>Active: <code>{{ apps_root_active or "(not resolved — service list will be empty until set)" }}</code></p>
+  <form method="post" action="/settings">
+    <label for="apps_root">Override path (leave blank to auto-discover):</label>
+    <input id="apps_root" type="text" name="apps_root" value="{{ apps_root_stored }}" placeholder="/path/to/apps-root">
+    <p class="hint">Auto-discovery walks up from the launcher's own directory looking for any ancestor containing <code>mcp-memu-server/run.py</code>. Set this only if your layout is non-standard.</p>
+    <p><button class="btn" type="submit">Save</button></p>
+  </form>
+
+  <h2>Stored at</h2>
+  <p><code>{{ settings_path }}</code></p>
+</body>
+</html>

@@ -4,6 +4,10 @@ The launcher tracks its own pidfile per service in ``~/.cache/memu-stack-launche
 If a service was started externally (terminal, tmux, plugin), the launcher adopts
 it on first sight via either the service's own pidfile or its listening port.
 After adoption the service is "managed" and Stop works normally.
+
+The apps-root path (parent of the four sibling repos) is resolved by
+``settings.apps_root()`` — user override first, then auto-discovery
+relative to the launcher's own directory, otherwise None.
 """
 from __future__ import annotations
 
@@ -17,7 +21,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-APPS_ROOT = Path("/home/marcos/apps-codex")
+from settings import apps_root as _resolve_apps_root
+
 HERMES_HOME = Path.home() / ".hermes"
 STATE_DIR = Path.home() / ".cache" / "memu-stack-launcher"
 
@@ -47,26 +52,29 @@ def _parse_gateway_pid(text: str) -> int | None:
 
 
 def all_services() -> list[ServiceSpec]:
+    root = _resolve_apps_root()
+    if root is None:
+        return []
     return [
         ServiceSpec(
             name="memu-server",
             label="mcp-memu-server",
-            cmd=[str(APPS_ROOT / "mcp-memu-server" / ".venv" / "bin" / "python3"), "run.py"],
-            cwd=APPS_ROOT / "mcp-memu-server",
+            cmd=[str(root / "mcp-memu-server" / ".venv" / "bin" / "python3"), "run.py"],
+            cwd=root / "mcp-memu-server",
             log_path=Path("/tmp/memu-server.out"),
             pid_path=STATE_DIR / "memu-server.pid",
             port=8099,
-            adopt_pid_path=APPS_ROOT / "memu" / ".memu-server.pid",
+            adopt_pid_path=root / "memu" / ".memu-server.pid",
         ),
         ServiceSpec(
             name="hermes-gateway",
             label="hermes-agent gateway",
             cmd=[
-                str(APPS_ROOT / ".venv" / "bin" / "python3"),
+                str(root / ".venv" / "bin" / "python3"),
                 "-c",
                 "from gateway.run import main; main()",
             ],
-            cwd=APPS_ROOT / "hermes-agent",
+            cwd=root / "hermes-agent",
             log_path=Path("/tmp/hermes-gateway.log"),
             pid_path=STATE_DIR / "hermes-gateway.pid",
             env={"PYTHONPATH": ".", "GATEWAY_ALLOW_ALL_USERS": "true"},
@@ -82,7 +90,7 @@ def all_services() -> list[ServiceSpec]:
                 "--session", str(HERMES_HOME / "whatsapp" / "session"),
                 "--mode", "self-chat",
             ],
-            cwd=APPS_ROOT / "hermes-agent" / "scripts" / "whatsapp-bridge",
+            cwd=root / "hermes-agent" / "scripts" / "whatsapp-bridge",
             log_path=STATE_DIR / "whatsapp-bridge.log",
             pid_path=STATE_DIR / "whatsapp-bridge.pid",
             port=3000,
@@ -91,7 +99,7 @@ def all_services() -> list[ServiceSpec]:
             name="sillytavern",
             label="SillyTavern",
             cmd=["bash", "start.sh"],
-            cwd=APPS_ROOT / "sillytavern" / "SillyTavern",
+            cwd=root / "sillytavern" / "SillyTavern",
             log_path=STATE_DIR / "sillytavern.log",
             pid_path=STATE_DIR / "sillytavern.pid",
             supports_terminal=True,
