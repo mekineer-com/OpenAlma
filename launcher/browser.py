@@ -34,17 +34,21 @@ def find_chromium() -> str | None:
     return None
 
 
-def open_app(url: str, *, width: int = 760, height: int = 900) -> None:
+def open_app(url: str, *, width: int = 760, height: int = 900) -> subprocess.Popen | None:
     """Open the launcher UI in a chromeless app window sized to the column.
 
     Uses a dedicated ``--user-data-dir`` so Chrome treats this as a
     separate instance (not a second window of the user's running
     browser). That is the only way ``--window-size`` actually applies.
+
+    Returns the chromium ``Popen`` object so the caller can watch it
+    and quit the launcher when the window is closed. Returns ``None``
+    for the default-browser fallback (no separate process to watch).
     """
     chromium = find_chromium()
     if chromium:
         _PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-        subprocess.Popen(
+        return subprocess.Popen(
             [
                 chromium,
                 f"--app={url}",
@@ -55,5 +59,5 @@ def open_app(url: str, *, width: int = 760, height: int = 900) -> None:
             ],
             start_new_session=True,
         )
-        return
     webbrowser.open(url)
+    return None
