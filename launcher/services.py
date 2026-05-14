@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
+import shutil
 import signal
 import subprocess
 import time
@@ -25,6 +27,7 @@ from settings import apps_root as _resolve_apps_root
 
 HERMES_HOME = Path.home() / ".hermes"
 STATE_DIR = Path.home() / ".cache" / "memu-stack-launcher"
+STARTUP_GRACE_SECONDS = 4.0
 
 
 @dataclass
@@ -145,6 +148,32 @@ def _port_listener_pid(port: int) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def _proc_cmdline(pid: int) -> str:
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return ""
+    if not raw:
+        return ""
+    return raw.replace(b"\x00", b" ").decode("utf-8", errors="ignore").strip()
+
+
+def _proc_cwd(pid: int) -> Path | None:
+    try:
+        return Path(f"/proc/{pid}/cwd").resolve()
+    except OSError:
+        return None
+
+
+def _is_zombie(pid: int) -> bool:
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    parts = stat.split()
+    return len(parts) > 2 and parts[2] == "Z"
+
+
 def _is_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -152,7 +181,52 @@ def _is_alive(pid: int) -> bool:
         return False
     except PermissionError:
         return True
+    if _is_zombie(pid):
+        return False
     return True
+
+
+def _matches_service_process(spec: ServiceSpec, pid: int) -> bool:
+    cmd = _proc_cmdline(pid).lower()
+    cwd = _proc_cwd(pid)
+    if cwd is None:
+        return False
+    if cwd != spec.cwd:
+        return False
+    if spec.name == "memu-server":
+        return "run.py" in cmd or ("uvicorn" in cmd and "app.main:app" in cmd)
+    if spec.name == "hermes-gateway":
+        return "gateway.run" in cmd
+    if spec.name == "whatsapp-bridge":
+        return "bridge.js" in cmd
+    if spec.name == "sillytavern":
+        return "server.js" in cmd or "start.sh" in cmd
+    return True
+
+
+def _within_startup_grace(spec: ServiceSpec) -> bool:
+    try:
+        age = time.time() - spec.pid_path.stat().st_mtime
+    except OSError:
+        return False
+    return age <= STARTUP_GRACE_SECONDS
+
+
+def _terminal_command(cmd: list[str]) -> list[str] | None:
+    # Alpine LXQt default first; then common Linux terminal wrappers.
+    candidates: list[tuple[str, list[str]]] = [
+        ("qterminal", ["qterminal", "-e", *cmd]),
+        ("x-terminal-emulator", ["x-terminal-emulator", "-e", *cmd]),
+        ("lxterminal", ["lxterminal", "-e", shlex.join(cmd)]),
+        ("xfce4-terminal", ["xfce4-terminal", "--command", shlex.join(cmd)]),
+        ("konsole", ["konsole", "-e", *cmd]),
+        ("gnome-terminal", ["gnome-terminal", "--", *cmd]),
+        ("xterm", ["xterm", "-e", *cmd]),
+    ]
+    for binary, terminal_cmd in candidates:
+        if shutil.which(binary):
+            return terminal_cmd
+    return None
 
 
 def _adopt(spec: ServiceSpec) -> None:
@@ -160,9 +234,21 @@ def _adopt(spec: ServiceSpec) -> None:
     if _read_pid(spec.pid_path) is not None:
         return
     candidate = _read_adopt_pid(spec)
-    if candidate is None and spec.port is not None:
+    if (
+        candidate is not None
+        and _is_alive(candidate)
+        and _matches_service_process(spec, candidate)
+    ):
+        spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
+        spec.pid_path.write_text(str(candidate))
+        return
+    if spec.port is not None:
         candidate = _port_listener_pid(spec.port)
-    if candidate is not None and _is_alive(candidate):
+    if (
+        candidate is not None
+        and _is_alive(candidate)
+        and _matches_service_process(spec, candidate)
+    ):
         spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
         spec.pid_path.write_text(str(candidate))
 
@@ -171,22 +257,35 @@ def is_running(spec: ServiceSpec) -> bool:
     _adopt(spec)
     pid = _read_pid(spec.pid_path)
     if pid is not None and _is_alive(pid):
+        if not _matches_service_process(spec, pid):
+            _clear_pid(spec)
+            return False
         # For port-bound services, trust the listener state over bare PID liveness.
         # A stale/zombie PID can remain "alive" briefly after shutdown while the
         # port is already free, which should be shown as stopped in the UI.
         if spec.port is not None:
             listener_pid = _port_listener_pid(spec.port)
             if listener_pid is None:
+                if _within_startup_grace(spec):
+                    return True
                 _clear_pid(spec)
                 return False
             if listener_pid != pid:
-                spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
-                spec.pid_path.write_text(str(listener_pid))
+                if _is_alive(listener_pid) and _matches_service_process(spec, listener_pid):
+                    spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
+                    spec.pid_path.write_text(str(listener_pid))
+                    return True
+                _clear_pid(spec)
+                return False
         return True
 
     if spec.port is not None:
         listener_pid = _port_listener_pid(spec.port)
-        if listener_pid is not None and _is_alive(listener_pid):
+        if (
+            listener_pid is not None
+            and _is_alive(listener_pid)
+            and _matches_service_process(spec, listener_pid)
+        ):
             spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
             spec.pid_path.write_text(str(listener_pid))
             return True
@@ -201,11 +300,19 @@ def start(spec: ServiceSpec, *, show_terminal: bool = False) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     spec.log_path.parent.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, **spec.env}
+    proc: subprocess.Popen[bytes] | subprocess.Popen[str]
     if show_terminal and spec.supports_terminal:
-        full_cmd = ["x-terminal-emulator", "-e", *spec.cmd]
-        proc = subprocess.Popen(
-            full_cmd, cwd=str(spec.cwd), env=env, start_new_session=True
-        )
+        full_cmd = _terminal_command(spec.cmd)
+        if full_cmd is not None:
+            proc = subprocess.Popen(
+                full_cmd, cwd=str(spec.cwd), env=env, start_new_session=True
+            )
+        else:
+            log = spec.log_path.open("ab")
+            proc = subprocess.Popen(
+                spec.cmd, cwd=str(spec.cwd), env=env,
+                stdout=log, stderr=log, start_new_session=True,
+            )
     else:
         log = spec.log_path.open("ab")
         proc = subprocess.Popen(
