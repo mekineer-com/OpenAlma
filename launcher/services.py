@@ -201,7 +201,7 @@ def _matches_service_process(spec: ServiceSpec, pid: int) -> bool:
         return "bridge.js" in cmd
     if spec.name == "sillytavern":
         return "server.js" in cmd or "start.sh" in cmd
-    return True
+    return False
 
 
 def _within_startup_grace(spec: ServiceSpec) -> bool:
@@ -227,6 +227,17 @@ def _terminal_command(cmd: list[str]) -> list[str] | None:
         if shutil.which(binary):
             return terminal_cmd
     return None
+
+
+def _spawn_background(spec: ServiceSpec, env: dict[str, str]) -> subprocess.Popen[bytes]:
+    log = spec.log_path.open("ab")
+    try:
+        return subprocess.Popen(
+            spec.cmd, cwd=str(spec.cwd), env=env,
+            stdout=log, stderr=log, start_new_session=True,
+        )
+    finally:
+        log.close()
 
 
 def _adopt(spec: ServiceSpec) -> None:
@@ -260,9 +271,8 @@ def is_running(spec: ServiceSpec) -> bool:
         if not _matches_service_process(spec, pid):
             _clear_pid(spec)
             return False
-        # For port-bound services, trust the listener state over bare PID liveness.
-        # A stale/zombie PID can remain "alive" briefly after shutdown while the
-        # port is already free, which should be shown as stopped in the UI.
+        # Port-bound services can be alive briefly before listener bind;
+        # keep them "running" during startup grace to prevent duplicate starts.
         if spec.port is not None:
             listener_pid = _port_listener_pid(spec.port)
             if listener_pid is None:
@@ -300,7 +310,6 @@ def start(spec: ServiceSpec, *, show_terminal: bool = False) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     spec.log_path.parent.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, **spec.env}
-    proc: subprocess.Popen[bytes] | subprocess.Popen[str]
     if show_terminal and spec.supports_terminal:
         full_cmd = _terminal_command(spec.cmd)
         if full_cmd is not None:
@@ -308,17 +317,9 @@ def start(spec: ServiceSpec, *, show_terminal: bool = False) -> None:
                 full_cmd, cwd=str(spec.cwd), env=env, start_new_session=True
             )
         else:
-            log = spec.log_path.open("ab")
-            proc = subprocess.Popen(
-                spec.cmd, cwd=str(spec.cwd), env=env,
-                stdout=log, stderr=log, start_new_session=True,
-            )
+            proc = _spawn_background(spec, env)
     else:
-        log = spec.log_path.open("ab")
-        proc = subprocess.Popen(
-            spec.cmd, cwd=str(spec.cwd), env=env,
-            stdout=log, stderr=log, start_new_session=True,
-        )
+        proc = _spawn_background(spec, env)
     spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
     spec.pid_path.write_text(str(proc.pid))
 
