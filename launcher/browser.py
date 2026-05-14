@@ -20,7 +20,7 @@ CHROMIUM_FAMILY = [
     "vivaldi-stable",
 ]
 
-_DEFAULT_DEVICE_SCALE_FACTOR = 0.75
+_DEFAULT_DEVICE_SCALE_FACTOR = 0.85
 _CHROMIUM_LOW_OVERHEAD_FLAGS = [
     "--disable-extensions",
     "--disable-sync",
