@@ -1,6 +1,6 @@
 # memU Local Stack
 
-_Last updated: 2026-05-12_
+_Last updated: 2026-05-15_
 
 > *Give your AI companion a real memory. One that belongs to it — and stays on your machine.*
 
@@ -107,10 +107,10 @@ Clone all four repos as siblings under one parent directory:
 └── memu-local-stack/             # this repo (docs + launcher)
 ```
 
-The Stack launcher (see *What's coming*) walks up from its own directory
-to find this layout automatically, so no path configuration is needed
-when the repos sit side-by-side. If your layout differs, the launcher's
-`/settings` page lets you point at the parent directory explicitly.
+The Stack launcher walks up from its own directory to find this layout
+automatically, so no path configuration is needed when the repos sit
+side-by-side. If your layout differs, the launcher's `/settings` page
+lets you point at the parent directory explicitly.
 
 SillyTavern lives elsewhere (it's a full app, not a sibling). The plugin
 and extension below get installed *inside* the SillyTavern tree.
