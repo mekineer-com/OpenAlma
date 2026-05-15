@@ -67,7 +67,7 @@ def all_services() -> list[ServiceSpec]:
             log_path=Path("/tmp/memu-server.out"),
             pid_path=STATE_DIR / "memu-server.pid",
             port=8099,
-            adopt_pid_path=root / "memu" / ".memu-server.pid",
+            adopt_pid_path=root / "mcp-memu-server" / ".memu-server.pid",
         ),
         ServiceSpec(
             name="hermes-gateway",
