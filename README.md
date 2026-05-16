@@ -1,6 +1,6 @@
 # memU Local Stack
 
-_Last updated: 2026-05-15_
+_Last updated: 2026-05-15 (memorize checkbox)_
 
 > *Give your AI companion a real memory. One that belongs to it — and stays on your machine.*
 
@@ -212,7 +212,7 @@ A local web UI for managing the full stack. Lives in `launcher/` in this repo.
 
 - **Services panel** — start, stop, and view logs for mcp-memu-server, Hermes gateway, WhatsApp bridge, and SillyTavern. Detects externally-started services and adopts them.
 - **Settings page** — edit configs (server `config.json`, Hermes `config.yaml`, Hermes persona `SOUL.md`). Auto-detects the apps-root directory from sibling repo layout; override on the settings page if your layout differs.
-- **WhatsApp channel policy** — per-chat policy editor (reads `~/.hermes/channel_directory.json`, writes `~/.hermes/memu.json`).
+- **WhatsApp channel policy** — per-chat policy editor with memorize checkbox (reads `~/.hermes/channel_directory.json`, writes `~/.hermes/memu.json`). Unchecked chats become background context during memorize rather than primary extraction targets.
 - **Logs viewer** — tail logs for any managed service.
 
 Runs at `http://127.0.0.1:8765`. Start-menu shortcut installed as `memu-stack.desktop`. Opens in a Chromium app window (falls back to default browser).
