@@ -1,6 +1,6 @@
 # memU Local Stack
 
-_Last updated: 2026-05-15 (memorize checkbox)_
+_Last updated: 2026-05-16 (stock SillyTavern — no fork needed)_
 
 > *Give your AI companion a real memory. One that belongs to it — and stays on your machine.*
 
@@ -93,7 +93,7 @@ Prefer `main` for the latest. If you'd rather pin to a tag, match **all four rep
 - Python 3.12+
 - Node.js (for the SillyTavern pieces)
 - An API key for an LLM provider — OpenAI, NanoGPT, or any compatible endpoint
-- SillyTavern already installed, if you're using the SillyTavern integration
+- SillyTavern already installed (stock — no fork or patches needed), if you're using the SillyTavern integration
 
 **Recommended layout**
 
