@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 import policy
 import services
 import settings
+import soul
 
 ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
@@ -72,6 +73,14 @@ def index(request: Request) -> HTMLResponse:
         {"key": k, "label": CONFIG_LABELS.get(k, k), "path": str(p)}
         for k, p in editable_paths.items()
     ]
+    try:
+        active_soul = soul.read_active_soul_id()
+        soul_ids = soul.list_soul_ids()
+    except RuntimeError:
+        active_soul = ""
+        soul_ids = []
+    if active_soul and active_soul not in soul_ids:
+        soul_ids = [active_soul, *soul_ids]
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -79,6 +88,8 @@ def index(request: Request) -> HTMLResponse:
             "services": rows,
             "chats": chat_rows,
             "policies": policy.ALL_POLICIES,
+            "active_soul": active_soul,
+            "soul_ids": soul_ids,
             "editable_configs": editable,
             "apps_root": str(apps_root) if apps_root else "",
             "needs_setup": apps_root is None,
@@ -172,6 +183,12 @@ async def policy_save(request: Request) -> RedirectResponse:
                 }
     if updates:
         policy.write_channel_settings(updates)
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/soul")
+def soul_save(soul_id: str = Form(default="")) -> RedirectResponse:
+    soul.set_active_soul_id(soul_id)
     return RedirectResponse("/", status_code=303)
 
 

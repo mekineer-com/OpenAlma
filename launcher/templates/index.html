@@ -108,6 +108,20 @@
     {% endfor %}
   </ul>
 
+  <h2>Soul</h2>
+  <p class="muted">One active soul at a time. This updates <code>~/.hermes/config.yaml</code> at <code>soul_mode.agents.*.soul_id</code> for all <code>role: soul</code> agents.</p>
+  <form method="post" action="/soul">
+    <label for="soul_id">Active soul ID:</label>
+    <input list="soul-options" id="soul_id" name="soul_id" value="{{ active_soul }}" placeholder="Echo" required
+           style="font: inherit; padding: 0.2rem 0.35rem; background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 3px; min-width: 18rem;">
+    <datalist id="soul-options">
+      {% for s in soul_ids %}
+        <option value="{{ s }}"></option>
+      {% endfor %}
+    </datalist>
+    <button class="btn" type="submit">Set soul</button>
+  </form>
+
   <h2>WhatsApp channel policy</h2>
   {% if chats %}
   <p class="muted">
