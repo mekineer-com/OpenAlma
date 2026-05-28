@@ -199,7 +199,9 @@ def _matches_service_process(spec: ServiceSpec, pid: int) -> bool:
     if spec.name == "memu-server":
         return cwd_matches and ("run.py" in cmd or ("uvicorn" in cmd and "app.main:app" in cmd))
     if spec.name == "hermes-gateway":
-        return cwd_matches and "gateway.run" in cmd
+        if not cwd_matches:
+            return False
+        return "gateway.run" in cmd or "hermes gateway run" in cmd
     if spec.name == "whatsapp-bridge":
         if "bridge.js" not in cmd:
             return False
