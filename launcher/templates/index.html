@@ -87,9 +87,6 @@
             {% if s.supports_terminal %}
               <label class="term-toggle"><input type="checkbox" id="term-{{ s.name }}" value="1"> show terminal</label>
             {% endif %}
-            {% if s.name == 'sillytavern' %}
-              <label class="term-toggle"><input type="checkbox" id="open-{{ s.name }}" value="1" checked> open browser</label>
-            {% endif %}
           {% endif %}
         </td>
         <td><a href="/logs/{{ s.name }}">view</a></td>
@@ -186,6 +183,7 @@ function svcAction(name, action, btn) {
   var row = btn.closest('tr');
   var statusCell = row.querySelector('.svc-status');
   var actionsCell = row.querySelector('.svc-actions');
+  var origHtml = actionsCell.innerHTML;
   actionsCell.innerHTML = '<span class="spinner"></span>';
   statusCell.innerHTML = '<span class="muted">…</span>';
 
@@ -193,12 +191,28 @@ function svcAction(name, action, btn) {
   if (action === 'start') {
     var cb = document.getElementById('term-' + name);
     if (cb && cb.checked) body.append('show_terminal', '1');
-    var ob = document.getElementById('open-' + name);
-    if (ob && ob.checked) body.append('open_browser', '1');
   }
   fetch('/service/' + name + '/' + action, {method: 'POST', body: body})
     .then(function(r) { return r.json(); })
-    .then(function() { location.reload(); })
+    .then(function() { pollStatus(name); })
+    .catch(function() { location.reload(); });
+}
+
+function pollStatus(name) {
+  fetch('/service/' + name + '/status')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var row = document.querySelector('tr[data-service="' + name + '"]');
+      var statusCell = row.querySelector('.svc-status');
+      var actionsCell = row.querySelector('.svc-actions');
+      if (data.running) {
+        statusCell.innerHTML = '<span class="running">● running</span>';
+        actionsCell.innerHTML = '<button class="btn" onclick="svcAction(\'' + name + '\',\'stop\',this)">Stop</button>';
+      } else {
+        statusCell.innerHTML = '<span class="stopped">○ stopped</span>';
+        actionsCell.innerHTML = '<button class="btn" onclick="svcAction(\'' + name + '\',\'start\',this)">Start</button>';
+      }
+    })
     .catch(function() { location.reload(); });
 }
 </script>

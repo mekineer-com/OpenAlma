@@ -143,12 +143,9 @@ def logs(request: Request, service_name: str, lines: int = 200) -> HTMLResponse:
 def service_start(
     service_name: str,
     show_terminal: str = Form(default=""),
-    open_browser: str = Form(default=""),
 ) -> dict:
     spec = _find_service(service_name)
     services.start(spec, show_terminal=bool(show_terminal))
-    if service_name == "sillytavern" and bool(open_browser):
-        subprocess.Popen(["xdg-open", "http://127.0.0.1:8001"], start_new_session=True)
     return {"ok": True, "running": services.is_running(spec)}
 
 
