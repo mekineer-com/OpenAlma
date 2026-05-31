@@ -219,15 +219,21 @@ def list_whatsapp_chats() -> list[dict]:
         enriched.append(chat)
 
     if self_kept is not None:
-        # Surface the human at the top of the list with a guaranteed name.
         kept_name = str(self_kept.get("name") or "").strip()
         if not kept_name or _looks_like_raw_id(kept_name):
             self_kept = {**self_kept, "name": "you"}
-        enriched.insert(0, self_kept)
+        enriched.append(self_kept)
 
     if cache_changed:
         _write_group_name_cache(group_name_cache)
 
+    def _sort_key(c: dict) -> tuple:
+        name = str(c.get("name") or "").strip()
+        is_self = c is self_kept
+        has_name = bool(name) and not _looks_like_raw_id(name)
+        return (0 if is_self else 1 if has_name else 2, name.lower())
+
+    enriched.sort(key=_sort_key)
     return enriched
 
 
