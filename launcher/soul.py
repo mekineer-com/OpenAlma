@@ -65,6 +65,49 @@ def _soul_agents(config: dict) -> list[dict]:
     return out
 
 
+def _derive_reply_prefix_template(reply_prefix: str, old_soul_ids: list[str]) -> str | None:
+    prefix = str(reply_prefix or "")
+    if not prefix:
+        return None
+    if "{soul}" in prefix:
+        return prefix
+    seen: set[str] = set()
+    for raw in old_soul_ids:
+        soul_id = str(raw or "").strip()
+        if not soul_id or soul_id in seen:
+            continue
+        seen.add(soul_id)
+        if soul_id in prefix:
+            return prefix.replace(soul_id, "{soul}")
+    return None
+
+
+def _refresh_whatsapp_reply_prefix(config: dict, *, selected: str, old_soul_ids: list[str]) -> None:
+    whatsapp = config.get("whatsapp")
+    if whatsapp is None:
+        return
+    if not isinstance(whatsapp, dict):
+        raise RuntimeError("Invalid config: whatsapp must be a mapping")
+
+    template = ""
+    template_raw = whatsapp.get("reply_prefix_template")
+    if isinstance(template_raw, str) and template_raw:
+        if "{soul}" in template_raw:
+            template = template_raw
+
+    if not template:
+        prefix_raw = whatsapp.get("reply_prefix")
+        if not isinstance(prefix_raw, str) or not prefix_raw:
+            return
+        derived = _derive_reply_prefix_template(prefix_raw, old_soul_ids)
+        if not derived:
+            return
+        template = derived
+        whatsapp["reply_prefix_template"] = template
+
+    whatsapp["reply_prefix"] = template.replace("{soul}", selected)
+
+
 def read_active_soul_id() -> str:
     config = _load_config()
     agents = _soul_agents(config)
@@ -103,6 +146,17 @@ def set_active_soul_id(soul_id: str) -> None:
     elif not isinstance(agents, dict):
         raise RuntimeError("Invalid config: soul_mode.agents must be a mapping")
 
+    old_soul_ids: list[str] = []
+    for agent_cfg in agents.values():
+        if not isinstance(agent_cfg, dict):
+            raise RuntimeError("Invalid config: each soul_mode.agents entry must be a mapping")
+        role = str(agent_cfg.get("role") or "").strip().lower()
+        if role != "soul":
+            continue
+        existing = str(agent_cfg.get("soul_id") or "").strip()
+        if existing:
+            old_soul_ids.append(existing)
+
     updated = False
     for agent_cfg in agents.values():
         if not isinstance(agent_cfg, dict):
@@ -125,4 +179,5 @@ def set_active_soul_id(soul_id: str) -> None:
         main_cfg["role"] = "soul"
         main_cfg["soul_id"] = selected
 
+    _refresh_whatsapp_reply_prefix(config, selected=selected, old_soul_ids=old_soul_ids)
     _write_config(config)
