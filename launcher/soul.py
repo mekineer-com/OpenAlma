@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sqlite3
 import tempfile
+import time
 
 import yaml
 
 HERMES_CONFIG_PATH = Path.home() / ".hermes" / "config.yaml"
+HERMES_STATE_DB_PATH = Path.home() / ".hermes" / "state.db"
 
 
 def _load_config() -> dict:
@@ -42,6 +45,26 @@ def _write_config(config: dict) -> None:
         tmp.write(dumped)
         tmp_path = Path(tmp.name)
     tmp_path.replace(HERMES_CONFIG_PATH)
+
+
+def _stamp_soul_active_since(soul_id: str, *, now: float | None = None) -> None:
+    selected = str(soul_id or "").strip()
+    if not selected:
+        raise RuntimeError("Soul ID cannot be empty")
+    HERMES_STATE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(HERMES_STATE_DB_PATH)
+    try:
+        con.execute(
+            "CREATE TABLE IF NOT EXISTS souls ("
+            "soul_id TEXT PRIMARY KEY, active_since REAL NOT NULL)"
+        )
+        con.execute(
+            "INSERT OR IGNORE INTO souls (soul_id, active_since) VALUES (?, ?)",
+            (selected, float(time.time() if now is None else now)),
+        )
+        con.commit()
+    finally:
+        con.close()
 
 
 def _soul_agents(config: dict) -> list[dict]:
@@ -180,4 +203,5 @@ def set_active_soul_id(soul_id: str) -> None:
         main_cfg["soul_id"] = selected
 
     _refresh_whatsapp_reply_prefix(config, selected=selected, old_soul_ids=old_soul_ids)
+    _stamp_soul_active_since(selected)
     _write_config(config)
