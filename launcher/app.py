@@ -161,6 +161,14 @@ def service_status(service_name: str) -> dict:
     return services.status(spec)
 
 
+@app.post("/whatsapp/pair-bridge")
+def whatsapp_pair_bridge() -> dict:
+    if not services.launch_whatsapp_bridge_pairing():
+        raise HTTPException(status_code=500, detail="Could not open a terminal for hermes whatsapp")
+    spec = _find_service("hermes-gateway")
+    return {"ok": True, **services.status(spec)}
+
+
 @app.post("/policy")
 async def policy_save(request: Request) -> RedirectResponse:
     form = await request.form()

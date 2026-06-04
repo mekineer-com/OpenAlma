@@ -98,6 +98,9 @@
         <td class="svc-actions">
           {% if s.running %}
             <button class="btn" onclick="svcAction('{{ s.name }}','stop',this)">Stop</button>
+            {% if 'pair_whatsapp_bridge' in s.actions %}
+              <button class="btn" onclick="pairWhatsappBridge(this)">Pair reply bridge</button>
+            {% endif %}
           {% else %}
             <button class="btn" onclick="svcAction('{{ s.name }}','start',this)">Start</button>
             {% if s.supports_terminal %}
@@ -220,6 +223,34 @@ function svcAction(name, action, btn) {
     .catch(function() { location.reload(); });
 }
 
+function actionHtml(name, data) {
+  if (data.running) {
+    var html = '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button>';
+    if ((data.actions || []).indexOf('pair_whatsapp_bridge') !== -1) {
+      html += ' <button class="btn" onclick="pairWhatsappBridge(this)">Pair reply bridge</button>';
+    }
+    return html;
+  }
+  return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'start\',this)">Start</button>';
+}
+
+function pairWhatsappBridge(btn) {
+  var row = btn.closest('tr');
+  var statusCell = row.querySelector('.svc-status');
+  var actionsCell = row.querySelector('.svc-actions');
+  actionsCell.innerHTML = '<span class="spinner"></span>';
+  fetch('/whatsapp/pair-bridge', {method: 'POST'})
+    .then(function(r) {
+      if (!r.ok) throw new Error('pair failed');
+      return r.json();
+    })
+    .then(function() { pollStatus('hermes-gateway'); })
+    .catch(function() {
+      statusCell.innerHTML += '<div class="svc-detail degraded">Could not open pairing terminal</div>';
+      pollStatus('hermes-gateway');
+    });
+}
+
 function pollStatus(name) {
   fetch('/service/' + name + '/status')
     .then(function(r) { return r.json(); })
@@ -243,11 +274,7 @@ function pollStatus(name) {
         html += '</div>';
       }
       statusCell.innerHTML = html;
-      if (data.running) {
-        actionsCell.innerHTML = '<button class="btn" onclick="svcAction(\'' + name + '\',\'stop\',this)">Stop</button>';
-      } else {
-        actionsCell.innerHTML = '<button class="btn" onclick="svcAction(\'' + name + '\',\'start\',this)">Start</button>';
-      }
+      actionsCell.innerHTML = actionHtml(name, data);
     })
     .catch(function() {});
 }

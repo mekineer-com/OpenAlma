@@ -217,6 +217,42 @@ def _terminal_command(cmd: list[str]) -> list[str] | None:
     return None
 
 
+def _hermes_python(root: Path) -> Path:
+    for candidate in (
+        root / ".venv" / "bin" / "python3",
+        root / "hermes-agent" / ".venv" / "bin" / "python3",
+        root / "hermes-agent" / "venv" / "bin" / "python3",
+    ):
+        if candidate.exists():
+            return candidate
+    return Path(shutil.which("python3") or "python3")
+
+
+def launch_whatsapp_bridge_pairing() -> bool:
+    root = _resolve_apps_root()
+    if root is None:
+        return False
+    hermes_script = root / "hermes-agent" / "hermes"
+    if not hermes_script.exists():
+        return False
+    cmd = [str(_hermes_python(root)), str(hermes_script), "whatsapp"]
+    terminal_cmd = _terminal_command(cmd)
+    if terminal_cmd is None:
+        return False
+    env = {
+        **os.environ,
+        "WHATSAPP_MODE": "bot",
+        "WHATSAPP_ALLOWED_USERS": os.environ.get("WHATSAPP_ALLOWED_USERS", "*"),
+    }
+    subprocess.Popen(
+        terminal_cmd,
+        cwd=str(root / "hermes-agent"),
+        env=env,
+        start_new_session=True,
+    )
+    return True
+
+
 def _spawn_background(spec: ServiceSpec, env: dict[str, str]) -> subprocess.Popen[bytes]:
     log = spec.log_path.open("ab")
     try:
@@ -324,6 +360,7 @@ def status(spec: ServiceSpec) -> dict:
     label = "● running" if running else "○ stopped"
     detail = ""
     children: list[dict[str, str]] = []
+    actions: list[str] = []
 
     if spec.name == "hermes-gateway" and running:
         gateway_state = _read_gateway_state()
@@ -345,6 +382,8 @@ def status(spec: ServiceSpec) -> dict:
                 child = _child_status_parts(child_name.replace("_", "-"), whatsapp.get(child_name))
                 if child is not None:
                     children.append(child)
+                    if child_name == "bridge" and child.get("state") == "setup_needed":
+                        actions.append("pair_whatsapp_bridge")
         else:
             state = "starting"
             label = "◐ starting"
@@ -356,6 +395,7 @@ def status(spec: ServiceSpec) -> dict:
         "status_label": label,
         "detail": detail,
         "children": children,
+        "actions": actions,
     }
 
 
