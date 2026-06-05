@@ -22,6 +22,8 @@
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: 0.4rem 0.6rem; text-align: left; border-bottom: 1px solid #2a2a2a; vertical-align: middle; }
     th { font-weight: 600; background: #222; color: #eee; }
+    details.excluded-chats { margin-top: 0.8rem; }
+    details.excluded-chats summary { cursor: pointer; color: #aaa; margin-bottom: 0.4rem; }
     .running, .healthy { color: #4ade80; font-weight: 600; }
     .starting { color: #fbbf24; font-weight: 600; }
     .degraded { color: #fb923c; font-weight: 600; }
@@ -150,36 +152,54 @@
     <strong>Mem</strong> — include this chat in memory extraction; unchecked chats stay as context-only during memorize.
   </p>
   <form method="post" action="/policy">
+    {% macro chat_row(c) -%}
+    <tr>
+      <td>{{ c.name or '(unnamed)' }}</td>
+      <td>{{ c.type }}</td>
+      <td><code>{{ c.id }}</code></td>
+      <td>
+        <select name="policy[{{ c.id }}]" data-chat-id="{{ c.id }}" onchange="syncMemorize('{{ c.id }}', this.value)">
+          {% for p in policies %}
+            <option value="{{ p }}" {% if c.policy == p %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td>
+        <input
+          type="checkbox"
+          name="memorize[{{ c.id }}]"
+          id="memorize-{{ c.id }}"
+          {% if c.memorize and c.policy != 'excluded' %}checked{% endif %}
+          {% if c.policy == 'excluded' %}disabled{% endif %}
+        />
+      </td>
+    </tr>
+    {%- endmacro %}
     <table>
       <thead>
         <tr><th>Chat</th><th>Type</th><th>ID</th><th>Policy</th><th>Mem</th></tr>
       </thead>
       <tbody>
-        {% for c in chats %}
-        <tr>
-          <td>{{ c.name or '(unnamed)' }}</td>
-          <td>{{ c.type }}</td>
-          <td><code>{{ c.id }}</code></td>
-          <td>
-            <select name="policy[{{ c.id }}]" data-chat-id="{{ c.id }}" onchange="syncMemorize('{{ c.id }}', this.value)">
-              {% for p in policies %}
-                <option value="{{ p }}" {% if c.policy == p %}selected{% endif %}>{{ p }}</option>
-              {% endfor %}
-            </select>
-          </td>
-          <td>
-            <input
-              type="checkbox"
-              name="memorize[{{ c.id }}]"
-              id="memorize-{{ c.id }}"
-              {% if c.memorize and c.policy != 'excluded' %}checked{% endif %}
-              {% if c.policy == 'excluded' %}disabled{% endif %}
-            />
-          </td>
-        </tr>
+        {% for c in visible_chats %}
+          {{ chat_row(c) }}
         {% endfor %}
       </tbody>
     </table>
+    {% if excluded_chats %}
+      <details class="excluded-chats">
+        <summary>Excluded ({{ excluded_chats|length }})</summary>
+        <table>
+          <thead>
+            <tr><th>Chat</th><th>Type</th><th>ID</th><th>Policy</th><th>Mem</th></tr>
+          </thead>
+          <tbody>
+            {% for c in excluded_chats %}
+              {{ chat_row(c) }}
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
+    {% endif %}
     <p><button class="btn" type="submit">Save policies</button></p>
   </form>
   {% else %}

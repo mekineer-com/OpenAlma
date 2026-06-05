@@ -67,6 +67,8 @@ def index(request: Request) -> HTMLResponse:
         }
         for c in chats
     ]
+    visible_chats = [c for c in chat_rows if c["policy"] != "excluded"]
+    excluded_chats = [c for c in chat_rows if c["policy"] == "excluded"]
     editable_paths = _editable_configs(apps_root)
     editable = [
         {"key": k, "label": CONFIG_LABELS.get(k, k), "path": str(p)}
@@ -80,6 +82,8 @@ def index(request: Request) -> HTMLResponse:
         {
             "services": rows,
             "chats": chat_rows,
+            "visible_chats": visible_chats,
+            "excluded_chats": excluded_chats,
             "policies": policy.ALL_POLICIES,
             "active_soul": active_soul,
             "soul_ids": soul_ids,
