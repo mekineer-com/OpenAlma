@@ -55,6 +55,11 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .banner { padding: 0.6rem 0.8rem; margin: 1rem 0; border-radius: 3px;
               background: #3a2415; color: #f5c084; border: 1px solid #6b3a16; }
+    .meter { width: 100%; max-width: 28rem; height: 0.6rem; background: #2a2a2a;
+             border: 1px solid #444; border-radius: 3px; overflow: hidden; }
+    .meter-fill { height: 100%; background: #6aa9ff; }
+    .badge { display: inline-block; margin-left: 0.4rem; padding: 0.1rem 0.45rem; border-radius: 3px;
+             background: #3a2415; color: #f5c084; border: 1px solid #6b3a16; font-size: 0.78rem; }
     .top-row { display: flex; justify-content: space-between; align-items: baseline; }
     .top-row span { display: flex; align-items: baseline; gap: 1rem; }
     .top-row .btn { font-size: 0.82rem; }
@@ -115,6 +120,20 @@
       {% endfor %}
     </tbody>
   </table>
+
+  <h2>Memorize</h2>
+  {% if memorize and memorize.threshold %}
+    <p>
+      Memorize: {{ "{:,}".format(memorize.summed_unmemorized_tokens) }} / {{ "{:,}".format(memorize.threshold) }} ({{ memorize.pct }}%)
+      {% if memorize.summed_unmemorized_tokens >= memorize.threshold %}
+        <span class="badge">{{ "sleep-gap detected" if memorize.sleep_gap_ready else "waiting for sleep-gap" }}</span>
+      {% endif %}
+    </p>
+    <div class="meter"><div class="meter-fill" style="width: {{ [memorize.pct, 100]|min }}%"></div></div>
+    <p class="muted">Memorize-eligible at {{ "{:,}".format(memorize.threshold) }} tokens; a sleep-gap releases it. Snapshot {{ memorize.computed_at }}.</p>
+  {% else %}
+    <p class="muted">No pending-memorize data — is mcp-memu-server running?</p>
+  {% endif %}
 
   <h2>Edit configs</h2>
   <p class="muted">Opens in your default editor.</p>

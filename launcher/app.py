@@ -76,11 +76,13 @@ def index(request: Request) -> HTMLResponse:
     ]
     active_soul = soul.read_active_soul_id()
     soul_ids = soul.list_soul_ids()
+    memorize = services.memorize_pending(active_soul) if active_soul else {}
     return templates.TemplateResponse(
         request,
         "index.html",
         {
             "services": rows,
+            "memorize": memorize,
             "chats": chat_rows,
             "visible_chats": visible_chats,
             "excluded_chats": excluded_chats,

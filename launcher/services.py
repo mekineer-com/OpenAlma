@@ -19,6 +19,8 @@ import shutil
 import signal
 import subprocess
 import time
+import urllib.parse
+import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,6 +30,7 @@ from settings import apps_root as _resolve_apps_root
 HERMES_HOME = Path.home() / ".hermes"
 STATE_DIR = Path.home() / ".cache" / "memu-stack-launcher"
 STARTUP_GRACE_SECONDS = 4.0
+MEMU_SERVER_PORT = 8099
 
 
 @dataclass
@@ -66,7 +69,7 @@ def all_services() -> list[ServiceSpec]:
             cwd=root / "mcp-memu-server",
             log_path=Path("/tmp/memu-server.out"),
             pid_path=STATE_DIR / "memu-server.pid",
-            port=8099,
+            port=MEMU_SERVER_PORT,
             adopt_pid_path=root / "mcp-memu-server" / ".memu-server.pid",
         ),
         ServiceSpec(
@@ -332,6 +335,18 @@ def _read_gateway_state() -> dict:
     try:
         data = json.loads((HERMES_HOME / "gateway_state.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def memorize_pending(soul_id: str) -> dict:
+    """Read memU's pending-memorize snapshot; {} when unreachable or malformed."""
+    query = urllib.parse.urlencode({"soul_id": soul_id})
+    url = f"http://127.0.0.1:{MEMU_SERVER_PORT}/diag/memorize/pending?{query}"
+    try:
+        with urllib.request.urlopen(url, timeout=2) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
 
