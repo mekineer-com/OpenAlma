@@ -1,6 +1,6 @@
 # memU Local Stack
 
-_Last updated: 2026-05-18 (v0.0.11-buildfix)_
+_Last updated: 2026-06-12 (v0.0.11-buildfix)_
 
 > *Give your AI companion a real memory. One that belongs to it — and stays on your machine.*
 
@@ -130,6 +130,8 @@ After setup, open the memU extension panel in SillyTavern and set **Server URL**
 
    Opens at `http://127.0.0.1:8765`. Start and stop any service, view logs, edit configs — no terminal juggling needed. To add a start-menu shortcut on Linux: `cp memu-stack.desktop ~/.local/share/applications/`.
 
+   The launcher's home page shows a **memorize-pressure gauge** — how many unmemorized tokens are queued across all conversations vs the 8,000-token threshold, and whether a sleep gap has been detected. Useful for knowing if memorize is about to fire or just waiting.
+
 No Docker. Developed on Alpine Linux but works on anything that can run Python 3.12 and Node.
 
 Questions? Open an issue on the relevant repo.
@@ -216,6 +218,8 @@ The soul appears as a WhatsApp contact. Hermes routes each incoming message to m
 **Bot mode** — in group chats, set `reply_prefix` in `~/.hermes/config.yaml` so the soul only responds to messages that start with a trigger (e.g. `!siri`). In direct chats, she responds to everything.
 
 **Autonomous loop** — Hermes can run a timed loop where the soul checks in with you unprompted, not just when you write first. Configured via `~/.hermes/config.yaml`.
+
+**Attachments** — the soul can name a file under her workspace (`~/Desktop/siri/`) in her reply and it gets delivered as a WhatsApp document, with her reply text as a caption. Works for both normal replies and autonomous follow-ups she schedules herself.
 
 Memorize works the same way as SillyTavern: sleep gaps trigger extraction automatically. Manual extraction is available via `mcp-memu-server`'s API if needed.
 
