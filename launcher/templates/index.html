@@ -27,6 +27,7 @@
     .running, .healthy { color: #4ade80; font-weight: 600; }
     .starting { color: #fbbf24; font-weight: 600; }
     .degraded { color: #fb923c; font-weight: 600; }
+    .blocked, .orphaned, .stuck { color: #fb923c; font-weight: 600; }
     .stopped { color: #f87171; }
     .svc-detail { margin-top: 0.15rem; font-size: 0.78rem; color: #aaa; }
     .svc-children { margin-top: 0.15rem; font-size: 0.78rem; color: #888; }
@@ -273,7 +274,11 @@ function actionHtml(name, data) {
     return html;
   }
   if (data.startable !== false) {
-    return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'start\',this)">Start</button>';
+    var start = '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'start\',this)">Start</button>';
+    if (data.supports_terminal) {
+      start += ' <label class="term-toggle"><input type="checkbox" id="term-' + esc(name) + '" value="1"> show terminal</label>';
+    }
+    return start;
   }
   return '<span class="muted">not startable</span>';
 }

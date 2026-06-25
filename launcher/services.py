@@ -50,10 +50,15 @@ class ServiceSpec:
 
 @dataclass(frozen=True)
 class RuntimeState:
-    verified_pids: tuple[int, ...]
-    pid: int | None
-    running: bool
-    stuck: bool
+    verified_pids: tuple[int, ...] = ()
+    service_pids: tuple[int, ...] = ()
+    child_pids: tuple[int, ...] = ()
+    pid: int | None = None
+    port_pid: int | None = None
+    running: bool = False
+    stuck: bool = False
+    orphaned: bool = False
+    port_blocked: bool = False
 
 
 def _resolve_memu_server_pid_path(root: Path) -> Path:
@@ -218,22 +223,73 @@ def _matches_service_process(spec: ServiceSpec, pid: int) -> bool:
     return False
 
 
+def _strip_simple_yaml_value(value: str) -> str:
+    value = value.strip()
+    if not value:
+        return ""
+    if value[0] in {"'", '"'} and value[-1:] == value[0]:
+        return value[1:-1]
+    return value
+
+
+def _read_hermes_whatsapp_config() -> dict[str, str]:
+    """Read the flat `whatsapp:` config keys the launcher needs for pid matching."""
+    try:
+        lines = (HERMES_HOME / "config.yaml").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+    out: dict[str, str] = {}
+    in_whatsapp = False
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line.startswith((" ", "\t")):
+            key = line.split(":", 1)[0].strip()
+            in_whatsapp = key == "whatsapp"
+            continue
+        if not in_whatsapp or not line.startswith("  "):
+            continue
+        stripped = line.strip()
+        if ":" not in stripped:
+            continue
+        key, raw_value = stripped.split(":", 1)
+        if raw_value.strip():
+            out[key.strip()] = _strip_simple_yaml_value(raw_value)
+    return out
+
+
+def _configured_path(config: dict[str, str], key: str, default: Path) -> Path:
+    raw = config.get(key)
+    if not raw:
+        return default
+    return Path(raw).expanduser()
+
+
 def _hermes_whatsapp_child_markers() -> list[tuple[Path, tuple[str, ...]]]:
     whatsapp_home = HERMES_HOME / "whatsapp"
-    session_path = whatsapp_home / "session"
+    config = _read_hermes_whatsapp_config()
+    session_path = _configured_path(config, "session_path", whatsapp_home / "session")
+    web_source_db = _configured_path(config, "web_source_db", whatsapp_home / "web_source.db")
+    web_source_status = _configured_path(
+        config,
+        "web_source_status",
+        whatsapp_home / "web_source_status.json",
+    )
+    bridge_script = _strip_simple_yaml_value(config.get("bridge_script", "bridge.js"))
+    web_source_script = _strip_simple_yaml_value(config.get("web_source_script", "source-daemon.js"))
     return [
         (
             session_path / "bridge.pid",
-            ("bridge.js", "--session", str(session_path)),
+            (bridge_script, "--session", str(session_path)),
         ),
         (
-            whatsapp_home / "web_source.pid",
+            web_source_status.with_name("web_source.pid"),
             (
-                "source-daemon.js",
+                web_source_script,
                 "--db",
-                str(whatsapp_home / "web_source.db"),
+                str(web_source_db),
                 "--status",
-                str(whatsapp_home / "web_source_status.json"),
+                str(web_source_status),
             ),
         ),
     ]
@@ -249,6 +305,10 @@ def _matches_managed_process(spec: ServiceSpec, pid: int) -> bool:
         return True
     if spec.name != "hermes-gateway":
         return False
+    return _matches_hermes_child_process(pid)
+
+
+def _matches_hermes_child_process(pid: int) -> bool:
     return any(_cmdline_has_markers(pid, markers) for _pidfile, markers in _hermes_whatsapp_child_markers())
 
 
@@ -384,27 +444,53 @@ def is_running(spec: ServiceSpec) -> bool:
 
 def _runtime_state(spec: ServiceSpec) -> RuntimeState:
     verified = _verified_pid_candidates(spec)
+    service_pids = tuple(pid for pid in verified if _matches_service_process(spec, pid))
+    child_pids = tuple(pid for pid in verified if spec.name == "hermes-gateway" and _matches_hermes_child_process(pid))
+    port_pid = _port_listener_pid(spec.port) if spec.port is not None else None
+    port_blocked = (
+        port_pid is not None
+        and _is_alive(port_pid)
+        and not _matches_managed_process(spec, port_pid)
+    )
     if not verified:
         _clear_pid(spec)
         if spec.adopt_pid_path is not None:
             _clear_dead_pidfile(spec.adopt_pid_path)
-        return RuntimeState(verified_pids=(), pid=None, running=False, stuck=False)
+        return RuntimeState(port_pid=port_pid, port_blocked=port_blocked)
 
     pid = verified[0]
     _remember_verified_pid(spec, pid)
-    if spec.port is None or _port_listener_pid(spec.port) is not None:
+    if spec.name == "hermes-gateway" and not service_pids and child_pids:
         return RuntimeState(
             verified_pids=tuple(verified),
+            service_pids=service_pids,
+            child_pids=child_pids,
             pid=pid,
+            port_pid=port_pid,
+            orphaned=True,
+            port_blocked=port_blocked,
+        )
+    if spec.port is None or (port_pid is not None and not port_blocked):
+        return RuntimeState(
+            verified_pids=tuple(verified),
+            service_pids=service_pids,
+            child_pids=child_pids,
+            pid=pid,
+            port_pid=port_pid,
             running=True,
-            stuck=False,
+            port_blocked=port_blocked,
         )
     running = _within_startup_grace(spec)
     return RuntimeState(
         verified_pids=tuple(verified),
+        service_pids=service_pids,
+        child_pids=child_pids,
         pid=pid,
+        port_pid=port_pid,
         running=running,
         stuck=not running,
+        orphaned=False,
+        port_blocked=port_blocked,
     )
 
 
@@ -455,11 +541,23 @@ def status(spec: ServiceSpec) -> dict:
     runtime = _runtime_state(spec)
     running = runtime.running
     stuck = runtime.stuck
-    state = "stuck" if stuck else ("running" if running else "stopped")
-    label = "▲ stuck" if stuck else ("● running" if running else "○ stopped")
+    orphaned = runtime.orphaned
+    blocked = runtime.port_blocked
+    state = (
+        "blocked" if blocked
+        else ("orphaned" if orphaned else ("stuck" if stuck else ("running" if running else "stopped")))
+    )
+    label = (
+        "■ blocked" if blocked
+        else ("▲ orphaned" if orphaned else ("▲ stuck" if stuck else ("● running" if running else "○ stopped")))
+    )
     detail = ""
     children: list[dict[str, str]] = []
     actions: list[str] = []
+    if blocked:
+        detail = f"port {spec.port} is held by PID {runtime.port_pid}"
+    elif orphaned:
+        detail = "gateway stopped; WhatsApp child process still running"
 
     if spec.name == "hermes-gateway" and running:
         gateway_state = _read_gateway_state()
@@ -493,8 +591,11 @@ def status(spec: ServiceSpec) -> dict:
     return {
         "running": running,
         "stuck": stuck,
-        "startable": not running and not stuck,
-        "stoppable": running or stuck,
+        "orphaned": orphaned,
+        "blocked": blocked,
+        "supports_terminal": spec.supports_terminal,
+        "startable": not running and not stuck and not orphaned and not blocked,
+        "stoppable": running or stuck or orphaned,
         "state": state,
         "status_label": label,
         "detail": detail,
@@ -505,7 +606,7 @@ def status(spec: ServiceSpec) -> dict:
 
 def start(spec: ServiceSpec, *, show_terminal: bool = False) -> None:
     runtime = _runtime_state(spec)
-    if runtime.running or runtime.stuck:
+    if runtime.running or runtime.stuck or runtime.orphaned or runtime.port_blocked:
         return
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     spec.log_path.parent.mkdir(parents=True, exist_ok=True)
