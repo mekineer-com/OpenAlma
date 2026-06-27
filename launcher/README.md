@@ -42,7 +42,7 @@ update-desktop-database ~/.local/share/applications/ 2>/dev/null || true
 
 ## Notes
 
-- The launcher tracks PIDs in `~/.cache/memu-stack-launcher/`. Stopping the
+- The launcher tracks PIDs in `~/.cache/openalma-launcher/`. Stopping the
   launcher does not stop the services it started — they keep running.
 - `~/.hermes/SOUL.md` is the *Hermes persona file* (a hermes-agent convention),
   not the memU soul concept. They share a name only by accident.

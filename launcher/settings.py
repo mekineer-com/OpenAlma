@@ -1,6 +1,6 @@
 """User-overridable path settings for the launcher.
 
-Stored in ``~/.config/memu-stack-launcher/paths.json``. The launcher's
+Stored in ``~/.config/openalma-launcher/paths.json``. The launcher's
 service definitions read ``apps_root()`` here to locate the four
 sibling repos (mcp-memu-server, hermes-agent, sillytavern, memu) on
 disk. Resolution order:
@@ -20,7 +20,7 @@ import json
 from pathlib import Path
 
 LAUNCHER_DIR = Path(__file__).resolve().parent
-SETTINGS_PATH = Path.home() / ".config" / "memu-stack-launcher" / "paths.json"
+SETTINGS_PATH = Path.home() / ".config" / "openalma-launcher" / "paths.json"
 _AUTODISCOVER_MARKER = "mcp-memu-server/run.py"
 
 

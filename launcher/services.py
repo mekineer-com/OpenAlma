@@ -1,6 +1,6 @@
 """Lifecycle management for memU local-stack services.
 
-The launcher tracks its own pidfile per service in ``~/.cache/memu-stack-launcher/``.
+The launcher tracks its own pidfile per service in ``~/.cache/openalma-launcher/``.
 If a service was started externally (terminal, tmux, plugin), the launcher adopts
 it on first sight via either the service's own pidfile or its listening port.
 After adoption the service is "managed" and Stop works normally.
@@ -28,7 +28,7 @@ from pathlib import Path
 from settings import apps_root as _resolve_apps_root
 
 HERMES_HOME = Path.home() / ".hermes"
-STATE_DIR = Path.home() / ".cache" / "memu-stack-launcher"
+STATE_DIR = Path.home() / ".cache" / "openalma-launcher"
 STARTUP_GRACE_SECONDS = 4.0
 MEMU_SERVER_PORT = 8099
 
