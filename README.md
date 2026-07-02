@@ -164,6 +164,19 @@ Prefer `main` for the latest. If you'd rather pin to a tag, match all repos to t
 | `v0.0.11-buildfix` | Stock SillyTavern — no fork or patches needed; fail-loud error contract across all repos; mental health procedural sidecar; Stack launcher with desktop shortcut |
 | `v0.0.12-buildfix` | Unified chat renderer across all AI-facing paths; force/rebuild split; autonomous activity recap path (soul logs her own actions); APImw cadence global across platforms; ST↔WhatsApp cross-chat awareness; WhatsApp staleness gate + replay dedup; life goals separated from active intentions |
 
+## AI Models
+
+Note: stay on the same embedding model. Switching requires re-embedding everything.
+
+### Working
+
+claude-opus-4-8
+claude-opus-4-6
+claude-sonnet-4-6
+glm-5.2 + glm-5.2:thinking for consolidation
+mistral-small-4-119b-2603 + mistral-small-4-119b-2603:thinking for consolidation
+devstral-2-123b + devstral-2-123b:thinking for consolidation
+
 ---
 
 ## Day-to-day use
