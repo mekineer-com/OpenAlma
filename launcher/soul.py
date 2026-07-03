@@ -9,7 +9,7 @@ import time
 
 import yaml
 
-from launcher.policy import CHANNELS_HOME
+from policy import CHANNELS_HOME
 
 HERMES_CONFIG_PATH = Path.home() / ".hermes" / "config.yaml"
 HERMES_STATE_DB_PATH = CHANNELS_HOME / "state.db"

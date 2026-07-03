@@ -25,7 +25,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from launcher.policy import CHANNELS_HOME as _CHANNELS_HOME
+from policy import CHANNELS_HOME as _CHANNELS_HOME
 from settings import apps_root as _resolve_apps_root
 
 HERMES_HOME = Path.home() / ".hermes"
