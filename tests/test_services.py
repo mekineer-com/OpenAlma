@@ -223,6 +223,44 @@ def test_start_does_not_spawn_over_stuck_verified_process(tmp_path, monkeypatch)
     assert spec.pid_path.read_text(encoding="utf-8") == "123"
 
 
+def test_status_throttles_fallback_process_scan(tmp_path, monkeypatch):
+    spec = services.ServiceSpec(
+        name="channels-daemon",
+        label="channels gateway",
+        cmd=[],
+        cwd=tmp_path / "channels",
+        log_path=tmp_path / "channels.log",
+        pid_path=tmp_path / "channels.pid",
+    )
+    calls = []
+    monkeypatch.setattr(services, "_PROCESS_SCAN_CACHE", {})
+    monkeypatch.setattr(services, "_scan_service_pids", lambda _spec: calls.append(True) or [])
+
+    services.status(spec)
+    services.status(spec)
+
+    assert len(calls) == 1
+
+
+def test_port_listener_lookup_is_cached(monkeypatch):
+    calls = []
+
+    class Result:
+        stdout = 'users:(("python",pid=123,fd=7))'
+
+    def fake_run(*_args, **_kwargs):
+        calls.append(True)
+        return Result()
+
+    monkeypatch.setattr(services, "_PORT_PID_CACHE", {})
+    monkeypatch.setattr(services.subprocess, "run", fake_run)
+
+    assert services._port_listener_pid(8099) == 123
+    assert services._port_listener_pid(8099) == 123
+
+    assert len(calls) == 1
+
+
 def test_hermes_gateway_verified_pids_include_whatsapp_children(tmp_path, monkeypatch):
     hermes_home = tmp_path / ".hermes"
     session_path = hermes_home / "whatsapp" / "session"

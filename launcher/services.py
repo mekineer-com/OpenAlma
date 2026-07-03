@@ -32,6 +32,10 @@ HERMES_HOME = Path.home() / ".hermes"
 STATE_DIR = Path.home() / ".cache" / "openalma-launcher"
 STARTUP_GRACE_SECONDS = 4.0
 MEMU_SERVER_PORT = 8099
+PROCESS_SCAN_CACHE_SECONDS = 10.0
+PORT_PID_CACHE_SECONDS = 5.0
+_PROCESS_SCAN_CACHE: dict[tuple[str, str, str], tuple[float, list[int]]] = {}
+_PORT_PID_CACHE: dict[int, tuple[float, int | None]] = {}
 
 
 @dataclass
@@ -202,6 +206,10 @@ _PORT_PID_RE = re.compile(r"pid=(\d+)")
 
 
 def _port_listener_pid(port: int) -> int | None:
+    now = time.monotonic()
+    cached = _PORT_PID_CACHE.get(port)
+    if cached is not None and now - cached[0] < PORT_PID_CACHE_SECONDS:
+        return cached[1]
     try:
         result = subprocess.run(
             ["ss", "-tlnpH", f"sport = :{port}"],
@@ -210,7 +218,14 @@ def _port_listener_pid(port: int) -> int | None:
     except (OSError, subprocess.TimeoutExpired):
         return None
     m = _PORT_PID_RE.search(result.stdout)
-    return int(m.group(1)) if m else None
+    pid = int(m.group(1)) if m else None
+    _PORT_PID_CACHE[port] = (now, pid)
+    return pid
+
+
+def _clear_port_cache(spec: ServiceSpec) -> None:
+    if spec.port is not None:
+        _PORT_PID_CACHE.pop(spec.port, None)
 
 
 def _proc_cmdline(pid: int) -> str:
@@ -415,6 +430,17 @@ def _scan_service_pids(spec: ServiceSpec) -> list[int]:
     return pids
 
 
+def _scan_service_pids_cached(spec: ServiceSpec) -> list[int]:
+    key = (spec.name, str(spec.cwd), str(spec.pid_path))
+    now = time.monotonic()
+    cached = _PROCESS_SCAN_CACHE.get(key)
+    if cached is not None and now - cached[0] < PROCESS_SCAN_CACHE_SECONDS:
+        return cached[1]
+    pids = _scan_service_pids(spec)
+    _PROCESS_SCAN_CACHE[key] = (now, pids)
+    return pids
+
+
 def _verified_pid_candidates(spec: ServiceSpec) -> list[int]:
     candidates: list[int] = []
     for pid in (_read_pid(spec.pid_path), _read_adopt_pid(spec)):
@@ -424,7 +450,6 @@ def _verified_pid_candidates(spec: ServiceSpec) -> list[int]:
         listener_pid = _port_listener_pid(spec.port)
         if listener_pid is not None:
             candidates.append(listener_pid)
-    candidates.extend(_scan_service_pids(spec))
     if spec.name == "hermes-gateway":
         for pidfile, _markers in _hermes_whatsapp_child_markers():
             pid = _read_pid(pidfile)
@@ -435,6 +460,8 @@ def _verified_pid_candidates(spec: ServiceSpec) -> list[int]:
             pid = _read_pid(pidfile)
             if pid is not None:
                 candidates.append(pid)
+    if not candidates:
+        candidates.extend(_scan_service_pids_cached(spec))
 
     verified: list[int] = []
     seen: set[int] = set()
@@ -707,6 +734,7 @@ def status(spec: ServiceSpec) -> dict:
 
 
 def start(spec: ServiceSpec, *, show_terminal: bool = False) -> None:
+    _clear_port_cache(spec)
     runtime = _runtime_state(spec)
     if runtime.running or runtime.stuck or runtime.orphaned or runtime.port_blocked:
         return
@@ -725,6 +753,7 @@ def start(spec: ServiceSpec, *, show_terminal: bool = False) -> None:
         proc = _spawn_background(spec, env)
     spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
     spec.pid_path.write_text(str(proc.pid))
+    _clear_port_cache(spec)
 
 
 def _signal_pid(pid: int, sig: signal.Signals) -> None:
@@ -741,6 +770,7 @@ def _signal_pid(pid: int, sig: signal.Signals) -> None:
 
 
 def stop(spec: ServiceSpec, *, timeout: float = 10.0) -> None:
+    _clear_port_cache(spec)
     pids = _verified_pid_candidates(spec)
     if not pids:
         _clear_pid(spec)
@@ -770,6 +800,7 @@ def stop(spec: ServiceSpec, *, timeout: float = 10.0) -> None:
     _clear_pid(spec)
     if spec.adopt_pid_path is not None:
         _clear_dead_pidfile(spec.adopt_pid_path)
+    _clear_port_cache(spec)
 
 
 def _clear_pid(spec: ServiceSpec) -> None:
