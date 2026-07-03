@@ -86,6 +86,31 @@ def _parse_gateway_pid(text: str) -> int | None:
     return pid if isinstance(pid, int) and pid > 0 else None
 
 
+def _atomic_start_command() -> str:
+    return r'''
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/openalma"
+TOKEN_FILE="$LOG_DIR/atomic-token"
+API_URL="${ATOMIC_SERVER_URL:-http://127.0.0.1:8080}"
+mkdir -p "$LOG_DIR"
+token=""
+if [ -s "$TOKEN_FILE" ]; then
+    token=$(sed -n '1p' "$TOKEN_FILE")
+fi
+if [ -z "$token" ]; then
+    token_output=$(cargo run -p atomic-server -- token create --name openalma-launcher)
+    token=$(printf '%s\n' "$token_output" | awk '/Token:/ {print $2; exit}')
+fi
+[ -n "$token" ]
+printf '%s\n' "$token" > "$TOKEN_FILE"
+export MEMU_SERVER_URL="${MEMU_SERVER_URL:-http://127.0.0.1:8099}"
+export MEMU_USER_ID="${MEMU_USER_ID:-Marcos}"
+export MEMU_SOUL_ID="${MEMU_SOUL_ID:-Siri}"
+export VITE_ATOMIC_SERVER_URL="$API_URL"
+export VITE_ATOMIC_AUTH_TOKEN="$token"
+exec npm run dev:server
+'''.strip()
+
+
 def all_services() -> list[ServiceSpec]:
     root = _resolve_apps_root()
     if root is None:
@@ -100,6 +125,15 @@ def all_services() -> list[ServiceSpec]:
             pid_path=STATE_DIR / "memu-server.pid",
             port=MEMU_SERVER_PORT,
             adopt_pid_path=_resolve_memu_server_pid_path(root),
+        ),
+        ServiceSpec(
+            name="atomic",
+            label="Atomic memory editor",
+            cmd=["sh", "-c", _atomic_start_command()],
+            cwd=root / "atomic",
+            log_path=Path.home() / ".local" / "state" / "openalma" / "atomic.log",
+            pid_path=STATE_DIR / "atomic.pid",
+            port=1420,
         ),
         ServiceSpec(
             name="hermes-gateway",
@@ -231,6 +265,13 @@ def _matches_service_process(spec: ServiceSpec, pid: int) -> bool:
         return cwd_matches and "gateway.daemon" in cmd
     if spec.name == "sillytavern":
         return cwd_matches and ("server.js" in cmd or "start.sh" in cmd)
+    if spec.name == "atomic":
+        return cwd_matches and (
+            "npm run dev:server" in cmd
+            or "scripts/dev-server.js" in cmd
+            or "atomic-server" in cmd
+            or "vite" in cmd
+        )
     return False
 
 

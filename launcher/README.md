@@ -1,8 +1,9 @@
 # OpenAlma Launcher
 
-A small local web UI that starts, stops, and configures the four services in OpenAlma:
+A small local web UI that starts, stops, and configures the local OpenAlma services:
 
 - `mcp-memu-server` (memory engine)
+- Atomic memory editor
 - `hermes-agent` gateway (WhatsApp/SillyTavern bridge to the soul)
 - WhatsApp bridge (Baileys/Node)
 - SillyTavern

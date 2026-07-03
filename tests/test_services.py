@@ -26,7 +26,7 @@ class _FakeResponse:
 
 def test_whatsapp_bridge_is_not_a_normal_stack_service(tmp_path, monkeypatch):
     root = tmp_path / "apps"
-    for name in ("mcp-memu-server", "hermes-agent", "sillytavern"):
+    for name in ("mcp-memu-server", "atomic", "hermes-agent", "sillytavern"):
         (root / name).mkdir(parents=True)
     monkeypatch.setattr(services, "_resolve_apps_root", lambda: root)
 
@@ -35,6 +35,21 @@ def test_whatsapp_bridge_is_not_a_normal_stack_service(tmp_path, monkeypatch):
     assert "hermes-gateway" in names
     assert "whatsapp-bridge" not in names
     assert "whatsapp-web-source" not in names
+
+
+def test_atomic_service_is_managed_by_launcher(tmp_path, monkeypatch):
+    root = tmp_path / "apps"
+    for name in ("mcp-memu-server", "atomic", "hermes-agent", "sillytavern"):
+        (root / name).mkdir(parents=True)
+    monkeypatch.setattr(services, "_resolve_apps_root", lambda: root)
+
+    spec = next(s for s in services.all_services() if s.name == "atomic")
+
+    assert spec.label == "Atomic memory editor"
+    assert spec.cwd == root / "atomic"
+    assert spec.port == 1420
+    assert spec.cmd[:2] == ["sh", "-c"]
+    assert "npm run dev:server" in spec.cmd[2]
 
 
 def test_memorize_pending_sends_user_id(monkeypatch):
@@ -85,6 +100,24 @@ def test_sillytavern_match_requires_expected_cwd(tmp_path, monkeypatch):
         pid_path=tmp_path / "st.pid",
     )
     monkeypatch.setattr(services, "_proc_cmdline", lambda _pid: "node server.js")
+
+    monkeypatch.setattr(services, "_proc_cwd", lambda _pid: tmp_path / "other")
+    assert services._matches_service_process(spec, 123) is False
+
+    monkeypatch.setattr(services, "_proc_cwd", lambda _pid: spec.cwd)
+    assert services._matches_service_process(spec, 123) is True
+
+
+def test_atomic_match_requires_expected_cwd(tmp_path, monkeypatch):
+    spec = services.ServiceSpec(
+        name="atomic",
+        label="Atomic memory editor",
+        cmd=[],
+        cwd=tmp_path / "atomic",
+        log_path=tmp_path / "atomic.log",
+        pid_path=tmp_path / "atomic.pid",
+    )
+    monkeypatch.setattr(services, "_proc_cmdline", lambda _pid: "node scripts/dev-server.js")
 
     monkeypatch.setattr(services, "_proc_cwd", lambda _pid: tmp_path / "other")
     assert services._matches_service_process(spec, 123) is False
