@@ -1,6 +1,7 @@
 """Soul selector helpers for the OpenAlma launcher."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -12,6 +13,7 @@ from launcher.policy import CHANNELS_HOME
 
 HERMES_CONFIG_PATH = Path.home() / ".hermes" / "config.yaml"
 HERMES_STATE_DB_PATH = CHANNELS_HOME / "state.db"
+CHANNELS_CONFIG_PATH = CHANNELS_HOME / "config.json"
 
 
 def _load_config() -> dict:
@@ -47,6 +49,29 @@ def _write_config(config: dict) -> None:
         tmp.write(dumped)
         tmp_path = Path(tmp.name)
     tmp_path.replace(HERMES_CONFIG_PATH)
+
+
+def _write_channels_config(soul_id: str, *, reply_prefix: str | None) -> None:
+    try:
+        data = json.loads(CHANNELS_CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    data["soul_id"] = soul_id
+    if reply_prefix is not None:
+        data["reply_prefix"] = reply_prefix
+    CHANNELS_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    dumped = json.dumps(data, indent=2) + "\n"
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=str(CHANNELS_CONFIG_PATH.parent),
+        delete=False,
+    ) as tmp:
+        tmp.write(dumped)
+        tmp_path = Path(tmp.name)
+    tmp_path.replace(CHANNELS_CONFIG_PATH)
 
 
 def _stamp_soul_active_since(soul_id: str, *, now: float | None = None) -> None:
@@ -215,4 +240,7 @@ def set_active_soul_id(soul_id: str) -> None:
 
     _refresh_whatsapp_reply_prefix(config, selected=selected, old_soul_ids=old_soul_ids)
     _write_config(config)
+    whatsapp_cfg = config.get("whatsapp")
+    new_reply_prefix = whatsapp_cfg.get("reply_prefix") if isinstance(whatsapp_cfg, dict) else None
+    _write_channels_config(selected, reply_prefix=new_reply_prefix)
     _stamp_soul_active_since(selected)

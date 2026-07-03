@@ -1,3 +1,4 @@
+import json
 import sys
 from types import SimpleNamespace
 from pathlib import Path
@@ -55,3 +56,47 @@ def test_read_active_user_id_from_first_soul_agent(monkeypatch):
     )
 
     assert soul.read_active_user_id() == "Marcos"
+
+
+def test_set_active_soul_id_writes_channels_config(tmp_path, monkeypatch):
+    channels_cfg = tmp_path / "config.json"
+    channels_cfg.write_text(
+        json.dumps({"soul_id": "OldSoul", "user_id": "Marcos"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", channels_cfg)
+    monkeypatch.setattr(
+        soul,
+        "_load_config",
+        lambda: {"soul_mode": {"agents": {"main": {"role": "soul", "soul_id": "OldSoul"}}}},
+    )
+    monkeypatch.setattr(soul, "_write_config", lambda _c: None)
+    monkeypatch.setattr(soul, "_stamp_soul_active_since", lambda *_a, **_k: None)
+
+    soul.set_active_soul_id("NewSoul")
+
+    data = json.loads(channels_cfg.read_text(encoding="utf-8"))
+    assert data["soul_id"] == "NewSoul"
+    assert data["user_id"] == "Marcos"  # unknown keys preserved
+
+
+def test_set_active_soul_id_writes_reply_prefix_to_channels_config(tmp_path, monkeypatch):
+    channels_cfg = tmp_path / "config.json"
+    channels_cfg.write_text(json.dumps({"soul_id": "OldSoul"}), encoding="utf-8")
+    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", channels_cfg)
+    monkeypatch.setattr(
+        soul,
+        "_load_config",
+        lambda: {
+            "soul_mode": {"agents": {"main": {"role": "soul", "soul_id": "OldSoul"}}},
+            "whatsapp": {"reply_prefix": "Echo:", "reply_prefix_template": "{soul}:"},
+        },
+    )
+    monkeypatch.setattr(soul, "_write_config", lambda _c: None)
+    monkeypatch.setattr(soul, "_stamp_soul_active_since", lambda *_a, **_k: None)
+
+    soul.set_active_soul_id("NewSoul")
+
+    data = json.loads(channels_cfg.read_text(encoding="utf-8"))
+    assert data["soul_id"] == "NewSoul"
+    assert data["reply_prefix"] == "NewSoul:"
