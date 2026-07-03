@@ -491,6 +491,72 @@ def test_hermes_gateway_status_ignores_stale_runtime_pid(tmp_path, monkeypatch):
     assert status["detail"] == "waiting for Hermes status"
 
 
+def test_channels_daemon_in_all_services(tmp_path, monkeypatch):
+    root = tmp_path / "apps"
+    for name in ("mcp-memu-server", "hermes-agent", "channels"):
+        (root / name).mkdir(parents=True)
+    (root / "sillytavern" / "SillyTavern").mkdir(parents=True)
+    monkeypatch.setattr(services, "_resolve_apps_root", lambda: root)
+
+    names = [spec.name for spec in services.all_services()]
+
+    assert "channels-daemon" in names
+
+
+def test_channels_daemon_match_requires_cwd_and_gateway_module(tmp_path, monkeypatch):
+    spec = services.ServiceSpec(
+        name="channels-daemon",
+        label="channels gateway",
+        cmd=[],
+        cwd=tmp_path / "channels",
+        log_path=tmp_path / "channels.log",
+        pid_path=tmp_path / "channels.pid",
+    )
+    monkeypatch.setattr(services, "_proc_cmdline", lambda _pid: "python3 -m gateway.daemon")
+
+    monkeypatch.setattr(services, "_proc_cwd", lambda _pid: tmp_path / "other")
+    assert services._matches_service_process(spec, 123) is False
+
+    monkeypatch.setattr(services, "_proc_cwd", lambda _pid: spec.cwd)
+    assert services._matches_service_process(spec, 123) is True
+
+
+def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monkeypatch):
+    channels_home = tmp_path / "channels_data"
+    whatsapp_home = channels_home / "whatsapp"
+    session_path = whatsapp_home / "session"
+    session_path.mkdir(parents=True)
+    (session_path / "bridge.pid").write_text("41", encoding="utf-8")
+    (whatsapp_home / "web_source.pid").write_text("42", encoding="utf-8")
+    monkeypatch.setattr(services, "_CHANNELS_HOME", channels_home)
+    monkeypatch.setattr(services, "_scan_service_pids", lambda _spec: [])
+    monkeypatch.setattr(services, "_is_alive", lambda pid: pid in {41, 42})
+
+    def cmdline(pid):
+        if pid == 41:
+            return f"node bridge.js --port 3000 --session {session_path} --mode self-chat"
+        if pid == 42:
+            return (
+                "node source-daemon.js "
+                f"--db {whatsapp_home / 'web_source.db'} "
+                f"--status {whatsapp_home / 'web_source_status.json'}"
+            )
+        return ""
+
+    monkeypatch.setattr(services, "_proc_cmdline", cmdline)
+    monkeypatch.setattr(services, "_proc_cwd", lambda _pid: None)
+    spec = services.ServiceSpec(
+        name="channels-daemon",
+        label="channels gateway",
+        cmd=[],
+        cwd=tmp_path / "channels",
+        log_path=tmp_path / "channels.log",
+        pid_path=tmp_path / "channels.pid",
+    )
+
+    assert services._verified_pid_candidates(spec) == [41, 42]
+
+
 def test_status_json_includes_supports_terminal(tmp_path, monkeypatch):
     spec = services.ServiceSpec(
         name="sillytavern",

@@ -29,6 +29,7 @@ from settings import apps_root as _resolve_apps_root
 
 HERMES_HOME = Path.home() / ".hermes"
 STATE_DIR = Path.home() / ".cache" / "openalma-launcher"
+_CHANNELS_HOME = Path(os.environ.get("CHANNELS_HOME") or "/home/marcos/apps-codex/channels/data")
 STARTUP_GRACE_SECONDS = 4.0
 MEMU_SERVER_PORT = 8099
 
@@ -119,6 +120,14 @@ def all_services() -> list[ServiceSpec]:
             },
             adopt_pid_path=HERMES_HOME / "gateway.pid",
             adopt_pid_parser=_parse_gateway_pid,
+        ),
+        ServiceSpec(
+            name="channels-daemon",
+            label="channels gateway",
+            cmd=[shutil.which("python3") or "python3", "-m", "gateway.daemon"],
+            cwd=root / "channels",
+            log_path=Path("/tmp/channels-daemon.log"),
+            pid_path=STATE_DIR / "channels-daemon.pid",
         ),
         ServiceSpec(
             name="sillytavern",
@@ -218,6 +227,8 @@ def _matches_service_process(spec: ServiceSpec, pid: int) -> bool:
         if not cwd_matches:
             return False
         return "gateway.run" in cmd or "hermes gateway run" in cmd
+    if spec.name == "channels-daemon":
+        return cwd_matches and "gateway.daemon" in cmd
     if spec.name == "sillytavern":
         return cwd_matches and ("server.js" in cmd or "start.sh" in cmd)
     return False
@@ -306,6 +317,29 @@ def _hermes_whatsapp_child_markers() -> list[tuple[Path, tuple[str, ...]]]:
     ]
 
 
+def _channels_whatsapp_child_markers() -> list[tuple[Path, tuple[str, ...]]]:
+    whatsapp_home = _CHANNELS_HOME / "whatsapp"
+    session_path = whatsapp_home / "session"
+    web_source_db = whatsapp_home / "web_source.db"
+    web_source_status = whatsapp_home / "web_source_status.json"
+    return [
+        (
+            session_path / "bridge.pid",
+            ("bridge.js", "--session", str(session_path)),
+        ),
+        (
+            whatsapp_home / "web_source.pid",
+            (
+                "source-daemon.js",
+                "--db",
+                str(web_source_db),
+                "--status",
+                str(web_source_status),
+            ),
+        ),
+    ]
+
+
 def _cmdline_has_markers(pid: int, markers: tuple[str, ...]) -> bool:
     cmd = _proc_cmdline(pid).lower()
     return bool(cmd) and all(marker.lower() in cmd for marker in markers)
@@ -314,13 +348,19 @@ def _cmdline_has_markers(pid: int, markers: tuple[str, ...]) -> bool:
 def _matches_managed_process(spec: ServiceSpec, pid: int) -> bool:
     if _matches_service_process(spec, pid):
         return True
-    if spec.name != "hermes-gateway":
-        return False
-    return _matches_hermes_child_process(pid)
+    if spec.name == "hermes-gateway":
+        return _matches_hermes_child_process(pid)
+    if spec.name == "channels-daemon":
+        return _matches_channels_child_process(pid)
+    return False
 
 
 def _matches_hermes_child_process(pid: int) -> bool:
     return any(_cmdline_has_markers(pid, markers) for _pidfile, markers in _hermes_whatsapp_child_markers())
+
+
+def _matches_channels_child_process(pid: int) -> bool:
+    return any(_cmdline_has_markers(pid, markers) for _pidfile, markers in _channels_whatsapp_child_markers())
 
 
 def _scan_service_pids(spec: ServiceSpec) -> list[int]:
@@ -346,6 +386,11 @@ def _verified_pid_candidates(spec: ServiceSpec) -> list[int]:
     candidates.extend(_scan_service_pids(spec))
     if spec.name == "hermes-gateway":
         for pidfile, _markers in _hermes_whatsapp_child_markers():
+            pid = _read_pid(pidfile)
+            if pid is not None:
+                candidates.append(pid)
+    if spec.name == "channels-daemon":
+        for pidfile, _markers in _channels_whatsapp_child_markers():
             pid = _read_pid(pidfile)
             if pid is not None:
                 candidates.append(pid)
@@ -456,7 +501,12 @@ def is_running(spec: ServiceSpec) -> bool:
 def _runtime_state(spec: ServiceSpec) -> RuntimeState:
     verified = _verified_pid_candidates(spec)
     service_pids = tuple(pid for pid in verified if _matches_service_process(spec, pid))
-    child_pids = tuple(pid for pid in verified if spec.name == "hermes-gateway" and _matches_hermes_child_process(pid))
+    child_pids = tuple(
+        pid for pid in verified if (
+            (spec.name == "hermes-gateway" and _matches_hermes_child_process(pid)) or
+            (spec.name == "channels-daemon" and _matches_channels_child_process(pid))
+        )
+    )
     port_pid = _port_listener_pid(spec.port) if spec.port is not None else None
     port_blocked = (
         port_pid is not None
@@ -471,7 +521,7 @@ def _runtime_state(spec: ServiceSpec) -> RuntimeState:
 
     pid = verified[0]
     _remember_verified_pid(spec, pid)
-    if spec.name == "hermes-gateway" and not service_pids and child_pids:
+    if spec.name in {"hermes-gateway", "channels-daemon"} and not service_pids and child_pids:
         return RuntimeState(
             verified_pids=tuple(verified),
             service_pids=service_pids,
