@@ -25,11 +25,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from launcher.policy import CHANNELS_HOME as _CHANNELS_HOME
 from settings import apps_root as _resolve_apps_root
 
 HERMES_HOME = Path.home() / ".hermes"
 STATE_DIR = Path.home() / ".cache" / "openalma-launcher"
-_CHANNELS_HOME = Path(os.environ.get("CHANNELS_HOME") or "/home/marcos/apps-codex/channels/data")
 STARTUP_GRACE_SECONDS = 4.0
 MEMU_SERVER_PORT = 8099
 
