@@ -2,16 +2,17 @@
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Literal
 
-HERMES_HOME = Path.home() / ".hermes"
-DIRECTORY_PATH = HERMES_HOME / "channel_directory.json"
-POLICY_PATH = HERMES_HOME / "memu.json"
-CREDS_PATH = HERMES_HOME / "whatsapp" / "session" / "creds.json"
-GROUP_NAME_CACHE_PATH = HERMES_HOME / "whatsapp_group_names.json"
+CHANNELS_HOME = Path(os.environ.get("CHANNELS_HOME") or "/home/marcos/apps-codex/channels/data")
+DIRECTORY_PATH = CHANNELS_HOME / "channel_directory.json"
+POLICY_PATH = CHANNELS_HOME / "memu.json"
+CREDS_PATH = CHANNELS_HOME / "whatsapp" / "session" / "creds.json"
+GROUP_NAME_CACHE_PATH = CHANNELS_HOME / "whatsapp_group_names.json"
 BRIDGE_BASE_URL = "http://127.0.0.1:3000"
 
 Policy = Literal["full", "listen_only", "excluded"]
