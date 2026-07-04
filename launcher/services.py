@@ -166,6 +166,10 @@ def all_services() -> list[ServiceSpec]:
             cwd=root / "channels",
             log_path=Path("/tmp/channels-daemon.log"),
             pid_path=STATE_DIR / "channels-daemon.pid",
+            env={
+                "WHATSAPP_MODE": "bot",
+                "WHATSAPP_ALLOWED_USERS": "*",
+            },
         ),
         ServiceSpec(
             name="sillytavern",
