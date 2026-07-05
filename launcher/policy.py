@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -52,6 +53,95 @@ def _self_identifiers() -> set[str]:
         if norm:
             out.add(norm)
     return out
+
+
+# --- WhatsApp phone/LID alias resolution ------------------------------------
+# Hunk from channels gateway/whatsapp_identity.py (_SAFE_IDENTIFIER_RE,
+# _load_creds_alias_map, expand_whatsapp_aliases). Deltas: session dir under
+# CHANNELS_HOME, local _normalize_wa_id, debug logging dropped.
+SESSION_DIR = CHANNELS_HOME / "whatsapp" / "session"
+_SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9@.+\-]+$")
+
+
+def _load_creds_alias_map(session_dir: Path) -> dict[str, str]:
+    creds_path = session_dir / "creds.json"
+    if not creds_path.exists():
+        return {}
+    try:
+        parsed = json.loads(creds_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    me = parsed.get("me") if isinstance(parsed, dict) else None
+    if not isinstance(me, dict):
+        return {}
+
+    phone_id = _normalize_wa_id(me.get("id"))
+    lid_id = _normalize_wa_id(me.get("lid"))
+    if not phone_id or not lid_id or phone_id == lid_id:
+        return {}
+
+    return {
+        phone_id: lid_id,
+        lid_id: phone_id,
+    }
+
+
+def _expand_wa_aliases(identifier: str) -> set[str]:
+    """Resolve WhatsApp phone/LID aliases via bridge session mapping files."""
+    normalized = _normalize_wa_id(identifier)
+    if not normalized:
+        return set()
+
+    session_dir = SESSION_DIR
+    creds_alias_map = _load_creds_alias_map(session_dir)
+    resolved: set[str] = set()
+    queue = [normalized]
+
+    while queue:
+        current = queue.pop(0)
+        if not current or current in resolved:
+            continue
+        if not _SAFE_IDENTIFIER_RE.match(current):
+            continue
+
+        resolved.add(current)
+        for suffix in ("", "_reverse"):
+            mapping_path = session_dir / f"lid-mapping-{current}{suffix}.json"
+            if not mapping_path.exists():
+                continue
+            try:
+                mapped = _normalize_wa_id(
+                    json.loads(mapping_path.read_text(encoding="utf-8"))
+                )
+            except (OSError, json.JSONDecodeError):
+                continue
+            if mapped and mapped not in resolved:
+                queue.append(mapped)
+
+        mapped_from_creds = creds_alias_map.get(current, "")
+        if mapped_from_creds and mapped_from_creds not in resolved:
+            queue.append(mapped_from_creds)
+
+    return resolved
+
+
+def settings_for_chat(chat_id: str, settings: dict[str, dict[str, bool | str]]) -> dict:
+    """Look up a chat's saved settings across phone-JID/LID key variants.
+
+    memu.json rows may be keyed by whichever alias form was current when
+    they were saved; the bridge chat list may surface the other form.
+    """
+    row = settings.get(str(chat_id or ""))
+    if row is not None:
+        return row
+    aliases = _expand_wa_aliases(chat_id)
+    if not aliases:
+        return {}
+    for key, entry in settings.items():
+        if _normalize_wa_id(key) in aliases:
+            return entry
+    return {}
 
 
 def _looks_like_raw_id(name: str) -> bool:
@@ -296,7 +386,18 @@ def write_channel_settings(updates: dict[str, dict[str, bool | str]]) -> None:
         if p == "excluded":
             memorize = False
 
-        existing = channels.get(chat_id)
+        # If the setting already lives under an alias-form key (@lid row
+        # while the UI shows the phone JID, or vice versa), update that
+        # key instead of creating a conflicting duplicate.
+        store_key = chat_id
+        if chat_id not in channels:
+            aliases = _expand_wa_aliases(chat_id)
+            for existing_key in channels:
+                if _normalize_wa_id(existing_key) in aliases:
+                    store_key = existing_key
+                    break
+
+        existing = channels.get(store_key)
         row = dict(existing) if isinstance(existing, dict) else {}
         metadata = {
             key: value
@@ -306,11 +407,11 @@ def write_channel_settings(updates: dict[str, dict[str, bool | str]]) -> None:
 
         if p == "full" and memorize and not metadata:
             # Default behavior: no row needed.
-            channels.pop(chat_id, None)
+            channels.pop(store_key, None)
             continue
         row["policy"] = p
         row["memorize"] = memorize
-        channels[chat_id] = row
+        channels[store_key] = row
 
     POLICY_PATH.parent.mkdir(parents=True, exist_ok=True)
     POLICY_PATH.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")

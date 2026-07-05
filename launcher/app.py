@@ -57,16 +57,19 @@ def index(request: Request) -> HTMLResponse:
     ]
     chats = policy.list_whatsapp_chats()
     current = policy.read_channel_settings()
-    chat_rows = [
-        {
-            "id": str(c.get("id", "")),
-            "name": str(c.get("name", "")),
-            "type": str(c.get("type", "")),
-            "policy": str(current.get(str(c.get("id", "")), {}).get("policy") or "full"),
-            "memorize": bool(current.get(str(c.get("id", "")), {}).get("memorize", True)),
-        }
-        for c in chats
-    ]
+    chat_rows = []
+    for c in chats:
+        chat_id = str(c.get("id", ""))
+        saved = policy.settings_for_chat(chat_id, current)
+        chat_rows.append(
+            {
+                "id": chat_id,
+                "name": str(c.get("name", "")),
+                "type": str(c.get("type", "")),
+                "policy": str(saved.get("policy") or "full"),
+                "memorize": bool(saved.get("memorize", True)),
+            }
+        )
     visible_chats = [c for c in chat_rows if c["policy"] != "excluded"]
     excluded_chats = [c for c in chat_rows if c["policy"] == "excluded"]
     editable_paths = _editable_configs(apps_root)
