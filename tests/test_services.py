@@ -224,6 +224,7 @@ def test_start_does_not_spawn_over_stuck_verified_process(tmp_path, monkeypatch)
 
 
 def test_status_throttles_fallback_process_scan(tmp_path, monkeypatch):
+    monkeypatch.setattr(services, "_CHANNELS_HOME", tmp_path / "channels_data")
     spec = services.ServiceSpec(
         name="channels-daemon",
         label="channels gateway",
@@ -240,6 +241,24 @@ def test_status_throttles_fallback_process_scan(tmp_path, monkeypatch):
     services.status(spec)
 
     assert len(calls) == 1
+
+
+def test_verified_pids_scan_when_pidfile_candidate_is_stale(tmp_path, monkeypatch):
+    monkeypatch.setattr(services, "_CHANNELS_HOME", tmp_path / "channels_data")
+    spec = services.ServiceSpec(
+        name="channels-daemon",
+        label="channels gateway",
+        cmd=[],
+        cwd=tmp_path / "channels",
+        log_path=tmp_path / "channels.log",
+        pid_path=tmp_path / "channels.pid",
+    )
+    spec.pid_path.write_text("11", encoding="utf-8")
+    monkeypatch.setattr(services, "_scan_service_pids", lambda _spec: [22])
+    monkeypatch.setattr(services, "_is_alive", lambda pid: pid == 22)
+    monkeypatch.setattr(services, "_matches_managed_process", lambda _spec, pid: pid == 22)
+
+    assert services._verified_pid_candidates(spec) == [22]
 
 
 def test_port_listener_lookup_is_cached(monkeypatch):
@@ -626,6 +645,38 @@ def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monke
     )
 
     assert services._verified_pid_candidates(spec) == [41, 42]
+
+
+def test_channels_daemon_status_uses_bridge_and_web_source_health(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        services,
+        "_runtime_state",
+        lambda _spec: services.RuntimeState(
+            verified_pids=(111,),
+            service_pids=(111,),
+            pid=111,
+            running=True,
+        ),
+    )
+    monkeypatch.setattr(services, "_channels_bridge_health", lambda _config=None: {"status": "connected", "mode": "bot"})
+    monkeypatch.setattr(services, "_read_channels_web_source_status", lambda: {"state": "pairing"})
+    spec = services.ServiceSpec(
+        name="channels-daemon",
+        label="channels gateway",
+        cmd=[],
+        cwd=tmp_path / "channels",
+        log_path=tmp_path / "channels.log",
+        pid_path=tmp_path / "channels.pid",
+    )
+
+    status = services.status(spec)
+
+    assert status["state"] == "starting"
+    assert status["status_label"] == "◐ starting"
+    assert status["children"] == [
+        {"name": "bridge", "state": "connected", "detail": "mode bot"},
+        {"name": "web-source", "state": "pairing", "detail": ""},
+    ]
 
 
 def test_status_json_includes_supports_terminal(tmp_path, monkeypatch):

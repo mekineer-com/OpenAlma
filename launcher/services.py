@@ -464,9 +464,6 @@ def _verified_pid_candidates(spec: ServiceSpec) -> list[int]:
             pid = _read_pid(pidfile)
             if pid is not None:
                 candidates.append(pid)
-    if not candidates:
-        candidates.extend(_scan_service_pids_cached(spec))
-
     verified: list[int] = []
     seen: set[int] = set()
     for pid in candidates:
@@ -475,6 +472,13 @@ def _verified_pid_candidates(spec: ServiceSpec) -> list[int]:
         seen.add(pid)
         if _is_alive(pid) and _matches_managed_process(spec, pid):
             verified.append(pid)
+    if not verified:
+        for pid in _scan_service_pids_cached(spec):
+            if pid in seen:
+                continue
+            seen.add(pid)
+            if _is_alive(pid) and _matches_managed_process(spec, pid):
+                verified.append(pid)
     return verified
 
 
@@ -635,6 +639,49 @@ def _read_gateway_state() -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _read_channels_config() -> dict:
+    try:
+        data = json.loads((_CHANNELS_HOME / "config.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _coerce_bool(value: object, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "off"}:
+            return False
+        return default
+    return default if value is None else bool(value)
+
+
+def _channels_bridge_health(config: dict | None = None) -> dict:
+    port = (config or _read_channels_config()).get("bridge_port", 3000)
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        port = 3000
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=0.5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _read_channels_web_source_status() -> dict:
+    try:
+        data = json.loads((_CHANNELS_HOME / "whatsapp" / "web_source_status.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def memorize_pending(soul_id: str, user_id: str = "") -> dict:
     """Read memU's pending-memorize snapshot; {} when unreachable or malformed."""
     memu_server = next((svc for svc in all_services() if svc.name == "memu-server"), None)
@@ -720,6 +767,41 @@ def status(spec: ServiceSpec) -> dict:
             state = "starting"
             label = "◐ starting"
             detail = "waiting for Hermes status"
+
+    if spec.name == "channels-daemon" and running:
+        channels_config = _read_channels_config()
+        web_source_enabled = _coerce_bool(channels_config.get("web_source_enabled"), True)
+        bridge = _channels_bridge_health(channels_config)
+        web_source = _read_channels_web_source_status()
+        bridge_state = str(bridge.get("status") or "").strip().lower()
+        web_source_state = str(web_source.get("state") or "").strip().lower()
+        if bridge:
+            child = _child_status_parts("bridge", bridge)
+            children.append(child or {"name": "bridge", "state": bridge_state or "unknown", "detail": ""})
+        else:
+            children.append({"name": "bridge", "state": "unknown", "detail": "health unavailable"})
+        if web_source_enabled:
+            if web_source:
+                child = _child_status_parts("web-source", web_source)
+                children.append(child or {"name": "web-source", "state": web_source_state or "unknown", "detail": ""})
+            else:
+                children.append({"name": "web-source", "state": "unknown", "detail": "status unavailable"})
+
+        web_source_ok = (not web_source_enabled) or web_source_state == "ready"
+        web_source_starting = web_source_state in {"starting", "pairing", "authenticated"}
+        if bridge_state == "connected" and web_source_ok:
+            state = "healthy"
+            label = "● healthy"
+        elif bridge_state in {"connecting", "starting"} or web_source_starting:
+            state = "starting"
+            label = "◐ starting"
+        elif bridge_state or web_source_state:
+            state = "degraded"
+            label = "▲ degraded"
+        else:
+            state = "starting"
+            label = "◐ starting"
+        detail = f"WhatsApp bridge {bridge_state or 'unknown'}"
 
     return {
         "running": running,
