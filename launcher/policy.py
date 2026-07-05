@@ -208,33 +208,11 @@ def _write_group_name_cache(cache: dict[str, str]) -> None:
         return
 
 
-def _fetch_bridge_known_chats(*, timeout: float = 1.5) -> list[dict]:
-    """Best-effort chat discovery from the WhatsApp bridge runtime cache."""
-    url = f"{BRIDGE_BASE_URL}/chats-known"
-    try:
-        with urllib.request.urlopen(url, timeout=timeout) as resp:
-            if resp.status != 200:
-                return []
-            payload = json.loads(resp.read().decode("utf-8"))
-    except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError):
-        return []
-    rows = payload.get("chats") if isinstance(payload, dict) else None
-    if not isinstance(rows, list):
-        return []
-    out: list[dict] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        chat_id = str(row.get("id") or "").strip()
-        if not chat_id:
-            continue
-        chat_type = str(row.get("type") or "").strip() or "dm"
-        name = str(row.get("name") or "").strip()
-        out.append({"id": chat_id, "type": chat_type, "name": name})
-    return out
-
-
 def list_whatsapp_chats() -> list[dict]:
+    """List chats from channel_directory.json — chats with real session
+    history only. The bridge's /chats-known cache is intentionally not
+    used: it accumulates every id it ever saw, crowding the policy UI
+    with contacts Marcos has no chats with (Marcos, 2026-07-04)."""
     try:
         data = json.loads(DIRECTORY_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -243,19 +221,6 @@ def list_whatsapp_chats() -> list[dict]:
     whatsapp = platforms.get("whatsapp") if isinstance(platforms, dict) else None
     if not isinstance(whatsapp, list):
         whatsapp = []
-
-    bridge_chats = _fetch_bridge_known_chats()
-
-    if bridge_chats:
-        by_id: dict[str, dict] = {}
-        for chat in bridge_chats:
-            chat_id = str(chat.get("id") or "").strip()
-            if chat_id:
-                by_id[chat_id] = chat
-        whatsapp = list(by_id.values())
-    else:
-        # Bridge down — fall back to directory
-        pass
 
     whatsapp = [c for c in whatsapp if isinstance(c, dict) and str(c.get("id") or "").strip()]
     if not whatsapp:
