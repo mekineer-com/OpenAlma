@@ -19,7 +19,7 @@ def test_whatsapp_pair_status_reads_channels_state(tmp_path, monkeypatch):
     }
 
 
-def test_whatsapp_pair_status_hides_qr_when_paired(tmp_path, monkeypatch):
+def test_whatsapp_pair_status_trusts_live_web_source_state_over_auth_dir(tmp_path, monkeypatch):
     (tmp_path / "channels_data" / "whatsapp" / "wwebjs_auth").mkdir(parents=True)
     monkeypatch.setattr(services, "_read_channels_config", lambda: {})
     monkeypatch.setattr(services, "_channels_bridge_health", lambda _config=None: {"paired": True, "qr": "bridge-qr"})
@@ -28,6 +28,19 @@ def test_whatsapp_pair_status_hides_qr_when_paired(tmp_path, monkeypatch):
 
     assert services.whatsapp_pair_status() == {
         "bridge": {"paired": True, "qr": None},
+        "websource": {"paired": False, "qr": "web-qr"},
+    }
+
+
+def test_whatsapp_pair_status_uses_auth_dir_when_status_missing(tmp_path, monkeypatch):
+    (tmp_path / "channels_data" / "whatsapp" / "wwebjs_auth").mkdir(parents=True)
+    monkeypatch.setattr(services, "_read_channels_config", lambda: {})
+    monkeypatch.setattr(services, "_channels_bridge_health", lambda _config=None: {})
+    monkeypatch.setattr(services, "_read_channels_web_source_status", lambda: {})
+    monkeypatch.setattr(services, "_CHANNELS_HOME", tmp_path / "channels_data")
+
+    assert services.whatsapp_pair_status() == {
+        "bridge": {"paired": False, "qr": None},
         "websource": {"paired": True, "qr": None},
     }
 
