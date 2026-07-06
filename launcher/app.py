@@ -92,6 +92,7 @@ def index(request: Request) -> HTMLResponse:
             "chats": chat_rows,
             "visible_chats": visible_chats,
             "excluded_chats": excluded_chats,
+            "channel_directory_path": str(policy.DIRECTORY_PATH),
             "policies": policy.ALL_POLICIES,
             "active_soul": active_soul,
             "soul_ids": soul_ids,

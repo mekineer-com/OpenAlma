@@ -50,3 +50,27 @@ def test_excluded_whatsapp_chats_are_collapsed():
     assert "Hidden" not in main_table
     assert "<summary>Excluded (1)</summary>" in excluded_section
     assert "Hidden" in excluded_section
+
+
+def test_empty_policy_view_shows_actual_channel_directory_path():
+    template_dir = Path(__file__).resolve().parents[1] / "launcher" / "templates"
+    env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(template_dir),
+        autoescape=True,
+    )
+    html = env.get_template("index.html").render(
+        services=[],
+        chats=[],
+        visible_chats=[],
+        excluded_chats=[],
+        channel_directory_path="/tmp/channels/channel_directory.json",
+        policies=("full", "listen_only", "excluded"),
+        active_soul="Siri",
+        soul_ids=["Siri"],
+        editable_configs=[],
+        apps_root="",
+        needs_setup=False,
+    )
+
+    assert "No WhatsApp chats in" in html
+    assert "/tmp/channels/channel_directory.json" in html

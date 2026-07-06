@@ -134,7 +134,7 @@ After setup, open the memU extension panel in SillyTavern and set **Server URL**
    - **Services panel** — start, stop, and restart local services (memU Server, Atomic Mind Map, Hermes Channels, SillyTavern). View live logs for each. No terminal juggling needed.
    - **Settings** — edit `config.json` for the server, and `~/.hermes/config.yaml` for Hermes. If your repo layout differs from the default siblings arrangement, set the parent directory here.
    - **Memorize-pressure gauge** (home page) — how many unmemorized tokens are queued across all conversations vs the 8,000-token threshold, and whether a sleep gap has been detected. Useful for knowing if memorize is about to fire or is just waiting.
-   - **WhatsApp Channel Policy** — two settings per chat, both independent. **Policy** (`full` / `listen_only` / `excluded`): whether the soul can respond, can only listen, or is dropped entirely. **Mem** checkbox: whether this chat's messages are included in memory extraction, or kept as context-only. Reads and writes `channels/data/channel_directory.json` and `channels/data/memu.json`. This is where you tell the soul which conversations matter.
+   - **WhatsApp Channel Policy** — two settings per chat, both independent. **Policy** (`full` / `listen_only` / `excluded`): whether the soul can respond, can only listen, or is dropped entirely. **Mem** checkbox: whether this chat's messages are included in memory extraction, or kept as context-only. Reads and writes `CHANNELS_HOME/channel_directory.json` and `CHANNELS_HOME/memu.json`. This is where you tell the soul which conversations matter.
 
 No Docker. Developed on Alpine Linux but works on anything that can run Python 3.12 and Node.
 

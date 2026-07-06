@@ -7,7 +7,7 @@ A small local web UI that starts, stops, and configures the local OpenAlma servi
 - Hermes Channels
 - SillyTavern
 
-It also includes a GUI for the per-chat WhatsApp policy file (`channels/data/memu.json`)
+It also includes a GUI for the per-chat WhatsApp policy file (`CHANNELS_HOME/memu.json`)
 and shortcuts to open the rarely-edited config files in your default editor.
 
 ## Setup
