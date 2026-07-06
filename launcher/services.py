@@ -21,7 +21,6 @@ import subprocess
 import time
 import urllib.parse
 import urllib.request
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -49,7 +48,6 @@ class ServiceSpec:
     supports_terminal: bool = False
     port: int | None = None
     adopt_pid_path: Path | None = None
-    adopt_pid_parser: Callable[[str], int | None] | None = None
 
 
 @dataclass(frozen=True)
@@ -168,8 +166,6 @@ def _read_adopt_pid(spec: ServiceSpec) -> int | None:
         text = spec.adopt_pid_path.read_text(encoding="utf-8")
     except OSError:
         return None
-    if spec.adopt_pid_parser is not None:
-        return spec.adopt_pid_parser(text)
     try:
         return int(text.strip())
     except ValueError:
