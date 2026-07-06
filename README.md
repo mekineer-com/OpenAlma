@@ -174,7 +174,7 @@ claude-opus-4-8
 claude-opus-4-6
 claude-sonnet-4-6
 glm-5.2 + glm-5.2:thinking for consolidation
-mistral-small-4-119b-2603 + mistral-small-4-119b-2603:thinking for consolidation
+mistral-small-4-119b + mistral-small-4-119b:thinking for consolidation
 devstral-2-123b + devstral-2-123b:thinking for consolidation
 
 ---
