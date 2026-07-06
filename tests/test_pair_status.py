@@ -49,4 +49,8 @@ def test_settings_template_contains_inline_whatsapp_pairing():
     text = (Path(__file__).resolve().parents[1] / "launcher" / "templates" / "settings.html").read_text(encoding="utf-8")
 
     assert 'id="pair-whatsapp"' in text
+    assert 'id="pair-panel"' in text
+    assert 'id="websource-qr"' in text
+    assert 'id="bridge-qr"' in text
     assert "/static/vendor/qrcode.min.js" in text
+    assert "Could not render QR." in text

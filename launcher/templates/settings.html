@@ -95,7 +95,18 @@
       canvas.hidden = false;
       if (lastQr[name] !== entry.qr) {
         lastQr[name] = entry.qr;
-        QRCode.toCanvas(canvas, entry.qr, { width: 220, margin: 1 });
+        try {
+          const rendered = QRCode.toCanvas(canvas, entry.qr, { width: 220, margin: 1 });
+          if (rendered?.catch) {
+            rendered.catch(() => {
+              canvas.hidden = true;
+              label.textContent = "Could not render QR.";
+            });
+          }
+        } catch (_err) {
+          canvas.hidden = true;
+          label.textContent = "Could not render QR.";
+        }
       }
     }
 
