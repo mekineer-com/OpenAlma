@@ -30,6 +30,10 @@
     a:visited { color: #b18cd9; }
     code { background: #2a2a2a; color: #f0f0f0; padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
     .hint { font-size: 0.9em; color: #999; margin-top: 0.3rem; }
+    .pair-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-top: 1rem; }
+    .pair-card { border: 1px solid #333; border-radius: 4px; padding: 0.8rem; background: #202020; }
+    .pair-card h3 { margin: 0 0 0.4rem 0; color: #f0f0f0; }
+    .pair-card canvas { width: 220px; height: 220px; background: #fff; border: 8px solid #fff; display: block; }
   </style>
 </head>
 <body>
@@ -46,7 +50,81 @@
     <p><button class="btn" type="submit">Save</button></p>
   </form>
 
+  <h2>WhatsApp pairing</h2>
+  <p><button class="btn" type="button" id="pair-whatsapp">Pair WhatsApp</button></p>
+  <section id="pair-panel" hidden>
+    <p id="pair-status" class="muted">Checking pairing status...</p>
+    <div class="pair-grid">
+      <div class="pair-card">
+        <h3>wwebjs</h3>
+        <p id="websource-status" class="muted">Waiting...</p>
+        <canvas id="websource-qr" width="220" height="220" hidden></canvas>
+      </div>
+      <div class="pair-card">
+        <h3>Baileys</h3>
+        <p id="bridge-status" class="muted">Waiting...</p>
+        <canvas id="bridge-qr" width="220" height="220" hidden></canvas>
+      </div>
+    </div>
+  </section>
+
   <h2>Stored at</h2>
   <p><code>{{ settings_path }}</code></p>
+  <script src="/static/vendor/qrcode.min.js"></script>
+  <script>
+    const pairButton = document.getElementById("pair-whatsapp");
+    const pairPanel = document.getElementById("pair-panel");
+    const pairStatus = document.getElementById("pair-status");
+    const lastQr = {};
+    let pairTimer = null;
+
+    function setQr(name, entry) {
+      const canvas = document.getElementById(`${name}-qr`);
+      const label = document.getElementById(`${name}-status`);
+      if (entry.paired) {
+        canvas.hidden = true;
+        label.textContent = "Paired.";
+        return;
+      }
+      if (!entry.qr) {
+        canvas.hidden = true;
+        label.textContent = "Waiting for QR...";
+        return;
+      }
+      label.textContent = "Scan this QR.";
+      canvas.hidden = false;
+      if (lastQr[name] !== entry.qr) {
+        lastQr[name] = entry.qr;
+        QRCode.toCanvas(canvas, entry.qr, { width: 220, margin: 1 });
+      }
+    }
+
+    async function refreshPairing() {
+      try {
+        const response = await fetch("/whatsapp/pair-status", { cache: "no-store" });
+        const data = await response.json();
+        setQr("websource", data.websource);
+        setQr("bridge", data.bridge);
+        if (data.websource.paired && data.bridge.paired) {
+          pairPanel.hidden = true;
+          clearInterval(pairTimer);
+          pairTimer = null;
+        } else if (!data.websource.qr && !data.bridge.qr) {
+          pairStatus.textContent = "Start Hermes Channels, then try again.";
+        } else {
+          pairStatus.textContent = "Scan any QR codes shown below.";
+        }
+      } catch (_err) {
+        pairStatus.textContent = "Could not read pairing status.";
+      }
+    }
+
+    pairButton.addEventListener("click", () => {
+      pairPanel.hidden = false;
+      refreshPairing();
+      clearInterval(pairTimer);
+      pairTimer = setInterval(refreshPairing, 3000);
+    });
+  </script>
 </body>
 </html>

@@ -682,6 +682,27 @@ def _read_channels_web_source_status() -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def whatsapp_pair_status() -> dict:
+    config = _read_channels_config()
+    bridge = _channels_bridge_health(config)
+    web_source = _read_channels_web_source_status()
+    bridge_paired = bool(bridge.get("paired")) or str(bridge.get("status") or "").strip().lower() == "connected"
+    web_source_paired = (
+        str(web_source.get("state") or "").strip().lower() in {"ready", "connected"}
+        or (_CHANNELS_HOME / "whatsapp" / "wwebjs_auth").exists()
+    )
+    return {
+        "bridge": {
+            "paired": bridge_paired,
+            "qr": None if bridge_paired or not isinstance(bridge.get("qr"), str) else bridge.get("qr"),
+        },
+        "websource": {
+            "paired": web_source_paired,
+            "qr": None if web_source_paired or not isinstance(web_source.get("qr"), str) else web_source.get("qr"),
+        },
+    }
+
+
 def memorize_pending(soul_id: str, user_id: str = "") -> dict:
     """Read memU's pending-memorize snapshot; {} when unreachable or malformed."""
     memu_server = next((svc for svc in all_services() if svc.name == "memu-server"), None)

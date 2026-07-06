@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import policy
@@ -23,6 +24,7 @@ CONFIG_LABELS: dict[str, str] = {
 }
 
 app = FastAPI(title="OpenAlma")
+app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 
 
 def _editable_configs(apps_root: Path | None) -> dict[str, Path]:
@@ -177,6 +179,11 @@ def whatsapp_pair_bridge() -> dict:
         raise HTTPException(status_code=500, detail="Could not open a terminal for hermes whatsapp")
     spec = _find_service("hermes-gateway")
     return {"ok": True, **services.status(spec)}
+
+
+@app.get("/whatsapp/pair-status")
+def whatsapp_pair_status() -> dict:
+    return services.whatsapp_pair_status()
 
 
 @app.post("/policy")
