@@ -325,7 +325,7 @@ def read_channel_settings() -> dict[str, dict[str, bool | str]]:
 
 
 def write_channel_settings(updates: dict[str, dict[str, bool | str]]) -> None:
-    """Apply per-chat policy + memorize settings to channels data."""
+    """Apply per-chat policy + memorize settings to CHANNELS_HOME/memu.json."""
     try:
         data = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
