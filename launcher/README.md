@@ -3,9 +3,8 @@
 A small local web UI that starts, stops, and configures the local OpenAlma services:
 
 - `mcp-memu-server` (memory engine)
-- Atomic memory editor
-- `hermes-agent` gateway (WhatsApp/SillyTavern bridge to the soul)
-- WhatsApp bridge (Baileys/Node)
+- Atomic Mind Map
+- Hermes Channels
 - SillyTavern
 
 It also includes a GUI for the per-chat WhatsApp policy file (`~/.hermes/memu.json`)

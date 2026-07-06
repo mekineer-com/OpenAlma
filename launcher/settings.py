@@ -2,7 +2,7 @@
 
 Stored in ``~/.config/openalma-launcher/paths.json``. The launcher's
 service definitions read ``apps_root()`` here to locate the four
-sibling repos (mcp-memu-server, hermes-agent, sillytavern, memu) on
+sibling repos (mcp-memu-server, channels, sillytavern, memu) on
 disk. Resolution order:
 
 1. Explicit ``apps_root`` field in the JSON file (user setting).

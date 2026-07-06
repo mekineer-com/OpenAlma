@@ -24,28 +24,29 @@ class _FakeResponse:
         return b'{"threshold": 5000}'
 
 
-def test_whatsapp_bridge_is_not_a_normal_stack_service(tmp_path, monkeypatch):
+def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch):
     root = tmp_path / "apps"
-    for name in ("mcp-memu-server", "atomic", "hermes-agent", "sillytavern"):
+    for name in ("mcp-memu-server", "atomic", "channels", "sillytavern"):
         (root / name).mkdir(parents=True)
     monkeypatch.setattr(services, "_resolve_apps_root", lambda: root)
 
     names = [spec.name for spec in services.all_services()]
 
-    assert "hermes-gateway" in names
+    assert "hermes-gateway" not in names
+    assert "channels-daemon" in names
     assert "whatsapp-bridge" not in names
     assert "whatsapp-web-source" not in names
 
 
 def test_atomic_service_is_managed_by_launcher(tmp_path, monkeypatch):
     root = tmp_path / "apps"
-    for name in ("mcp-memu-server", "atomic", "hermes-agent", "sillytavern"):
+    for name in ("mcp-memu-server", "atomic", "channels", "sillytavern"):
         (root / name).mkdir(parents=True)
     monkeypatch.setattr(services, "_resolve_apps_root", lambda: root)
 
     spec = next(s for s in services.all_services() if s.name == "atomic")
 
-    assert spec.label == "Atomic memory editor"
+    assert spec.label == "Atomic Mind Map"
     assert spec.cwd == root / "atomic"
     assert spec.port == 1420
     assert spec.cmd[:2] == ["sh", "-c"]
@@ -77,7 +78,7 @@ def test_memu_server_uses_configured_pidfile_for_adoption(tmp_path, monkeypatch)
     memu_dir = root / "memu"
     server_dir.mkdir(parents=True)
     memu_dir.mkdir()
-    (root / "hermes-agent").mkdir()
+    (root / "channels").mkdir()
     (root / "sillytavern" / "SillyTavern").mkdir(parents=True)
     (server_dir / "config.json").write_text(
         json.dumps({"pid_file": "../memu/.memu-server.pid"}),
@@ -111,7 +112,7 @@ def test_sillytavern_match_requires_expected_cwd(tmp_path, monkeypatch):
 def test_atomic_match_requires_expected_cwd(tmp_path, monkeypatch):
     spec = services.ServiceSpec(
         name="atomic",
-        label="Atomic memory editor",
+        label="Atomic Mind Map",
         cmd=[],
         cwd=tmp_path / "atomic",
         log_path=tmp_path / "atomic.log",
@@ -129,7 +130,7 @@ def test_atomic_match_requires_expected_cwd(tmp_path, monkeypatch):
 def test_status_reports_stuck_for_verified_process_without_port(tmp_path, monkeypatch):
     spec = services.ServiceSpec(
         name="memu-server",
-        label="mcp-memu-server",
+        label="memU Server",
         cmd=[],
         cwd=tmp_path,
         log_path=tmp_path / "server.log",
@@ -155,7 +156,7 @@ def test_status_reports_stuck_for_verified_process_without_port(tmp_path, monkey
 def test_status_reports_blocked_for_nonmatching_port_listener(tmp_path, monkeypatch):
     spec = services.ServiceSpec(
         name="memu-server",
-        label="mcp-memu-server",
+        label="memU Server",
         cmd=[],
         cwd=tmp_path,
         log_path=tmp_path / "server.log",
@@ -180,7 +181,7 @@ def test_status_reports_blocked_for_nonmatching_port_listener(tmp_path, monkeypa
 def test_start_does_not_spawn_when_port_is_blocked(tmp_path, monkeypatch):
     spec = services.ServiceSpec(
         name="memu-server",
-        label="mcp-memu-server",
+        label="memU Server",
         cmd=["false"],
         cwd=tmp_path,
         log_path=tmp_path / "server.log",
@@ -202,7 +203,7 @@ def test_start_does_not_spawn_when_port_is_blocked(tmp_path, monkeypatch):
 def test_start_does_not_spawn_over_stuck_verified_process(tmp_path, monkeypatch):
     spec = services.ServiceSpec(
         name="memu-server",
-        label="mcp-memu-server",
+        label="memU Server",
         cmd=["false"],
         cwd=tmp_path,
         log_path=tmp_path / "server.log",
@@ -227,7 +228,7 @@ def test_status_throttles_fallback_process_scan(tmp_path, monkeypatch):
     monkeypatch.setattr(services, "_CHANNELS_HOME", tmp_path / "channels_data")
     spec = services.ServiceSpec(
         name="channels-daemon",
-        label="channels gateway",
+        label="Hermes Channels",
         cmd=[],
         cwd=tmp_path / "channels",
         log_path=tmp_path / "channels.log",
@@ -247,7 +248,7 @@ def test_verified_pids_scan_when_pidfile_candidate_is_stale(tmp_path, monkeypatc
     monkeypatch.setattr(services, "_CHANNELS_HOME", tmp_path / "channels_data")
     spec = services.ServiceSpec(
         name="channels-daemon",
-        label="channels gateway",
+        label="Hermes Channels",
         cmd=[],
         cwd=tmp_path / "channels",
         log_path=tmp_path / "channels.log",
@@ -280,123 +281,6 @@ def test_port_listener_lookup_is_cached(monkeypatch):
     assert len(calls) == 1
 
 
-def test_hermes_gateway_verified_pids_include_whatsapp_children(tmp_path, monkeypatch):
-    hermes_home = tmp_path / ".hermes"
-    session_path = hermes_home / "whatsapp" / "session"
-    session_path.mkdir(parents=True)
-    whatsapp_home = hermes_home / "whatsapp"
-    (session_path / "bridge.pid").write_text("31", encoding="utf-8")
-    (whatsapp_home / "web_source.pid").write_text("32", encoding="utf-8")
-    monkeypatch.setattr(services, "HERMES_HOME", hermes_home)
-    monkeypatch.setattr(services, "_scan_service_pids", lambda _spec: [])
-    monkeypatch.setattr(services, "_is_alive", lambda pid: pid in {31, 32})
-
-    def cmdline(pid):
-        if pid == 31:
-            return f"node bridge.js --port 3000 --session {session_path} --mode bot"
-        if pid == 32:
-            return (
-                "node source-daemon.js "
-                f"--db {whatsapp_home / 'web_source.db'} "
-                f"--status {whatsapp_home / 'web_source_status.json'}"
-            )
-        return ""
-
-    monkeypatch.setattr(services, "_proc_cmdline", cmdline)
-    monkeypatch.setattr(services, "_proc_cwd", lambda _pid: None)
-    spec = services.ServiceSpec(
-        name="hermes-gateway",
-        label="hermes-agent gateway",
-        cmd=[],
-        cwd=tmp_path / "hermes-agent",
-        log_path=tmp_path / "gateway.log",
-        pid_path=tmp_path / "gateway.pid",
-    )
-
-    assert services._verified_pid_candidates(spec) == [31, 32]
-
-
-def test_hermes_child_only_state_is_orphaned_and_stoppable(tmp_path, monkeypatch):
-    hermes_home = tmp_path / ".hermes"
-    session_path = hermes_home / "whatsapp" / "session"
-    session_path.mkdir(parents=True)
-    (session_path / "bridge.pid").write_text("31", encoding="utf-8")
-    monkeypatch.setattr(services, "HERMES_HOME", hermes_home)
-    monkeypatch.setattr(services, "_scan_service_pids", lambda _spec: [])
-    monkeypatch.setattr(services, "_is_alive", lambda pid: pid == 31)
-    monkeypatch.setattr(
-        services,
-        "_proc_cmdline",
-        lambda pid: f"node bridge.js --session {session_path}" if pid == 31 else "",
-    )
-    monkeypatch.setattr(services, "_proc_cwd", lambda _pid: None)
-    spec = services.ServiceSpec(
-        name="hermes-gateway",
-        label="hermes-agent gateway",
-        cmd=[],
-        cwd=tmp_path / "hermes-agent",
-        log_path=tmp_path / "gateway.log",
-        pid_path=tmp_path / "gateway.pid",
-    )
-
-    status = services.status(spec)
-
-    assert status["running"] is False
-    assert status["orphaned"] is True
-    assert status["state"] == "orphaned"
-    assert status["startable"] is False
-    assert status["stoppable"] is True
-
-
-def test_hermes_child_markers_follow_configured_whatsapp_paths(tmp_path, monkeypatch):
-    hermes_home = tmp_path / ".hermes"
-    hermes_home.mkdir()
-    custom_session = tmp_path / "wa-session"
-    custom_status = tmp_path / "wa" / "status.json"
-    custom_db = tmp_path / "wa" / "source.db"
-    custom_script = tmp_path / "wa" / "source-daemon.js"
-    custom_session.mkdir()
-    custom_status.parent.mkdir()
-    monkeypatch.setenv("WA_ROOT", str(custom_status.parent))
-    (hermes_home / "config.yaml").write_text(
-        "\n".join([
-            "whatsapp:",
-            f"  session_path: {custom_session}",
-            "  web_source_db: $WA_ROOT/source.db",
-            "  web_source_status: $WA_ROOT/status.json",
-            "  bridge_script: /opt/custom/bridge.js",
-            "  web_source_script: $WA_ROOT/source-daemon.js",
-            "",
-        ]),
-        encoding="utf-8",
-    )
-    (custom_session / "bridge.pid").write_text("31", encoding="utf-8")
-    custom_status.with_name("web_source.pid").write_text("32", encoding="utf-8")
-    monkeypatch.setattr(services, "HERMES_HOME", hermes_home)
-    monkeypatch.setattr(services, "_scan_service_pids", lambda _spec: [])
-    monkeypatch.setattr(services, "_is_alive", lambda pid: pid in {31, 32})
-
-    def cmdline(pid):
-        if pid == 31:
-            return f"node /opt/custom/bridge.js --session {custom_session}"
-        if pid == 32:
-            return f"node {custom_script} --db {custom_db} --status {custom_status}"
-        return ""
-
-    monkeypatch.setattr(services, "_proc_cmdline", cmdline)
-    monkeypatch.setattr(services, "_proc_cwd", lambda _pid: None)
-    spec = services.ServiceSpec(
-        name="hermes-gateway",
-        label="hermes-agent gateway",
-        cmd=[],
-        cwd=tmp_path / "hermes-agent",
-        log_path=tmp_path / "gateway.log",
-        pid_path=tmp_path / "gateway.pid",
-    )
-
-    assert services._verified_pid_candidates(spec) == [31, 32]
-
-
 def test_signal_pid_uses_process_group_for_group_leader(monkeypatch):
     calls = []
     monkeypatch.setattr(services.os, "getpgid", lambda pid: pid)
@@ -413,7 +297,7 @@ def test_stop_terminates_all_verified_pids_and_clears_dead_pidfiles(tmp_path, mo
     adopt_pid.write_text("11", encoding="utf-8")
     spec = services.ServiceSpec(
         name="memu-server",
-        label="mcp-memu-server",
+        label="memU Server",
         cmd=[],
         cwd=tmp_path,
         log_path=tmp_path / "server.log",
@@ -444,7 +328,7 @@ def test_stop_leaves_live_nonmatching_service_pidfile(tmp_path, monkeypatch):
     adopt_pid.write_text("99", encoding="utf-8")
     spec = services.ServiceSpec(
         name="memu-server",
-        label="mcp-memu-server",
+        label="memU Server",
         cmd=[],
         cwd=tmp_path,
         log_path=tmp_path / "server.log",
@@ -462,7 +346,7 @@ def test_stop_leaves_live_nonmatching_service_pidfile(tmp_path, monkeypatch):
 def test_stop_escalates_only_verified_matching_pids(tmp_path, monkeypatch):
     spec = services.ServiceSpec(
         name="memu-server",
-        label="mcp-memu-server",
+        label="memU Server",
         cmd=[],
         cwd=tmp_path,
         log_path=tmp_path / "server.log",
@@ -477,113 +361,9 @@ def test_stop_escalates_only_verified_matching_pids(tmp_path, monkeypatch):
     assert killed == [(20, services.signal.SIGTERM), (20, services.signal.SIGKILL)]
 
 
-def test_hermes_gateway_status_uses_whatsapp_degraded_state(tmp_path, monkeypatch):
-    hermes_home = tmp_path / ".hermes"
-    hermes_home.mkdir()
-    (hermes_home / "gateway_state.json").write_text(
-        json.dumps({
-            "pid": 111,
-            "platforms": {
-                "whatsapp": {
-                    "state": "degraded",
-                    "bridge": {"state": "ready", "mode": "bot"},
-                    "web_source": {"state": "degraded", "error": "writer exited"},
-                    "soul_history": {"state": "degraded", "error": "history failed"},
-                }
-            }
-        }),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(services, "HERMES_HOME", hermes_home)
-    monkeypatch.setattr(
-        services,
-        "_runtime_state",
-        lambda _spec: services.RuntimeState(
-            verified_pids=(111,),
-            service_pids=(111,),
-            child_pids=(),
-            pid=111,
-            port_pid=None,
-            running=True,
-            stuck=False,
-            orphaned=False,
-            port_blocked=False,
-        ),
-    )
-    spec = services.ServiceSpec(
-        name="hermes-gateway",
-        label="hermes-agent gateway",
-        cmd=[],
-        cwd=tmp_path,
-        log_path=tmp_path / "gateway.log",
-        pid_path=tmp_path / "gateway.pid",
-    )
-
-    status = services.status(spec)
-
-    assert status["running"] is True
-    assert status["state"] == "degraded"
-    assert status["status_label"] == "▲ degraded"
-    assert status["children"] == [
-        {"name": "bridge", "state": "ready", "detail": "mode bot"},
-        {"name": "web-source", "state": "degraded", "detail": "writer exited"},
-        {"name": "soul-history", "state": "degraded", "detail": "history failed"},
-    ]
-
-
-def test_hermes_gateway_status_ignores_stale_runtime_pid(tmp_path, monkeypatch):
-    hermes_home = tmp_path / ".hermes"
-    hermes_home.mkdir()
-    (hermes_home / "gateway_state.json").write_text(
-        json.dumps({
-            "pid": 111,
-            "platforms": {
-                "whatsapp": {
-                    "state": "healthy",
-                    "bridge": {"state": "ready", "mode": "bot"},
-                }
-            },
-        }),
-        encoding="utf-8",
-    )
-    pid_path = tmp_path / "gateway.pid"
-    pid_path.write_text("222", encoding="utf-8")
-    monkeypatch.setattr(services, "HERMES_HOME", hermes_home)
-    monkeypatch.setattr(
-        services,
-        "_runtime_state",
-        lambda _spec: services.RuntimeState(
-            verified_pids=(222,),
-            service_pids=(222,),
-            child_pids=(),
-            pid=222,
-            port_pid=None,
-            running=True,
-            stuck=False,
-            orphaned=False,
-            port_blocked=False,
-        ),
-    )
-    spec = services.ServiceSpec(
-        name="hermes-gateway",
-        label="hermes-agent gateway",
-        cmd=[],
-        cwd=tmp_path,
-        log_path=tmp_path / "gateway.log",
-        pid_path=pid_path,
-    )
-
-    status = services.status(spec)
-
-    assert status["running"] is True
-    assert status["state"] == "starting"
-    assert status["status_label"] == "◐ starting"
-    assert status["detail"] == "waiting for Hermes status"
-
-
 def test_channels_daemon_in_all_services(tmp_path, monkeypatch):
     root = tmp_path / "apps"
-    for name in ("mcp-memu-server", "hermes-agent", "channels"):
+    for name in ("mcp-memu-server", "channels"):
         (root / name).mkdir(parents=True)
     (root / "sillytavern" / "SillyTavern").mkdir(parents=True)
     monkeypatch.setattr(services, "_resolve_apps_root", lambda: root)
@@ -596,7 +376,7 @@ def test_channels_daemon_in_all_services(tmp_path, monkeypatch):
 def test_channels_daemon_match_requires_cwd_and_gateway_module(tmp_path, monkeypatch):
     spec = services.ServiceSpec(
         name="channels-daemon",
-        label="channels gateway",
+        label="Hermes Channels",
         cmd=[],
         cwd=tmp_path / "channels",
         log_path=tmp_path / "channels.log",
@@ -637,7 +417,7 @@ def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monke
     monkeypatch.setattr(services, "_proc_cwd", lambda _pid: None)
     spec = services.ServiceSpec(
         name="channels-daemon",
-        label="channels gateway",
+        label="Hermes Channels",
         cmd=[],
         cwd=tmp_path / "channels",
         log_path=tmp_path / "channels.log",
@@ -662,7 +442,7 @@ def test_channels_daemon_status_uses_bridge_and_web_source_health(tmp_path, monk
     monkeypatch.setattr(services, "_read_channels_web_source_status", lambda: {"state": "pairing"})
     spec = services.ServiceSpec(
         name="channels-daemon",
-        label="channels gateway",
+        label="Hermes Channels",
         cmd=[],
         cwd=tmp_path / "channels",
         log_path=tmp_path / "channels.log",

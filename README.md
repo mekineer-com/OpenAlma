@@ -49,8 +49,7 @@ The core of memU is two services that run on your machine: **mcp-memu-server** (
 
 ```
   [SillyTavern]               [WhatsApp]            [any other frontend]
-  plugin + extension       hermes-agent
-                             └─ whatsapp-bridge
+  plugin + extension       Hermes Channels
         │                          │                         │
         └──────────────────────────┴─────────────────────────┘
                                    │
@@ -81,7 +80,7 @@ Clone repos as siblings under one parent directory:
 ~/stack/                          # any name; this is the "apps root"
 ├── mcp-memu-server/
 ├── memU/                         # cloned as "memu/" or "memU/" — engine
-├── hermes-agent/                 # optional; only if using WhatsApp
+├── channels/                     # optional; only if using WhatsApp
 └── OpenAlma/                     # this repo (docs + launcher)
 ```
 
@@ -115,7 +114,7 @@ After setup, open the memU extension panel in SillyTavern and set **Server URL**
 
 ### Optional: WhatsApp
 
-5. **[hermes-agent](https://github.com/mekineer-com/hermes-agent)** — clone as a sibling of the other repos. The WhatsApp bridge (`scripts/whatsapp-bridge/`) is bundled inside it. Hermes also supports an autonomous soul loop — the soul can initiate contact, not just respond. The Stack Launcher manages both from its Services panel.
+5. **Hermes Channels** — keep the `channels/` repo as a sibling of the other repos. It owns WhatsApp routing, pairing, and channel policy. The Stack Launcher manages it from the Services panel.
 
 ### Stack Launcher
 
@@ -132,7 +131,7 @@ After setup, open the memU extension panel in SillyTavern and set **Server URL**
 
    What's inside:
 
-   - **Services panel** — start, stop, and restart any service (mcp-memu-server, memU, SillyTavern, Hermes, WhatsApp bridge). View live logs for each. No terminal juggling needed.
+   - **Services panel** — start, stop, and restart local services (memU Server, Atomic Mind Map, Hermes Channels, SillyTavern). View live logs for each. No terminal juggling needed.
    - **Settings** — edit `config.json` for the server, and `~/.hermes/config.yaml` for Hermes. If your repo layout differs from the default siblings arrangement, set the parent directory here.
    - **Memorize-pressure gauge** (home page) — how many unmemorized tokens are queued across all conversations vs the 8,000-token threshold, and whether a sleep gap has been detected. Useful for knowing if memorize is about to fire or is just waiting.
    - **WhatsApp Channel Policy** — two settings per chat, both independent. **Policy** (`full` / `listen_only` / `excluded`): whether the soul can respond, can only listen, or is dropped entirely. **Mem** checkbox: whether this chat's messages are included in memory extraction, or kept as context-only. Reads and writes `~/.hermes/channel_directory.json` and `~/.hermes/memu.json`. This is where you tell the soul which conversations matter.
@@ -149,7 +148,7 @@ Questions? Open an issue on the relevant repo.
 
 Specifically: the SQLite schema changes between versions, and there's no migration tooling yet. When you move to a new release tag, expect a fresh start — don't build anything irreplaceable on top of an old version.
 
-Prefer `main` for the latest. If you'd rather pin to a tag, match all repos to the same one (memu, mcp-memu-server, memu-sillytavern-plugin, memu-sillytavern-extension, OpenAlma, and hermes-agent if you're using it).
+Prefer `main` for the latest. If you'd rather pin to a tag, match all repos to the same one (memu, mcp-memu-server, memu-sillytavern-plugin, memu-sillytavern-extension, OpenAlma, and channels if you're using it).
 
 ### Release tags
 
@@ -230,13 +229,13 @@ So if you write a character description in ST, that's who she is — her own sel
 
 ### WhatsApp
 
-The soul appears as a WhatsApp contact. Hermes routes each incoming message to mcp-memu-server, which runs the full turn — retrieval, response, subconscious pass — then sends the reply back through the bridge.
+The soul appears as a WhatsApp contact. Hermes Channels routes each incoming message to mcp-memu-server, which runs the full turn — retrieval, response, subconscious pass — then sends the reply back through the bridge.
 
 **Channel policy** — each WhatsApp chat has two independent settings: **Policy** (`full` / `listen_only` / `excluded`) controls whether the soul can respond, can only listen, or is dropped entirely. **Mem** controls whether messages from that chat are included in memory extraction. Configure both per-chat via the Stack Launcher's WhatsApp Channel Policy page.
 
 **Bot mode** — in group chats, set `reply_prefix` in `~/.hermes/config.yaml` so the soul only responds to messages that start with a trigger (e.g. `!siri`). In direct chats, she responds to everything.
 
-**Autonomous loop** — Hermes can run a timed loop where the soul checks in with you unprompted, not just when you write first. Configured via `~/.hermes/config.yaml`. What she does between turns is logged as an activity recap — she can see her own recent actions in her next turn prompt under `My Activities:`.
+**Autonomous follow-ups** — mcp-memu-server can queue follow-up turns where the soul checks in with you unprompted, not just when you write first. WhatsApp delivery goes through Hermes Channels. What she does between turns is logged as an activity recap — she can see her own recent actions in her next turn prompt under `My Activities:`.
 
 **Attachments** — the soul can name a file under her workspace (`~/Desktop/siri/`) in her reply and it gets delivered as a WhatsApp document, with her reply text as a caption. Works for both normal replies and autonomous follow-ups she schedules herself.
 

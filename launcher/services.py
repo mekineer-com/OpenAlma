@@ -28,7 +28,6 @@ from pathlib import Path
 from policy import CHANNELS_HOME as _CHANNELS_HOME
 from settings import apps_root as _resolve_apps_root
 
-HERMES_HOME = Path.home() / ".hermes"
 STATE_DIR = Path.home() / ".cache" / "openalma-launcher"
 STARTUP_GRACE_SECONDS = 4.0
 MEMU_SERVER_PORT = 8099
@@ -81,15 +80,6 @@ def _resolve_memu_server_pid_path(root: Path) -> Path:
     return (root / "mcp-memu-server" / path).resolve()
 
 
-def _parse_gateway_pid(text: str) -> int | None:
-    try:
-        data = json.loads(text)
-    except (ValueError, json.JSONDecodeError):
-        return None
-    pid = data.get("pid") if isinstance(data, dict) else None
-    return pid if isinstance(pid, int) and pid > 0 else None
-
-
 def _atomic_start_command() -> str:
     return r'''
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/openalma"
@@ -122,7 +112,7 @@ def all_services() -> list[ServiceSpec]:
     return [
         ServiceSpec(
             name="memu-server",
-            label="mcp-memu-server",
+            label="memU Server",
             cmd=[str(root / "mcp-memu-server" / ".venv" / "bin" / "python3"), "run.py"],
             cwd=root / "mcp-memu-server",
             log_path=Path("/tmp/memu-server.out"),
@@ -132,7 +122,7 @@ def all_services() -> list[ServiceSpec]:
         ),
         ServiceSpec(
             name="atomic",
-            label="Atomic memory editor",
+            label="Atomic Mind Map",
             cmd=["sh", "-c", _atomic_start_command()],
             cwd=root / "atomic",
             log_path=Path.home() / ".local" / "state" / "openalma" / "atomic.log",
@@ -140,28 +130,8 @@ def all_services() -> list[ServiceSpec]:
             port=1420,
         ),
         ServiceSpec(
-            name="hermes-gateway",
-            label="hermes-agent gateway",
-            cmd=[
-                str(root / ".venv" / "bin" / "python3"),
-                "-c",
-                "from gateway.run import main; main()",
-            ],
-            cwd=root / "hermes-agent",
-            log_path=Path("/tmp/hermes-gateway.log"),
-            pid_path=STATE_DIR / "hermes-gateway.pid",
-            env={
-                "PYTHONPATH": ".",
-                "GATEWAY_ALLOW_ALL_USERS": "true",
-                "WHATSAPP_MODE": "bot",
-                "WHATSAPP_ALLOWED_USERS": "*",
-            },
-            adopt_pid_path=HERMES_HOME / "gateway.pid",
-            adopt_pid_parser=_parse_gateway_pid,
-        ),
-        ServiceSpec(
             name="channels-daemon",
-            label="channels gateway",
+            label="Hermes Channels",
             cmd=[shutil.which("python3") or "python3", "-m", "gateway.daemon"],
             cwd=root / "channels",
             log_path=Path("/tmp/channels-daemon.log"),
@@ -276,10 +246,6 @@ def _matches_service_process(spec: ServiceSpec, pid: int) -> bool:
     cwd_matches = cwd is not None and cwd == spec.cwd
     if spec.name == "memu-server":
         return cwd_matches and ("run.py" in cmd or ("uvicorn" in cmd and "app.main:app" in cmd))
-    if spec.name == "hermes-gateway":
-        if not cwd_matches:
-            return False
-        return "gateway.run" in cmd or "hermes gateway run" in cmd
     if spec.name == "channels-daemon":
         return cwd_matches and "gateway.daemon" in cmd
     if spec.name == "sillytavern":
@@ -292,89 +258,6 @@ def _matches_service_process(spec: ServiceSpec, pid: int) -> bool:
             or "vite" in cmd
         )
     return False
-
-
-def _strip_simple_yaml_value(value: str) -> str:
-    value = value.strip()
-    if not value:
-        return ""
-    if value[0] in {"'", '"'} and value[-1:] == value[0]:
-        return value[1:-1]
-    return value
-
-
-def _read_hermes_whatsapp_config() -> dict[str, str]:
-    """Read the flat `whatsapp:` config keys the launcher needs for pid matching."""
-    try:
-        lines = (HERMES_HOME / "config.yaml").read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return {}
-    out: dict[str, str] = {}
-    in_whatsapp = False
-    for line in lines:
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        if not line.startswith((" ", "\t")):
-            key = line.split(":", 1)[0].strip()
-            in_whatsapp = key == "whatsapp"
-            continue
-        if not in_whatsapp or not line.startswith("  "):
-            continue
-        stripped = line.strip()
-        if ":" not in stripped:
-            continue
-        key, raw_value = stripped.split(":", 1)
-        if raw_value.strip():
-            out[key.strip()] = _strip_simple_yaml_value(raw_value)
-    return out
-
-
-def _configured_path(config: dict[str, str], key: str, default: Path, *, expand_vars: bool = False) -> Path:
-    raw = config.get(key)
-    if not raw:
-        return default
-    if expand_vars:
-        raw = os.path.expandvars(raw)
-    return Path(raw).expanduser()
-
-
-def _hermes_whatsapp_child_markers() -> list[tuple[Path, tuple[str, ...]]]:
-    whatsapp_home = HERMES_HOME / "whatsapp"
-    config = _read_hermes_whatsapp_config()
-    session_path = _configured_path(config, "session_path", whatsapp_home / "session")
-    web_source_db = _configured_path(
-        config,
-        "web_source_db",
-        whatsapp_home / "web_source.db",
-        expand_vars=True,
-    )
-    web_source_status = _configured_path(
-        config,
-        "web_source_status",
-        whatsapp_home / "web_source_status.json",
-        expand_vars=True,
-    )
-    bridge_script = _strip_simple_yaml_value(config.get("bridge_script", "bridge.js"))
-    web_source_script = os.path.expandvars(
-        _strip_simple_yaml_value(config.get("web_source_script", "source-daemon.js"))
-    )
-    web_source_script = str(Path(web_source_script).expanduser())
-    return [
-        (
-            session_path / "bridge.pid",
-            (bridge_script, "--session", str(session_path)),
-        ),
-        (
-            web_source_status.with_name("web_source.pid"),
-            (
-                web_source_script,
-                "--db",
-                str(web_source_db),
-                "--status",
-                str(web_source_status),
-            ),
-        ),
-    ]
 
 
 def _channels_whatsapp_child_markers() -> list[tuple[Path, tuple[str, ...]]]:
@@ -408,15 +291,9 @@ def _cmdline_has_markers(pid: int, markers: tuple[str, ...]) -> bool:
 def _matches_managed_process(spec: ServiceSpec, pid: int) -> bool:
     if _matches_service_process(spec, pid):
         return True
-    if spec.name == "hermes-gateway":
-        return _matches_hermes_child_process(pid)
     if spec.name == "channels-daemon":
         return _matches_channels_child_process(pid)
     return False
-
-
-def _matches_hermes_child_process(pid: int) -> bool:
-    return any(_cmdline_has_markers(pid, markers) for _pidfile, markers in _hermes_whatsapp_child_markers())
 
 
 def _matches_channels_child_process(pid: int) -> bool:
@@ -454,11 +331,6 @@ def _verified_pid_candidates(spec: ServiceSpec) -> list[int]:
         listener_pid = _port_listener_pid(spec.port)
         if listener_pid is not None:
             candidates.append(listener_pid)
-    if spec.name == "hermes-gateway":
-        for pidfile, _markers in _hermes_whatsapp_child_markers():
-            pid = _read_pid(pidfile)
-            if pid is not None:
-                candidates.append(pid)
     if spec.name == "channels-daemon":
         for pidfile, _markers in _channels_whatsapp_child_markers():
             pid = _read_pid(pidfile)
@@ -523,42 +395,6 @@ def _terminal_command(cmd: list[str]) -> list[str] | None:
     return None
 
 
-def _hermes_python(root: Path) -> Path:
-    for candidate in (
-        root / ".venv" / "bin" / "python3",
-        root / "hermes-agent" / ".venv" / "bin" / "python3",
-        root / "hermes-agent" / "venv" / "bin" / "python3",
-    ):
-        if candidate.exists():
-            return candidate
-    return Path(shutil.which("python3") or "python3")
-
-
-def launch_whatsapp_bridge_pairing() -> bool:
-    root = _resolve_apps_root()
-    if root is None:
-        return False
-    hermes_script = root / "hermes-agent" / "hermes"
-    if not hermes_script.exists():
-        return False
-    cmd = [str(_hermes_python(root)), str(hermes_script), "whatsapp"]
-    terminal_cmd = _terminal_command(cmd)
-    if terminal_cmd is None:
-        return False
-    env = {
-        **os.environ,
-        "WHATSAPP_MODE": "bot",
-        "WHATSAPP_ALLOWED_USERS": os.environ.get("WHATSAPP_ALLOWED_USERS", "*"),
-    }
-    subprocess.Popen(
-        terminal_cmd,
-        cwd=str(root / "hermes-agent"),
-        env=env,
-        start_new_session=True,
-    )
-    return True
-
-
 def _spawn_background(spec: ServiceSpec, env: dict[str, str]) -> subprocess.Popen[bytes]:
     log = spec.log_path.open("ab")
     try:
@@ -579,8 +415,7 @@ def _runtime_state(spec: ServiceSpec) -> RuntimeState:
     service_pids = tuple(pid for pid in verified if _matches_service_process(spec, pid))
     child_pids = tuple(
         pid for pid in verified if (
-            (spec.name == "hermes-gateway" and _matches_hermes_child_process(pid)) or
-            (spec.name == "channels-daemon" and _matches_channels_child_process(pid))
+            spec.name == "channels-daemon" and _matches_channels_child_process(pid)
         )
     )
     port_pid = _port_listener_pid(spec.port) if spec.port is not None else None
@@ -597,7 +432,7 @@ def _runtime_state(spec: ServiceSpec) -> RuntimeState:
 
     pid = verified[0]
     _remember_verified_pid(spec, pid)
-    if spec.name in {"hermes-gateway", "channels-daemon"} and not service_pids and child_pids:
+    if spec.name == "channels-daemon" and not service_pids and child_pids:
         return RuntimeState(
             verified_pids=tuple(verified),
             service_pids=service_pids,
@@ -629,14 +464,6 @@ def _runtime_state(spec: ServiceSpec) -> RuntimeState:
         orphaned=False,
         port_blocked=port_blocked,
     )
-
-
-def _read_gateway_state() -> dict:
-    try:
-        data = json.loads((HERMES_HOME / "gateway_state.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return data if isinstance(data, dict) else {}
 
 
 def _read_channels_config() -> dict:
@@ -755,40 +582,10 @@ def status(spec: ServiceSpec) -> dict:
     )
     detail = ""
     children: list[dict[str, str]] = []
-    actions: list[str] = []
     if blocked:
         detail = f"port {spec.port} is held by PID {runtime.port_pid}"
     elif orphaned:
-        detail = "gateway stopped; WhatsApp child process still running"
-
-    if spec.name == "hermes-gateway" and running:
-        gateway_state = _read_gateway_state()
-        if gateway_state.get("pid") != runtime.pid:
-            gateway_state = {}
-        platforms = gateway_state.get("platforms") if isinstance(gateway_state, dict) else None
-        whatsapp = platforms.get("whatsapp") if isinstance(platforms, dict) else None
-        if isinstance(whatsapp, dict):
-            whatsapp_state = str(whatsapp.get("state") or "").strip().lower()
-            if whatsapp_state in {"healthy", "connected"}:
-                state = "healthy"
-                label = "● healthy"
-            elif whatsapp_state == "starting":
-                state = "starting"
-                label = "◐ starting"
-            elif whatsapp_state:
-                state = "degraded"
-                label = "▲ degraded"
-            detail = f"WhatsApp {whatsapp_state}" if whatsapp_state else ""
-            for child_name in ("bridge", "web_source", "soul_history"):
-                child = _child_status_parts(child_name.replace("_", "-"), whatsapp.get(child_name))
-                if child is not None:
-                    children.append(child)
-                    if child_name == "bridge" and child.get("state") == "setup_needed":
-                        actions.append("pair_whatsapp_bridge")
-        else:
-            state = "starting"
-            label = "◐ starting"
-            detail = "waiting for Hermes status"
+        detail = "service stopped; child process still running"
 
     if spec.name == "channels-daemon" and running:
         channels_config = _read_channels_config()
@@ -837,7 +634,6 @@ def status(spec: ServiceSpec) -> dict:
         "status_label": label,
         "detail": detail,
         "children": children,
-        "actions": actions,
     }
 
 

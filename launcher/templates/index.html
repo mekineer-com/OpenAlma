@@ -79,7 +79,7 @@
   {% if needs_setup %}
   <div class="banner">
     <strong>Setup needed:</strong> the apps-root directory wasn't auto-discovered.
-    <a href="/settings">Set it manually</a> — point at the parent of <code>mcp-memu-server</code>, <code>hermes-agent</code>, etc.
+    <a href="/settings">Set it manually</a> — point at the parent of <code>mcp-memu-server</code>, <code>channels</code>, etc.
   </div>
   {% endif %}
 
@@ -106,9 +106,6 @@
         <td class="svc-actions">
           {% if s.stoppable %}
             <button class="btn" onclick="svcAction('{{ s.name }}','stop',this)">Stop</button>
-            {% if 'pair_whatsapp_bridge' in s.actions %}
-              <button class="btn" onclick="pairWhatsappBridge(this)">Pair reply bridge</button>
-            {% endif %}
           {% elif s.startable %}
             <button class="btn" onclick="svcAction('{{ s.name }}','start',this)">Start</button>
             {% if s.supports_terminal %}
@@ -250,7 +247,6 @@ function svcAction(name, action, btn) {
   var row = btn.closest('tr');
   var statusCell = row.querySelector('.svc-status');
   var actionsCell = row.querySelector('.svc-actions');
-  var origHtml = actionsCell.innerHTML;
   actionsCell.innerHTML = '<span class="spinner"></span>';
   statusCell.innerHTML = '<span class="muted">…</span>';
 
@@ -267,11 +263,7 @@ function svcAction(name, action, btn) {
 
 function actionHtml(name, data) {
   if (data.stoppable || data.running) {
-    var html = '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button>';
-    if ((data.actions || []).indexOf('pair_whatsapp_bridge') !== -1) {
-      html += ' <button class="btn" onclick="pairWhatsappBridge(this)">Pair reply bridge</button>';
-    }
-    return html;
+    return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button>';
   }
   if (data.startable !== false) {
     var start = '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'start\',this)">Start</button>';
@@ -281,23 +273,6 @@ function actionHtml(name, data) {
     return start;
   }
   return '<span class="muted">not startable</span>';
-}
-
-function pairWhatsappBridge(btn) {
-  var row = btn.closest('tr');
-  var statusCell = row.querySelector('.svc-status');
-  var actionsCell = row.querySelector('.svc-actions');
-  actionsCell.innerHTML = '<span class="spinner"></span>';
-  fetch('/whatsapp/pair-bridge', {method: 'POST'})
-    .then(function(r) {
-      if (!r.ok) throw new Error('pair failed');
-      return r.json();
-    })
-    .then(function() { pollStatus('hermes-gateway'); })
-    .catch(function() {
-      statusCell.innerHTML += '<div class="svc-detail degraded">Could not open pairing terminal</div>';
-      pollStatus('hermes-gateway');
-    });
 }
 
 function pollStatus(name) {
