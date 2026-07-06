@@ -30,12 +30,20 @@ def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch)
         (root / name).mkdir(parents=True)
     monkeypatch.setattr(services, "_resolve_apps_root", lambda: root)
 
-    names = [spec.name for spec in services.all_services()]
+    specs = services.all_services()
+    names = [spec.name for spec in specs]
+    labels = {spec.name: spec.label for spec in specs}
 
     assert "hermes-gateway" not in names
     assert "channels-daemon" in names
     assert "whatsapp-bridge" not in names
     assert "whatsapp-web-source" not in names
+    assert labels == {
+        "memu-server": "memU Server",
+        "atomic": "Atomic Mind Map",
+        "channels-daemon": "Hermes Channels",
+        "sillytavern": "SillyTavern",
+    }
 
 
 def test_atomic_service_is_managed_by_launcher(tmp_path, monkeypatch):
