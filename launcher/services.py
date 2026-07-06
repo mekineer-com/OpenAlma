@@ -131,7 +131,7 @@ def all_services() -> list[ServiceSpec]:
             name="channels-daemon",
             label="Hermes Channels",
             cmd=[shutil.which("python3") or "python3", "-m", "gateway.daemon"],
-            cwd=root / "channels",
+            cwd=root / "hermes-channels",
             log_path=Path("/tmp/channels-daemon.log"),
             pid_path=STATE_DIR / "channels-daemon.pid",
             env={

@@ -80,7 +80,7 @@ Clone repos as siblings under one parent directory:
 ~/stack/                          # any name; this is the "apps root"
 ├── mcp-memu-server/
 ├── memU/                         # cloned as "memu/" or "memU/" — engine
-├── channels/                     # optional; only if using WhatsApp
+├── hermes-channels/              # optional; only if using WhatsApp
 └── OpenAlma/                     # this repo (docs + launcher)
 ```
 
@@ -114,7 +114,7 @@ After setup, open the memU extension panel in SillyTavern and set **Server URL**
 
 ### Optional: WhatsApp
 
-5. **Hermes Channels** — keep the `channels/` repo as a sibling of the other repos. It owns WhatsApp routing, pairing, and channel policy. The Stack Launcher manages it from the Services panel.
+5. **Hermes Channels** — keep the `hermes-channels/` repo as a sibling of the other repos. It owns WhatsApp routing, pairing, and channel policy. The Stack Launcher manages it from the Services panel.
 
 ### Stack Launcher
 

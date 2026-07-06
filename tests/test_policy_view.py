@@ -63,7 +63,7 @@ def test_empty_policy_view_shows_actual_channel_directory_path():
         chats=[],
         visible_chats=[],
         excluded_chats=[],
-        channel_directory_path="/tmp/channels/channel_directory.json",
+        channel_directory_path="/tmp/hermes-channels/channel_directory.json",
         policies=("full", "listen_only", "excluded"),
         active_soul="Siri",
         soul_ids=["Siri"],
@@ -73,4 +73,4 @@ def test_empty_policy_view_shows_actual_channel_directory_path():
     )
 
     assert "No WhatsApp chats in" in html
-    assert "/tmp/channels/channel_directory.json" in html
+    assert "/tmp/hermes-channels/channel_directory.json" in html

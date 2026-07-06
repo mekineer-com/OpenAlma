@@ -26,7 +26,7 @@ class _FakeResponse:
 
 def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch):
     root = tmp_path / "apps"
-    for name in ("mcp-memu-server", "atomic", "channels", "sillytavern"):
+    for name in ("mcp-memu-server", "atomic", "hermes-channels", "sillytavern"):
         (root / name).mkdir(parents=True)
     monkeypatch.setattr(services, "_resolve_apps_root", lambda: root)
 
@@ -48,7 +48,7 @@ def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch)
 
 def test_atomic_service_is_managed_by_launcher(tmp_path, monkeypatch):
     root = tmp_path / "apps"
-    for name in ("mcp-memu-server", "atomic", "channels", "sillytavern"):
+    for name in ("mcp-memu-server", "atomic", "hermes-channels", "sillytavern"):
         (root / name).mkdir(parents=True)
     monkeypatch.setattr(services, "_resolve_apps_root", lambda: root)
 
@@ -86,7 +86,7 @@ def test_memu_server_uses_configured_pidfile_for_adoption(tmp_path, monkeypatch)
     memu_dir = root / "memu"
     server_dir.mkdir(parents=True)
     memu_dir.mkdir()
-    (root / "channels").mkdir()
+    (root / "hermes-channels").mkdir()
     (root / "sillytavern" / "SillyTavern").mkdir(parents=True)
     (server_dir / "config.json").write_text(
         json.dumps({"pid_file": "../memu/.memu-server.pid"}),
@@ -238,7 +238,7 @@ def test_status_throttles_fallback_process_scan(tmp_path, monkeypatch):
         name="channels-daemon",
         label="Hermes Channels",
         cmd=[],
-        cwd=tmp_path / "channels",
+        cwd=tmp_path / "hermes-channels",
         log_path=tmp_path / "channels.log",
         pid_path=tmp_path / "channels.pid",
     )
@@ -258,7 +258,7 @@ def test_verified_pids_scan_when_pidfile_candidate_is_stale(tmp_path, monkeypatc
         name="channels-daemon",
         label="Hermes Channels",
         cmd=[],
-        cwd=tmp_path / "channels",
+        cwd=tmp_path / "hermes-channels",
         log_path=tmp_path / "channels.log",
         pid_path=tmp_path / "channels.pid",
     )
@@ -371,7 +371,7 @@ def test_stop_escalates_only_verified_matching_pids(tmp_path, monkeypatch):
 
 def test_channels_daemon_in_all_services(tmp_path, monkeypatch):
     root = tmp_path / "apps"
-    for name in ("mcp-memu-server", "channels"):
+    for name in ("mcp-memu-server", "hermes-channels"):
         (root / name).mkdir(parents=True)
     (root / "sillytavern" / "SillyTavern").mkdir(parents=True)
     monkeypatch.setattr(services, "_resolve_apps_root", lambda: root)
@@ -386,7 +386,7 @@ def test_channels_daemon_match_requires_cwd_and_gateway_module(tmp_path, monkeyp
         name="channels-daemon",
         label="Hermes Channels",
         cmd=[],
-        cwd=tmp_path / "channels",
+        cwd=tmp_path / "hermes-channels",
         log_path=tmp_path / "channels.log",
         pid_path=tmp_path / "channels.pid",
     )
@@ -427,7 +427,7 @@ def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monke
         name="channels-daemon",
         label="Hermes Channels",
         cmd=[],
-        cwd=tmp_path / "channels",
+        cwd=tmp_path / "hermes-channels",
         log_path=tmp_path / "channels.log",
         pid_path=tmp_path / "channels.pid",
     )
@@ -452,7 +452,7 @@ def test_channels_daemon_status_uses_bridge_and_web_source_health(tmp_path, monk
         name="channels-daemon",
         label="Hermes Channels",
         cmd=[],
-        cwd=tmp_path / "channels",
+        cwd=tmp_path / "hermes-channels",
         log_path=tmp_path / "channels.log",
         pid_path=tmp_path / "channels.pid",
     )

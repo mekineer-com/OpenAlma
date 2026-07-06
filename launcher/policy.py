@@ -9,7 +9,7 @@ import urllib.request
 from pathlib import Path
 from typing import Literal
 
-CHANNELS_HOME = Path(os.environ.get("CHANNELS_HOME") or "/home/marcos/apps-codex/channels/data")
+CHANNELS_HOME = Path(os.environ.get("CHANNELS_HOME") or "/home/marcos/apps-codex/hermes-channels/data")
 DIRECTORY_PATH = CHANNELS_HOME / "channel_directory.json"
 POLICY_PATH = CHANNELS_HOME / "memu.json"
 CREDS_PATH = CHANNELS_HOME / "whatsapp" / "session" / "creds.json"
