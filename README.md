@@ -132,7 +132,7 @@ After setup, open the memU extension panel in SillyTavern and set **Server URL**
    What's inside:
 
    - **Services panel** — start, stop, and restart local services (memU Server, Atomic Mind Map, Hermes Channels, SillyTavern). View live logs for each. No terminal juggling needed.
-   - **Settings** — edit `config.json` for the server, and `~/.hermes/config.yaml` for Hermes. If your repo layout differs from the default siblings arrangement, set the parent directory here.
+   - **Settings** — edit `config.json` for the server, and pair WhatsApp inline via QR code (no terminal needed). If your repo layout differs from the default siblings arrangement, set the parent directory here.
    - **Memorize-pressure gauge** (home page) — how many unmemorized tokens are queued across all conversations vs the 8,000-token threshold, and whether a sleep gap has been detected. Useful for knowing if memorize is about to fire or is just waiting.
    - **WhatsApp Channel Policy** — two settings per chat, both independent. **Policy** (`full` / `listen_only` / `excluded`): whether the soul can respond, can only listen, or is dropped entirely. **Mem** checkbox: whether this chat's messages are included in memory extraction, or kept as context-only. Reads and writes `CHANNELS_HOME/channel_directory.json` and `CHANNELS_HOME/memu.json`. This is where you tell the soul which conversations matter.
 
@@ -233,7 +233,7 @@ The soul appears as a WhatsApp contact. Hermes Channels routes each incoming mes
 
 **Channel policy** — each WhatsApp chat has two independent settings: **Policy** (`full` / `listen_only` / `excluded`) controls whether the soul can respond, can only listen, or is dropped entirely. **Mem** controls whether messages from that chat are included in memory extraction. Configure both per-chat via the Stack Launcher's WhatsApp Channel Policy page.
 
-**Bot mode** — in group chats, set `reply_prefix` in `~/.hermes/config.yaml` so the soul only responds to messages that start with a trigger (e.g. `!siri`). In direct chats, she responds to everything.
+**Bot mode** — in group chats, set `reply_prefix` via the `WHATSAPP_REPLY_PREFIX` env variable (or in the Hermes Channels config) so the soul only responds to messages that start with a trigger (e.g. `!siri`). In direct chats, she responds to everything.
 
 **Autonomous follow-ups** — mcp-memu-server can queue follow-up turns where the soul checks in with you unprompted, not just when you write first. WhatsApp delivery goes through Hermes Channels. What she does between turns is logged as an activity recap — she can see her own recent actions in her next turn prompt under `My Activities:`.
 
