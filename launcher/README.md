@@ -44,5 +44,8 @@ update-desktop-database ~/.local/share/applications/ 2>/dev/null || true
 
 - The launcher tracks PIDs in `~/.cache/openalma-launcher/`. Stopping the
   launcher does not stop the services it started — they keep running.
-- `~/.hermes/SOUL.md` is the *Hermes persona file* (a hermes-agent convention),
-  not the memU soul concept. They share a name only by accident.
+- The active soul lives in the channels config
+  (`hermes-channels/data/config.json`: `soul_id`, `souls`,
+  `reply_prefix_template`). The retired hermes-agent had its own "SOUL.md"
+  persona file — unrelated to the memU soul concept; they shared a name only
+  by accident.
