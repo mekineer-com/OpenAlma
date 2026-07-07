@@ -19,8 +19,6 @@ templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
 CONFIG_LABELS: dict[str, str] = {
     "memu-server-config": "mcp-memu-server/config.json",
-    "hermes-config": "~/.hermes/config.yaml",
-    "hermes-persona": "~/.hermes/SOUL.md  (Hermes persona, not our soul)",
 }
 
 app = FastAPI(title="OpenAlma")
@@ -29,10 +27,7 @@ app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 
 def _editable_configs(apps_root: Path | None) -> dict[str, Path]:
     """Resolve user-facing config file paths against the active apps_root."""
-    out: dict[str, Path] = {
-        "hermes-config": Path.home() / ".hermes" / "config.yaml",
-        "hermes-persona": Path.home() / ".hermes" / "SOUL.md",
-    }
+    out: dict[str, Path] = {}
     if apps_root is not None:
         out["memu-server-config"] = apps_root / "mcp-memu-server" / "config.json"
     return out

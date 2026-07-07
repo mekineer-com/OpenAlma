@@ -1,15 +1,17 @@
 import json
+import sqlite3
 import sys
-from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
 
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "launcher"))
-sys.modules.setdefault("yaml", SimpleNamespace(safe_load=lambda _raw: {}, safe_dump=lambda *_a, **_k: ""))
 
 import soul  # noqa: E402
+
+
+def _write_cfg(path: Path, data: dict) -> None:
+    path.write_text(json.dumps(data), encoding="utf-8")
 
 
 def test_stamp_soul_active_since_insert_or_ignore(tmp_path, monkeypatch):
@@ -18,8 +20,6 @@ def test_stamp_soul_active_since_insert_or_ignore(tmp_path, monkeypatch):
 
     soul._stamp_soul_active_since("Siri", now=100.0)
     soul._stamp_soul_active_since("Siri", now=200.0)
-
-    import sqlite3
 
     con = sqlite3.connect(state_db)
     try:
@@ -32,71 +32,75 @@ def test_stamp_soul_active_since_insert_or_ignore(tmp_path, monkeypatch):
     assert rows == [("Siri", 100.0)]
 
 
-def test_set_active_soul_id_does_not_stamp_when_config_write_fails(monkeypatch):
-    monkeypatch.setattr(
-        soul,
-        "_load_config",
-        lambda: {"soul_mode": {"agents": {"main": {"role": "soul", "soul_id": "Echo"}}}},
-    )
-    monkeypatch.setattr(soul, "_write_config", lambda _config: (_ for _ in ()).throw(RuntimeError("write failed")))
-    stamped = []
-    monkeypatch.setattr(soul, "_stamp_soul_active_since", lambda *_a, **_k: stamped.append(True))
+def test_read_active_soul_id(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.json"
+    _write_cfg(cfg, {"soul_id": "Echo", "user_id": "Marcos"})
+    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", cfg)
 
-    with pytest.raises(RuntimeError, match="write failed"):
-        soul.set_active_soul_id("Siri")
-
-    assert stamped == []
+    assert soul.read_active_soul_id() == "Echo"
 
 
-def test_read_active_user_id_from_first_soul_agent(monkeypatch):
-    monkeypatch.setattr(
-        soul,
-        "_load_config",
-        lambda: {"soul_mode": {"agents": {"main": {"role": "soul", "soul_id": "Siri", "user_id": "Marcos"}}}},
-    )
+def test_read_active_user_id(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.json"
+    _write_cfg(cfg, {"soul_id": "Echo", "user_id": "Marcos"})
+    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", cfg)
 
     assert soul.read_active_user_id() == "Marcos"
 
 
-def test_set_active_soul_id_writes_channels_config(tmp_path, monkeypatch):
-    channels_cfg = tmp_path / "config.json"
-    channels_cfg.write_text(
-        json.dumps({"soul_id": "OldSoul", "user_id": "Marcos"}),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", channels_cfg)
-    monkeypatch.setattr(
-        soul,
-        "_load_config",
-        lambda: {"soul_mode": {"agents": {"main": {"role": "soul", "soul_id": "OldSoul"}}}},
-    )
-    monkeypatch.setattr(soul, "_write_config", lambda _c: None)
-    monkeypatch.setattr(soul, "_stamp_soul_active_since", lambda *_a, **_k: None)
+def test_list_soul_ids_includes_active(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.json"
+    _write_cfg(cfg, {"soul_id": "NewSoul", "souls": ["Siri"]})
+    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", cfg)
 
-    soul.set_active_soul_id("NewSoul")
-
-    data = json.loads(channels_cfg.read_text(encoding="utf-8"))
-    assert data["soul_id"] == "NewSoul"
-    assert data["user_id"] == "Marcos"  # unknown keys preserved
+    ids = soul.list_soul_ids()
+    assert "NewSoul" in ids
+    assert "Siri" in ids
 
 
-def test_set_active_soul_id_writes_reply_prefix_to_channels_config(tmp_path, monkeypatch):
-    channels_cfg = tmp_path / "config.json"
-    channels_cfg.write_text(json.dumps({"soul_id": "OldSoul"}), encoding="utf-8")
-    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", channels_cfg)
-    monkeypatch.setattr(
-        soul,
-        "_load_config",
-        lambda: {
-            "soul_mode": {"agents": {"main": {"role": "soul", "soul_id": "OldSoul"}}},
-            "whatsapp": {"reply_prefix": "Echo:", "reply_prefix_template": "{soul}:"},
-        },
-    )
-    monkeypatch.setattr(soul, "_write_config", lambda _c: None)
-    monkeypatch.setattr(soul, "_stamp_soul_active_since", lambda *_a, **_k: None)
+def test_set_active_soul_id_updates_soul_id_and_souls(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.json"
+    state_db = tmp_path / "state.db"
+    _write_cfg(cfg, {"soul_id": "Siri", "souls": ["Siri"], "user_id": "Marcos"})
+    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", cfg)
+    monkeypatch.setattr(soul, "HERMES_STATE_DB_PATH", state_db)
 
-    soul.set_active_soul_id("NewSoul")
+    soul.set_active_soul_id("Echo")
 
-    data = json.loads(channels_cfg.read_text(encoding="utf-8"))
-    assert data["soul_id"] == "NewSoul"
-    assert data["reply_prefix"] == "NewSoul:"
+    data = json.loads(cfg.read_text(encoding="utf-8"))
+    assert data["soul_id"] == "Echo"
+    assert "Echo" in data["souls"]
+    assert data["user_id"] == "Marcos"  # unrelated keys preserved
+
+
+def test_set_active_soul_id_recomputes_reply_prefix_from_template(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.json"
+    state_db = tmp_path / "state.db"
+    _write_cfg(cfg, {
+        "soul_id": "Siri",
+        "souls": ["Siri"],
+        "reply_prefix": "✦ *Siri*: ",
+        "reply_prefix_template": "✦ *{soul}*: ",
+    })
+    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", cfg)
+    monkeypatch.setattr(soul, "HERMES_STATE_DB_PATH", state_db)
+
+    soul.set_active_soul_id("Echo")
+
+    data = json.loads(cfg.read_text(encoding="utf-8"))
+    assert data["reply_prefix"] == "✦ *Echo*: "
+    assert data["soul_id"] == "Echo"
+
+
+def test_set_active_soul_id_does_not_stamp_when_write_fails(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.json"
+    _write_cfg(cfg, {"soul_id": "Siri", "souls": ["Siri"]})
+    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", cfg)
+    monkeypatch.setattr(soul, "_write_channels_config", lambda _d: (_ for _ in ()).throw(RuntimeError("write failed")))
+    stamped = []
+    monkeypatch.setattr(soul, "_stamp_soul_active_since", lambda *_a, **_k: stamped.append(True))
+
+    with pytest.raises(RuntimeError, match="write failed"):
+        soul.set_active_soul_id("Echo")
+
+    assert stamped == []

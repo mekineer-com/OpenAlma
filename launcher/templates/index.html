@@ -149,7 +149,7 @@
   </ul>
 
   <h2>Soul</h2>
-  <p class="muted">One active soul at a time. This updates <code>~/.hermes/config.yaml</code> at <code>soul_mode.agents.*.soul_id</code> for all <code>role: soul</code> agents.</p>
+  <p class="muted">One active soul at a time. This updates the channels config (<code>soul_id</code>, <code>souls</code>, <code>reply_prefix</code>).</p>
   <form method="post" action="/soul">
     <label for="soul_id">Active soul ID:</label>
     <input list="soul-options" id="soul_id" name="soul_id" value="{{ active_soul }}" placeholder="Echo" required
