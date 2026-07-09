@@ -73,8 +73,8 @@ def index(request: Request) -> HTMLResponse:
     excluded_chats = [c for c in chat_rows if c["policy"] == "excluded"]
     editable_paths = _editable_configs(apps_root)
     editable = [
-        {"key": k, "label": CONFIG_LABELS.get(k, k), "path": str(p)}
-        for k, p in editable_paths.items()
+        {"key": k, "label": CONFIG_LABELS.get(k, k)}
+        for k in editable_paths
     ]
     active_soul = soul.read_active_soul_id()
     active_user = soul.read_active_user_id()
