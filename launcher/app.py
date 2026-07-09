@@ -19,6 +19,7 @@ templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
 CONFIG_LABELS: dict[str, str] = {
     "memu-server-config": "mcp-memu-server/config.json",
+    "channels-config": "hermes-channels/data/config.json",
 }
 
 app = FastAPI(title="OpenAlma")
@@ -30,6 +31,7 @@ def _editable_configs(apps_root: Path | None) -> dict[str, Path]:
     out: dict[str, Path] = {}
     if apps_root is not None:
         out["memu-server-config"] = apps_root / "mcp-memu-server" / "config.json"
+        out["channels-config"] = apps_root / "hermes-channels" / "data" / "config.json"
     return out
 
 
