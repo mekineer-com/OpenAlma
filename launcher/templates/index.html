@@ -122,18 +122,20 @@
   </table>
 
   <h2>Memorize</h2>
-  {% if memorize and memorize.threshold %}
-    <p>
-      Memorize: {{ "{:,}".format(memorize.summed_unmemorized_tokens) }} / {{ "{:,}".format(memorize.threshold) }} ({{ memorize.pct }}%)
-      {% if memorize.summed_unmemorized_tokens >= memorize.threshold %}
-        <span class="badge">{{ "sleep-gap detected" if memorize.sleep_gap_ready else "waiting for sleep-gap" }}</span>
-      {% endif %}
-    </p>
-    <div class="meter"><div class="meter-fill" style="width: {{ [memorize.pct, 100]|min }}%"></div></div>
-    <p class="muted">Memorize-eligible at {{ "{:,}".format(memorize.threshold) }} tokens; a sleep-gap releases it. Snapshot {{ memorize.computed_at }}.</p>
-  {% else %}
-    <p class="muted">No pending-memorize data — is mcp-memu-server running?</p>
-  {% endif %}
+  <div id="memorize-meter">
+    {% if memorize and memorize.threshold %}
+      <p>
+        Memorize: {{ "{:,}".format(memorize.summed_unmemorized_tokens) }} / {{ "{:,}".format(memorize.threshold) }} ({{ memorize.pct }}%)
+        {% if memorize.summed_unmemorized_tokens >= memorize.threshold %}
+          <span class="badge">{{ "sleep-gap detected" if memorize.sleep_gap_ready else "waiting for sleep-gap" }}</span>
+        {% endif %}
+      </p>
+      <div class="meter"><div class="meter-fill" style="width: {{ [memorize.pct, 100]|min }}%"></div></div>
+      <p class="muted">Memorize-eligible at {{ "{:,}".format(memorize.threshold) }} tokens; a sleep-gap releases it. Snapshot {{ memorize.computed_at }}.</p>
+    {% else %}
+      <p class="muted">No pending-memorize data — is mcp-memu-server running?</p>
+    {% endif %}
+  </div>
 
   <h2>Edit configs</h2>
   <p class="muted">Opens in your default editor.</p>
@@ -303,11 +305,43 @@ function pollStatus(name) {
     .catch(function() {});
 }
 
+function fmt(n) {
+  return Number(n || 0).toLocaleString();
+}
+
+function renderMemorize(data) {
+  var box = document.getElementById('memorize-meter');
+  if (!box) return;
+  if (!data || !data.threshold) {
+    box.innerHTML = '<p class="muted">No pending-memorize data — is mcp-memu-server running?</p>';
+    return;
+  }
+  var tokens = Number(data.summed_unmemorized_tokens || 0);
+  var threshold = Number(data.threshold || 0);
+  var pct = Number(data.pct || 0);
+  var html = '<p>Memorize: ' + fmt(tokens) + ' / ' + fmt(threshold) + ' (' + pct + '%)';
+  if (tokens >= threshold) {
+    html += ' <span class="badge">' + esc(data.sleep_gap_ready ? 'sleep-gap detected' : 'waiting for sleep-gap') + '</span>';
+  }
+  html += '</p>';
+  html += '<div class="meter"><div class="meter-fill" style="width: ' + Math.min(pct, 100) + '%"></div></div>';
+  html += '<p class="muted">Memorize-eligible at ' + fmt(threshold) + ' tokens; a sleep-gap releases it. Snapshot ' + esc(data.computed_at) + '.</p>';
+  box.innerHTML = html;
+}
+
+function pollMemorize() {
+  fetch('/memorize/status')
+    .then(function(r) { return r.json(); })
+    .then(renderMemorize)
+    .catch(function() {});
+}
+
 setInterval(function() {
   document.querySelectorAll('tr[data-service]').forEach(function(row) {
     pollStatus(row.dataset.service);
   });
 }, 2000);
+setInterval(pollMemorize, 60000);
 </script>
 </body>
 </html>

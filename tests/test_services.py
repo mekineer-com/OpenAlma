@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "launcher"))
 
@@ -88,6 +89,23 @@ def test_memorize_pending_sends_user_id(monkeypatch):
     assert out == {"threshold": 5000}
     assert query == {"soul_id": ["Siri"], "user_id": ["Marcos"]}
     assert seen["timeout"] == 2
+
+
+def test_memorize_status_uses_active_soul_and_user(monkeypatch):
+    pytest.importorskip("fastapi")
+    import app as launcher_app  # noqa: PLC0415
+
+    seen = {}
+    monkeypatch.setattr(launcher_app.soul, "read_active_soul_id", lambda: "Siri")
+    monkeypatch.setattr(launcher_app.soul, "read_active_user_id", lambda: "Marcos")
+    monkeypatch.setattr(
+        launcher_app.services,
+        "memorize_pending",
+        lambda soul_id, user_id: seen.setdefault((soul_id, user_id), {"threshold": 6000}),
+    )
+
+    assert launcher_app.memorize_status() == {"threshold": 6000}
+    assert ("Siri", "Marcos") in seen
 
 
 def test_memu_server_uses_configured_pidfile_for_adoption(tmp_path, monkeypatch):

@@ -100,6 +100,14 @@ def index(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/memorize/status")
+def memorize_status() -> dict:
+    active_soul = soul.read_active_soul_id()
+    if not active_soul:
+        return {}
+    return services.memorize_pending(active_soul, soul.read_active_user_id())
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request) -> HTMLResponse:
     apps_root = settings.apps_root()
