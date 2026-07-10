@@ -12,6 +12,7 @@ from settings import channels_home
 _CHANNELS_HOME = channels_home()
 HERMES_STATE_DB_PATH = _CHANNELS_HOME / "state.db"
 CHANNELS_CONFIG_PATH = _CHANNELS_HOME / "config.json"
+DEFAULT_REPLY_PREFIX_TEMPLATE = "✦ *{soul}*: "
 
 
 def _load_channels_config() -> dict:
@@ -103,8 +104,9 @@ def set_active_soul_id(soul_id: str) -> None:
     souls.sort(key=lambda v: v.lower())
     config["souls"] = souls
 
-    template_raw = config.get("reply_prefix_template")
+    template_raw = config.get("reply_prefix_template") or DEFAULT_REPLY_PREFIX_TEMPLATE
     if isinstance(template_raw, str) and "{soul}" in template_raw:
+        config["reply_prefix_template"] = template_raw
         config["reply_prefix"] = template_raw.replace("{soul}", selected)
 
     _write_channels_config(config)

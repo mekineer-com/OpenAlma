@@ -92,6 +92,24 @@ def test_set_active_soul_id_recomputes_reply_prefix_from_template(tmp_path, monk
     assert data["soul_id"] == "Echo"
 
 
+def test_set_active_soul_id_seeds_reply_prefix_template_when_missing(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.json"
+    state_db = tmp_path / "state.db"
+    _write_cfg(cfg, {
+        "soul_id": "Siri",
+        "souls": ["Siri"],
+        "reply_prefix": "✦ *Siri*: ",
+    })
+    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", cfg)
+    monkeypatch.setattr(soul, "HERMES_STATE_DB_PATH", state_db)
+
+    soul.set_active_soul_id("Echo")
+
+    data = json.loads(cfg.read_text(encoding="utf-8"))
+    assert data["reply_prefix_template"] == "✦ *{soul}*: "
+    assert data["reply_prefix"] == "✦ *Echo*: "
+
+
 def test_set_active_soul_id_does_not_stamp_when_write_fails(tmp_path, monkeypatch):
     cfg = tmp_path / "config.json"
     _write_cfg(cfg, {"soul_id": "Siri", "souls": ["Siri"]})
