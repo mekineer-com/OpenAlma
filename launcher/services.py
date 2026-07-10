@@ -24,8 +24,8 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from policy import CHANNELS_HOME as _CHANNELS_HOME
 from settings import apps_root as _resolve_apps_root
+from settings import channels_home as _resolve_channels_home
 
 STATE_DIR = Path.home() / ".cache" / "openalma-launcher"
 STARTUP_GRACE_SECONDS = 4.0
@@ -34,6 +34,7 @@ PROCESS_SCAN_CACHE_SECONDS = 10.0
 PORT_PID_CACHE_SECONDS = 5.0
 _PROCESS_SCAN_CACHE: dict[tuple[str, str, str], tuple[float, list[int]]] = {}
 _PORT_PID_CACHE: dict[int, tuple[float, int | None]] = {}
+_CHANNELS_HOME = _resolve_channels_home()
 
 
 @dataclass
@@ -78,7 +79,12 @@ def _resolve_memu_server_pid_path(root: Path) -> Path:
     return (root / "mcp-memu-server" / path).resolve()
 
 
-def _atomic_start_command() -> str:
+def _atomic_start_command(channels_config: dict | None = None) -> str:
+    config = channels_config or {}
+    user_id = str(config.get("user_id") or "").strip()
+    soul_id = str(config.get("soul_id") or "").strip()
+    user_default = f"\nif [ -z \"${{MEMU_USER_ID:-}}\" ]; then MEMU_USER_ID={shlex.quote(user_id)}; fi" if user_id else ""
+    soul_default = f"\nif [ -z \"${{MEMU_SOUL_ID:-}}\" ]; then MEMU_SOUL_ID={shlex.quote(soul_id)}; fi" if soul_id else ""
     return r'''
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/openalma"
 TOKEN_FILE="$LOG_DIR/atomic-token"
@@ -94,9 +100,14 @@ if [ -z "$token" ]; then
 fi
 [ -n "$token" ]
 printf '%s\n' "$token" > "$TOKEN_FILE"
-export MEMU_SERVER_URL="${MEMU_SERVER_URL:-http://127.0.0.1:8099}"
-export MEMU_USER_ID="${MEMU_USER_ID:-Marcos}"
-export MEMU_SOUL_ID="${MEMU_SOUL_ID:-Siri}"
+if [ -z "${MEMU_SERVER_URL:-}" ]; then MEMU_SERVER_URL="http://127.0.0.1:8099"; fi
+'''.rstrip() + user_default + soul_default + "\n" + r'''
+
+if [ -z "${MEMU_USER_ID:-}" ] || [ -z "${MEMU_SOUL_ID:-}" ]; then
+    echo "Atomic requires user_id and soul_id in hermes-channels/data/config.json" >&2
+    exit 1
+fi
+export MEMU_SERVER_URL MEMU_USER_ID MEMU_SOUL_ID
 export VITE_ATOMIC_SERVER_URL="$API_URL"
 export VITE_ATOMIC_AUTH_TOKEN="$token"
 exec npm run dev:server
@@ -107,6 +118,7 @@ def all_services() -> list[ServiceSpec]:
     root = _resolve_apps_root()
     if root is None:
         return []
+    channels_config = _read_channels_config()
     return [
         ServiceSpec(
             name="memu-server",
@@ -121,7 +133,7 @@ def all_services() -> list[ServiceSpec]:
         ServiceSpec(
             name="atomic",
             label="Atomic Mind Map",
-            cmd=["sh", "-c", _atomic_start_command()],
+            cmd=["sh", "-c", _atomic_start_command(channels_config)],
             cwd=root / "atomic",
             log_path=Path.home() / ".local" / "state" / "openalma" / "atomic.log",
             pid_path=STATE_DIR / "atomic.pid",

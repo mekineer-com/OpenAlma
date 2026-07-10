@@ -7,10 +7,11 @@ import sqlite3
 import tempfile
 import time
 
-from policy import CHANNELS_HOME
+from settings import channels_home
 
-HERMES_STATE_DB_PATH = CHANNELS_HOME / "state.db"
-CHANNELS_CONFIG_PATH = CHANNELS_HOME / "config.json"
+_CHANNELS_HOME = channels_home()
+HERMES_STATE_DB_PATH = _CHANNELS_HOME / "state.db"
+CHANNELS_CONFIG_PATH = _CHANNELS_HOME / "config.json"
 
 
 def _load_channels_config() -> dict:

@@ -61,6 +61,16 @@ def test_atomic_service_is_managed_by_launcher(tmp_path, monkeypatch):
     assert "npm run dev:server" in spec.cmd[2]
 
 
+def test_atomic_start_command_uses_channels_config_identity():
+    cmd = services._atomic_start_command({"user_id": "Test User", "soul_id": "Test Soul"})
+
+    assert "MEMU_USER_ID='Test User'" in cmd
+    assert "MEMU_SOUL_ID='Test Soul'" in cmd
+    assert "MEMU_USER_ID:-Marcos" not in cmd
+    assert "MEMU_SOUL_ID:-Siri" not in cmd
+    assert "fiif" not in cmd
+
+
 def test_memorize_pending_sends_user_id(monkeypatch):
     seen = {}
 

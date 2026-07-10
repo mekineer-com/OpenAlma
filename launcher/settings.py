@@ -17,6 +17,7 @@ There is no hardcoded personal-machine fallback.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 LAUNCHER_DIR = Path(__file__).resolve().parent
@@ -56,3 +57,13 @@ def apps_root() -> Path | None:
         if (candidate / _AUTODISCOVER_MARKER).exists():
             return candidate
     return _autodiscover_apps_root()
+
+
+def channels_home() -> Path:
+    raw = os.environ.get("CHANNELS_HOME")
+    if raw and raw.strip():
+        return Path(raw.strip()).expanduser()
+    root = apps_root()
+    if root is not None:
+        return root / "hermes-channels" / "data"
+    return LAUNCHER_DIR.parents[1] / "hermes-channels" / "data"
