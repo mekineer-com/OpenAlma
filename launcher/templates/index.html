@@ -330,7 +330,7 @@ function renderMemorize(data) {
 }
 
 function pollMemorize() {
-  fetch('/memorize/status')
+  fetch('/memorize/status', { cache: 'no-store' })
     .then(function(r) { return r.json(); })
     .then(renderMemorize)
     .catch(function() {});
