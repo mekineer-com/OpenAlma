@@ -101,13 +101,14 @@ fi
 [ -n "$token" ]
 printf '%s\n' "$token" > "$TOKEN_FILE"
 if [ -z "${MEMU_SERVER_URL:-}" ]; then MEMU_SERVER_URL="http://127.0.0.1:8099"; fi
+if [ -z "${RUST_LOG:-}" ]; then RUST_LOG="warn,atomic_server=warn,atomic_core=warn"; fi
 '''.rstrip() + user_default + soul_default + "\n" + r'''
 
 if [ -z "${MEMU_USER_ID:-}" ] || [ -z "${MEMU_SOUL_ID:-}" ]; then
     echo "Atomic requires user_id and soul_id in hermes-channels/data/config.json" >&2
     exit 1
 fi
-export MEMU_SERVER_URL MEMU_USER_ID MEMU_SOUL_ID
+export MEMU_SERVER_URL MEMU_USER_ID MEMU_SOUL_ID RUST_LOG
 export VITE_ATOMIC_SERVER_URL="$API_URL"
 export VITE_ATOMIC_AUTH_TOKEN="$token"
 exec npm run dev:server

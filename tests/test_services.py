@@ -67,6 +67,7 @@ def test_atomic_start_command_uses_channels_config_identity():
 
     assert "MEMU_USER_ID='Test User'" in cmd
     assert "MEMU_SOUL_ID='Test Soul'" in cmd
+    assert 'RUST_LOG="warn,atomic_server=warn,atomic_core=warn"' in cmd
     assert "MEMU_USER_ID:-Marcos" not in cmd
     assert "MEMU_SOUL_ID:-Siri" not in cmd
     assert "fiif" not in cmd
