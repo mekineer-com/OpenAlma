@@ -96,6 +96,9 @@ if [ ! -x "$ATOMIC_SERVER_BIN" ]; then
     echo "Run: cargo build --profile server -p atomic-server --jobs 1" >&2
     exit 1
 fi
+if find crates -type f -newer "$ATOMIC_SERVER_BIN" -print -quit | grep -q .; then
+    echo "Warning: Atomic Rust source is newer than $ATOMIC_SERVER_BIN; rebuild the server profile." >&2
+fi
 token=""
 if [ -s "$TOKEN_FILE" ]; then
     token=$(sed -n '1p' "$TOKEN_FILE")

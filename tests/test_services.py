@@ -67,6 +67,7 @@ def test_atomic_start_command_uses_channels_config_identity():
 
     assert 'ATOMIC_SERVER_BIN="${ATOMIC_SERVER_BIN:-$PWD/target/server/atomic-server}"' in cmd
     assert 'token_output=$("$ATOMIC_SERVER_BIN" token create --name openalma-launcher)' in cmd
+    assert 'find crates -type f -newer "$ATOMIC_SERVER_BIN"' in cmd
     assert "cargo run" not in cmd
     assert "MEMU_USER_ID='Test User'" in cmd
     assert "MEMU_SOUL_ID='Test Soul'" in cmd
