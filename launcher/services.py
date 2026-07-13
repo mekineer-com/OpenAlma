@@ -89,13 +89,19 @@ def _atomic_start_command(channels_config: dict | None = None) -> str:
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/openalma"
 TOKEN_FILE="$LOG_DIR/atomic-token"
 API_URL="${ATOMIC_SERVER_URL:-http://127.0.0.1:8080}"
+ATOMIC_SERVER_BIN="${ATOMIC_SERVER_BIN:-$PWD/target/server/atomic-server}"
 mkdir -p "$LOG_DIR"
+if [ ! -x "$ATOMIC_SERVER_BIN" ]; then
+    echo "Atomic optimized binary missing: $ATOMIC_SERVER_BIN" >&2
+    echo "Run: cargo build --profile server -p atomic-server --jobs 1" >&2
+    exit 1
+fi
 token=""
 if [ -s "$TOKEN_FILE" ]; then
     token=$(sed -n '1p' "$TOKEN_FILE")
 fi
 if [ -z "$token" ]; then
-    token_output=$(cargo run -p atomic-server -- token create --name openalma-launcher)
+    token_output=$("$ATOMIC_SERVER_BIN" token create --name openalma-launcher)
     token=$(printf '%s\n' "$token_output" | awk '/Token:/ {print $2; exit}')
 fi
 [ -n "$token" ]
@@ -108,7 +114,7 @@ if [ -z "${MEMU_USER_ID:-}" ] || [ -z "${MEMU_SOUL_ID:-}" ]; then
     echo "Atomic requires user_id and soul_id in hermes-channels/data/config.json" >&2
     exit 1
 fi
-export MEMU_SERVER_URL MEMU_USER_ID MEMU_SOUL_ID RUST_LOG
+export ATOMIC_SERVER_BIN MEMU_SERVER_URL MEMU_USER_ID MEMU_SOUL_ID RUST_LOG
 export VITE_ATOMIC_SERVER_URL="$API_URL"
 export VITE_ATOMIC_AUTH_TOKEN="$token"
 exec npm run dev:server

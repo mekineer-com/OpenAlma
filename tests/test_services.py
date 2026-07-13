@@ -65,6 +65,9 @@ def test_atomic_service_is_managed_by_launcher(tmp_path, monkeypatch):
 def test_atomic_start_command_uses_channels_config_identity():
     cmd = services._atomic_start_command({"user_id": "Test User", "soul_id": "Test Soul"})
 
+    assert 'ATOMIC_SERVER_BIN="${ATOMIC_SERVER_BIN:-$PWD/target/server/atomic-server}"' in cmd
+    assert 'token_output=$("$ATOMIC_SERVER_BIN" token create --name openalma-launcher)' in cmd
+    assert "cargo run" not in cmd
     assert "MEMU_USER_ID='Test User'" in cmd
     assert "MEMU_SOUL_ID='Test Soul'" in cmd
     assert 'RUST_LOG="warn,atomic_server=warn,atomic_core=warn"' in cmd
