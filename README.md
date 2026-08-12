@@ -169,11 +169,11 @@ Note: stay on the same embedding model. Switching requires re-embedding everythi
 
 ### Working
 
-claude-opus-4-8
-claude-opus-4-6
-claude-sonnet-4-6
-glm-5.2 + glm-5.2:thinking for consolidation
-mistral-small-4-119b + mistral-small-4-119b:thinking for consolidation
+claude-opus-4-8<br>
+claude-opus-4-6<br>
+claude-sonnet-4-6<br>
+glm-5.2 + glm-5.2:thinking for consolidation<br>
+mistral-small-4-119b + mistral-small-4-119b:thinking for consolidation<br>
 devstral-2-123b + devstral-2-123b:thinking for consolidation
 
 ---
