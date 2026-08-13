@@ -123,7 +123,7 @@
         } else if (!data.websource.qr && !data.bridge.qr) {
           pairStatus.textContent = "Start Hermes Channels, then try again.";
         } else {
-          pairStatus.textContent = "Scan any QR codes shown below.";
+          pairStatus.innerHTML = "Scan <strong>both</strong> QR codes; both are needed.";
         }
       } catch (_err) {
         pairStatus.textContent = "Could not read pairing status.";
