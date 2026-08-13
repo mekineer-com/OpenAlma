@@ -597,6 +597,7 @@ def status(spec: ServiceSpec) -> dict:
     )
     detail = ""
     children: list[dict[str, str]] = []
+    pairing_required = False
     if blocked:
         detail = f"port {spec.port} is held by PID {runtime.port_pid}"
     elif orphaned:
@@ -623,7 +624,11 @@ def status(spec: ServiceSpec) -> dict:
 
         web_source_ok = (not web_source_enabled) or web_source_state == "ready"
         web_source_starting = web_source_state in {"starting", "pairing", "authenticated"}
-        if bridge_state == "connected" and web_source_ok:
+        pairing_required = bool(bridge.get("qr") or web_source.get("qr"))
+        if pairing_required:
+            state = "pairing"
+            label = "Pairing required"
+        elif bridge_state == "connected" and web_source_ok:
             state = "healthy"
             label = "● healthy"
         elif bridge_state in {"connecting", "starting"} or web_source_starting:
@@ -649,6 +654,7 @@ def status(spec: ServiceSpec) -> dict:
         "status_label": label,
         "detail": detail,
         "children": children,
+        "pairing_required": pairing_required,
     }
 
 

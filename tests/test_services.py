@@ -504,6 +504,34 @@ def test_channels_daemon_status_uses_bridge_and_web_source_health(tmp_path, monk
     ]
 
 
+def test_channels_daemon_status_requests_pairing_when_qr_is_ready(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        services,
+        "_runtime_state",
+        lambda _spec: services.RuntimeState(pid=111, running=True),
+    )
+    monkeypatch.setattr(
+        services,
+        "_channels_bridge_health",
+        lambda _config=None: {"status": "connecting", "qr": "scan-me"},
+    )
+    monkeypatch.setattr(services, "_read_channels_web_source_status", lambda: {})
+    spec = services.ServiceSpec(
+        name="channels-daemon",
+        label="Hermes Channels",
+        cmd=[],
+        cwd=tmp_path,
+        log_path=tmp_path / "channels.log",
+        pid_path=tmp_path / "channels.pid",
+    )
+
+    status = services.status(spec)
+
+    assert status["state"] == "pairing"
+    assert status["status_label"] == "Pairing required"
+    assert status["pairing_required"] is True
+
+
 def test_status_json_includes_supports_terminal(tmp_path, monkeypatch):
     spec = services.ServiceSpec(
         name="sillytavern",

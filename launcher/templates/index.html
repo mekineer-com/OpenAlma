@@ -264,6 +264,10 @@ function svcAction(name, action, btn) {
 }
 
 function actionHtml(name, data) {
+  if (name === 'channels-daemon' && data.pairing_required) {
+    return '<a class="btn" href="/settings?pair=1">Pair WhatsApp</a> ' +
+      '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button>';
+  }
   if (data.stoppable || data.running) {
     return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button>';
   }

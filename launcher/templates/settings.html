@@ -136,6 +136,9 @@
       clearInterval(pairTimer);
       pairTimer = setInterval(refreshPairing, 3000);
     });
+    if (new URLSearchParams(window.location.search).get("pair") === "1") {
+      pairButton.click();
+    }
   </script>
 </body>
 </html>
