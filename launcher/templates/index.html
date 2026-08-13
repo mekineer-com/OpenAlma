@@ -150,8 +150,8 @@
     {% endfor %}
   </ul>
 
-  <h2>Soul</h2>
-  <p class="muted">One active soul at a time. This updates the channels config (<code>soul_id</code>, <code>souls</code>, <code>reply_prefix</code>).</p>
+  <h2>Hermes Channels Soul selector</h2>
+  <p class="muted">One active Hermes Channels soul at a time. This updates <code>hermes-channels/data/config.json</code>.</p>
   <form method="post" action="/soul">
     <label for="soul_id">Active soul ID:</label>
     <input list="soul-options" id="soul_id" name="soul_id" value="{{ active_soul }}" placeholder="Echo" required
@@ -161,7 +161,7 @@
         <option value="{{ s }}"></option>
       {% endfor %}
     </datalist>
-    <button class="btn" type="submit">Set soul</button>
+    <button class="btn" type="submit">Set Channels soul</button>
   </form>
 
   <h2>WhatsApp channel policy</h2>
