@@ -110,6 +110,26 @@ def test_set_active_soul_id_seeds_reply_prefix_template_when_missing(tmp_path, m
     assert data["reply_prefix"] == "✦ *Echo*: "
 
 
+def test_set_active_soul_id_preserves_empty_reply_prefix(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.json"
+    _write_cfg(cfg, {"soul_id": "Siri", "reply_prefix": "old", "reply_prefix_template": ""})
+    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", cfg)
+    monkeypatch.setattr(soul, "HERMES_STATE_DB_PATH", tmp_path / "state.db")
+
+    soul.set_active_soul_id("Echo")
+
+    assert json.loads(cfg.read_text(encoding="utf-8"))["reply_prefix"] == ""
+
+
+def test_set_active_soul_id_rejects_malformed_reply_prefix_template(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.json"
+    _write_cfg(cfg, {"soul_id": "Siri", "reply_prefix_template": "no placeholder"})
+    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", cfg)
+
+    with pytest.raises(RuntimeError, match=r"contain \{soul\}"):
+        soul.set_active_soul_id("Echo")
+
+
 def test_set_active_soul_id_does_not_stamp_when_write_fails(tmp_path, monkeypatch):
     cfg = tmp_path / "config.json"
     _write_cfg(cfg, {"soul_id": "Siri", "souls": ["Siri"]})

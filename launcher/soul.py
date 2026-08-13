@@ -104,10 +104,14 @@ def set_active_soul_id(soul_id: str) -> None:
     souls.sort(key=lambda v: v.lower())
     config["souls"] = souls
 
-    template_raw = config.get("reply_prefix_template") or DEFAULT_REPLY_PREFIX_TEMPLATE
-    if isinstance(template_raw, str) and "{soul}" in template_raw:
+    template_raw = config.get("reply_prefix_template", DEFAULT_REPLY_PREFIX_TEMPLATE)
+    if template_raw == "":
+        config["reply_prefix"] = ""
+    elif isinstance(template_raw, str) and "{soul}" in template_raw:
         config["reply_prefix_template"] = template_raw
         config["reply_prefix"] = template_raw.replace("{soul}", selected)
+    else:
+        raise RuntimeError("reply_prefix_template must be empty or contain {soul}")
 
     _write_channels_config(config)
     _stamp_soul_active_since(selected)
