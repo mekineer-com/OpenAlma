@@ -1,6 +1,6 @@
 # OpenAlma
 
-_Last updated: 2026-06-20 (v0.0.12-buildfix)_
+_Last updated: 2026-08-19 (v0.0.12-buildfix)_
 
 > *Give your AI companion a real memory. One that belongs to it — and stays on your machine.*
 
@@ -27,10 +27,14 @@ Four kinds of memory — because not everything should be stored the same way:
 
 Episodes — the conversations themselves — are also stored as condensed summaries linked to the original transcript, so the soul can look back at what happened without needing to remember every word.
 
+On top of those, the soul keeps **dossiers** — standing files on the things that matter to her. Each has a title, a one-line description, and a body of prose she writes and revises herself. Some are lore (people, places, the shape of your shared history), some are topics she keeps returning to, some are goals she's holding. Individual memories are the raw material; the dossier is what she's made of it, and it cites the specific memories it was built from so nothing becomes an unsourced claim.
+
+**How she finds the right memory.** Two searches run at once — one on meaning, one on the actual words — and their results are merged, so a memory surfaces whether you phrased it the same way or not. What comes back is then weighed by how well it matches, how recent it is, and how much it mattered. If the conversation is about a particular stretch of time, memories from that period get a nudge upward. And when one of her dossiers makes a claim, she can pull up the memories behind it to check her own reasoning.
+
 Plus inner life:
 
 - **Self-model (`narrative_self`)** — an evolving sense of her own character. Consolidation rewrites it as experience accumulates; you can also suggest revisions directly (see "Day-to-day use" below).
-- **Subconscious thoughts** — between turns, a background process surfaces connections she wouldn't have noticed in the moment. These become part of her memory too.
+- **Subconscious thoughts** — every few turns, a background process surfaces connections she wouldn't have noticed in the moment. These become part of her memory too.
 - **Reflections** — during weekly consolidation, she writes a first-person reflection on the experience of looking back at the week.
 
 ---
@@ -188,7 +192,7 @@ devstral-2-123b + devstral-2-123b:thinking for consolidation
 |---------|----------|--------------|
 | **Memorize Now** button | memU extension panel | Extracts the current conversation tail (everything after the last memorized point) without waiting for a sleep gap. Sends `tail=true` to the server. Disabled when no character is selected. |
 | **Re-memorize chat** | SillyTavern's chat options menu (the rotate-left icon) | Wipes client-side progress and lorebooks, then sends `force=true` — resets the cursor and re-extracts all segments from the beginning. Use after schema changes or if extraction looked wrong. |
-| **Eye icon** (👁) | memU extension drawer header, next to the memU logo | Opens a memory inspector. Categories show as memU lorebooks, each containing the items the soul has stored under that category. |
+| **Eye icon** (👁) | memU extension drawer header, next to the memU logo | Opens a memory inspector. Each category shows as a memU lorebook holding that category's summary — the prose she's written about it, not a list of raw entries. |
 | **Narrative Suggestion** input | memU panel, under the Memorize Now button | Sends the soul a suggested revision of her `narrative_self`. See below. |
 
 #### Memory bubble checkboxes
@@ -204,6 +208,8 @@ devstral-2-123b + devstral-2-123b:thinking for consolidation
 The Memory bubble has a **Relationships** section (greyed out until a soul/character is active). Here you declare third parties the soul should be aware of — family, friends, coworkers, pets. Each entry becomes a named entity in the memory graph. When the soul extracts memories from conversation that mentions a declared relationship, she can attribute the memory to the right person rather than guessing.
 
 You can add, edit, and soft-delete relationships. The section shows a warning when you exceed 20 entries.
+
+Entities themselves are managed in the Atomic Mind Map, where each one has a permanent identity that survives renaming. There you can correct a name, merge two entries that turn out to be the same person (with a preview of everything that will move over), hide an entity so she stops noticing that name going forward without losing the history, or delete one outright when nothing references it.
 
 #### Letting the soul author her own self-model
 
@@ -251,13 +257,13 @@ Memorize works the same way as SillyTavern: sleep gaps trigger extraction automa
 
 **Embedding provider fallback.** If your primary LLM provider is down during memorize (embeddings fail with 502), you can switch the plugin's `defaultProfileId` in `memu-plugin.config.json` to any other ST provider profile. The plugin resolves the embedding API base URL directly from ST's own provider config at load time, so switching profiles is enough.
 
-**This costs money to run.** Every turn calls your LLM provider (the soul's response). Every memorize calls it several more times (router + extraction per applicable type, plus optional category clustering). Consolidation calls it weekly, plus a per-episode background retrieval. APImw runs a couple of background calls after each turn. With a budget provider like NanoGPT this stays cheap, but it isn't free — assume real API spend.
+**This costs money to run.** Every turn calls your LLM provider (the soul's response). Every memorize calls it several more times (router + extraction per applicable type, plus optional category clustering). Consolidation calls it weekly, plus a per-episode background retrieval. APImw runs a couple of background calls every few turns. With a budget provider like NanoGPT this stays cheap, but it isn't free — assume real API spend.
 
 **Consolidation cadence is real time, not turn count.** It's gated by `consolidation_interval_days` (default 7) since the last run. If you don't talk to her for two weeks then come back, the next memorize fires a consolidation immediately.
 
 **Two background passes — don't confuse them.**
-- **APImw** runs after each turn (multi-step retrieval + context curation). She comes back richer the next turn — and sometimes surfaces a subconscious thought.
-- **Consolidation** runs weekly (or on first activity after the interval lapses). She rewrites her self-model, manages her intentions, creates memory connections, and writes a reflection.
+- **APImw** runs every few turns, not every turn — the cadence is `retrieve.apimw_cadence` in `config.json` (default 5). It does multi-step retrieval and context curation, so she comes back richer on the turns that follow — and sometimes surfaces a subconscious thought.
+- **Consolidation** runs weekly (or on first activity after the interval lapses). It's two passes: first she revises the dossiers that have fallen out of date, then she rewrites her self-model, manages her intentions, creates memory connections, and writes a reflection.
 
 ---
 
@@ -270,3 +276,5 @@ Memorize works the same way as SillyTavern: sleep gaps trigger extraction automa
 ## Acknowledgments
 
 memU's design has been informed by reading [MemPalace](https://github.com/MemPalace/mempalace), another local-first AI memory project (MIT-licensed). They approach memory differently — verbatim storage rather than extraction — but share the local-first and temporal-graph commitments, and auditing our implementation against theirs sharpened parts of memU. Thanks to the MemPalace team for the open reference implementation.
+
+The dossier format owes a direct debt to [Nomi](https://nomi.ai). Their approach — a named file with a short description and a body of prose, rather than a bag of loose facts under a label — is what our category summaries grew into. Watching how much better memory reads when it's organized that way drove a substantial rewrite on our side: dossiers now carry titles, descriptions, and revisable prose, are grouped by kind, and cite the memories they were built from. Different implementation, different codebase, but the shape of the idea is theirs and it made ours considerably better.
