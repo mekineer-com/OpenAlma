@@ -27,7 +27,7 @@ Five types of memory — because not everything should be stored the same way. F
 
 The fifth is **Episodes** — the conversations themselves, condensed into short stories with a title and a summary, linked back to the original transcript. These aren't extracted by a lens; they're written up front when the conversation is sorted. Each lens then reads the whole conversation verbatim, with the episode summaries placed in front of it for perspective on what actually mattered — so she isn't treating every verbose tangent as its own memory. The episodes also stand on their own, letting her look back at what happened without remembering every word.
 
-Memories are filed under **categories** — broad life domains the soul proposes herself as they come up, each one either lore (people, places, the shape of your shared history), a topic she keeps returning to, or a goal she's holding. A category is a title, a one-line description, the memories filed under it, and the prose she's written about them, which she revises as it goes out of date. That prose cites the specific memories behind it, so nothing becomes an unsourced claim.
+Memories are filed under **categories** — life domains or throughlines the soul proposes herself as they come up, each one either lore (people, places, the shape of your shared history), a topic she keeps returning to, or a goal she's holding. A category is a title, a one-line description, the memories filed under it, and the prose she's written about them, which she revises as it goes out of date. That prose cites the specific memories behind it, so nothing becomes an unsourced claim.
 
 We often call these **dossiers** — a word borrowed from Nomi, whose format shaped how ours are written. Same thing either way.
 
