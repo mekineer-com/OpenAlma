@@ -27,7 +27,7 @@ Five types of memory — because not everything should be stored the same way. F
 
 The fifth is **Episodes** — the conversations themselves, condensed into short stories with a title and a summary, linked back to the original transcript. These aren't extracted by a lens; they're written up front when the conversation is sorted, and they're what the four lenses are then pointed at. So the soul can look back at what happened without remembering every word.
 
-On top of those, the soul keeps **dossiers** — standing files on the things that matter to her. Each has a title, a one-line description, and a body of prose she writes and revises herself. Some are lore (people, places, the shape of your shared history), some are topics she keeps returning to, some are goals she's holding. Individual memories are the raw material; the dossier is what she's made of it, and it cites the specific memories it was built from so nothing becomes an unsourced claim.
+Memories are filed under **categories** — broad life domains the soul proposes herself as they come up, each one either lore (people, places, the shape of your shared history), a topic she keeps returning to, or a goal she's holding. Every category carries a **dossier**: a title, a one-line description, and a body of prose she writes and revises about that category. The memories filed there are the raw material; the dossier is what she's made of them, and it cites the specific memories behind it so nothing becomes an unsourced claim.
 
 **How she finds the right memory.** Two searches run at once — one on meaning, one on the actual words — and their results are merged, so a memory surfaces whether you phrased it the same way or not. What comes back is then weighed by how well it matches, how recent it is, and how much it mattered. If the conversation is about a particular stretch of time, memories from that period get a nudge upward. And when one of her dossiers makes a claim, she can pull up the memories behind it to check her own reasoning.
 
@@ -192,7 +192,7 @@ devstral-2-123b + devstral-2-123b:thinking for consolidation
 |---------|----------|--------------|
 | **Memorize Now** button | memU extension panel | Extracts the current conversation tail (everything after the last memorized point) without waiting for a sleep gap. Sends `tail=true` to the server. Disabled when no character is selected. |
 | **Re-memorize chat** | SillyTavern's chat options menu (the rotate-left icon) | Wipes client-side progress and lorebooks, then sends `force=true` — resets the cursor and re-extracts all segments from the beginning. Use after schema changes or if extraction looked wrong. |
-| **Eye icon** (👁) | memU extension drawer header, next to the memU logo | Opens a memory inspector. Each category shows as a memU lorebook holding that category's summary — the prose she's written about it, not a list of raw entries. |
+| **Eye icon** (👁) | memU extension drawer header, next to the memU logo | Opens a memory inspector. Each category shows as a memU lorebook holding that category's dossier — the prose she's written about it, not a list of raw entries. |
 | **Narrative Suggestion** input | memU panel, under the Memorize Now button | Sends the soul a suggested revision of her `narrative_self`. See below. |
 
 #### Memory bubble checkboxes
