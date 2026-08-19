@@ -18,14 +18,14 @@ It's not that the AI doesn't care — it's that it never had a way to remember.
 
 ## What your companion gets
 
-Four kinds of memory — because not everything should be stored the same way:
+Five types of memory — because not everything should be stored the same way. Four of them come from reading the conversation through four separate lenses, each told to record only what its own lens uniquely sees:
 
-- **Profile** — who you are as a person. Your values, your fears, your sense of humor, what you keep coming back to. The things that would still be true about you a year from now.
-- **Knowledge** — things you've learned or explored together. Not trivia — things where the topic actually connects to your life.
-- **Behavior** — how you communicate. Whether you joke when things get heavy, whether you go quiet before saying something important. Patterns that are distinctly *you*.
-- **Social** — the people in your life. Friends, family, coworkers, anyone you talk about. The relationship context that gives your conversations texture.
+- **Profile** — what someone *said*. Declarations, beliefs, values, origins, desires. Deliberately not a verdict on whether it's true: profile records that you call yourself honest, and behavior is what confirms or contradicts it over time. Held to things that would still be true a year from now.
+- **Behavior** — what someone *did*. How people are with each other, read from the conversation rather than stated in it — a pattern observed, not a claim made.
+- **Social** — the dynamic *between* people. Not who they are individually, but what two or more of them are to each other, including her.
+- **Knowledge** — what was learned or worked out, when it isn't about the character of anyone. Not trivia; things worth carrying forward, including what the people she cares about are worried about or working toward.
 
-Episodes — the conversations themselves — are also stored as condensed summaries linked to the original transcript, so the soul can look back at what happened without needing to remember every word.
+The fifth is **Episodes** — the conversations themselves, condensed into short stories with a title and a summary, linked back to the original transcript. These aren't extracted by a lens; they're written up front when the conversation is sorted, and they're what the four lenses are then pointed at. So the soul can look back at what happened without remembering every word.
 
 On top of those, the soul keeps **dossiers** — standing files on the things that matter to her. Each has a title, a one-line description, and a body of prose she writes and revises herself. Some are lore (people, places, the shape of your shared history), some are topics she keeps returning to, some are goals she's holding. Individual memories are the raw material; the dossier is what she's made of it, and it cites the specific memories it was built from so nothing becomes an unsourced claim.
 
@@ -256,8 +256,6 @@ Memorize works the same way as SillyTavern: sleep gaps trigger extraction automa
 **Where the data lives.** All memory state is in a SQLite file at the path you set in `storage.metadata_store.dsn` (per soul, by default — check the path you wrote in `config.json`). To back up your companion, copy that file. To start fresh, delete it.
 
 **Embedding provider fallback.** If your primary LLM provider is down during memorize (embeddings fail with 502), you can switch the plugin's `defaultProfileId` in `memu-plugin.config.json` to any other ST provider profile. The plugin resolves the embedding API base URL directly from ST's own provider config at load time, so switching profiles is enough.
-
-**This costs money to run.** Every turn calls your LLM provider (the soul's response). Every memorize calls it several more times (router + extraction per applicable type, plus optional category clustering). Consolidation calls it weekly, plus a per-episode background retrieval. APImw runs a couple of background calls every few turns. With a budget provider like NanoGPT this stays cheap, but it isn't free — assume real API spend.
 
 **Consolidation cadence is real time, not turn count.** It's gated by `consolidation_interval_days` (default 7) since the last run. If you don't talk to her for two weeks then come back, the next memorize fires a consolidation immediately.
 
