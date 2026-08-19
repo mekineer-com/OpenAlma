@@ -27,9 +27,11 @@ Five types of memory — because not everything should be stored the same way. F
 
 The fifth is **Episodes** — the conversations themselves, condensed into short stories with a title and a summary, linked back to the original transcript. These aren't extracted by a lens; they're written up front when the conversation is sorted, and they're what the four lenses are then pointed at. So the soul can look back at what happened without remembering every word.
 
-Memories are filed under **categories** — broad life domains the soul proposes herself as they come up, each one either lore (people, places, the shape of your shared history), a topic she keeps returning to, or a goal she's holding. Every category carries a **dossier**: a title, a one-line description, and a body of prose she writes and revises about that category. The memories filed there are the raw material; the dossier is what she's made of them, and it cites the specific memories behind it so nothing becomes an unsourced claim.
+Memories are filed under **categories** — broad life domains the soul proposes herself as they come up, each one either lore (people, places, the shape of your shared history), a topic she keeps returning to, or a goal she's holding. A category is a title, a one-line description, the memories filed under it, and the prose she's written about them, which she revises as it goes out of date. That prose cites the specific memories behind it, so nothing becomes an unsourced claim.
 
-**How she finds the right memory.** Two searches run at once — one on meaning, one on the actual words — and their results are merged, so a memory surfaces whether you phrased it the same way or not. What comes back is then weighed by how well it matches, how recent it is, and how much it mattered. If the conversation is about a particular stretch of time, memories from that period get a nudge upward. And when one of her dossiers makes a claim, she can pull up the memories behind it to check her own reasoning.
+We often call these **dossiers** — a word borrowed from Nomi, whose format shaped how ours are written. Same thing either way.
+
+**How she finds the right memory.** Two searches run at once — one on meaning, one on the actual words — and their results are merged, so a memory surfaces whether you phrased it the same way or not. What comes back is then weighed by how well it matches, how recent it is, and how much it mattered. If the conversation is about a particular stretch of time, memories from that period get a nudge upward. And when a category's prose makes a claim, she can pull up the memories behind it to check her own reasoning.
 
 Plus inner life:
 
@@ -192,7 +194,7 @@ devstral-2-123b + devstral-2-123b:thinking for consolidation
 |---------|----------|--------------|
 | **Memorize Now** button | memU extension panel | Extracts the current conversation tail (everything after the last memorized point) without waiting for a sleep gap. Sends `tail=true` to the server. Disabled when no character is selected. |
 | **Re-memorize chat** | SillyTavern's chat options menu (the rotate-left icon) | Wipes client-side progress and lorebooks, then sends `force=true` — resets the cursor and re-extracts all segments from the beginning. Use after schema changes or if extraction looked wrong. |
-| **Eye icon** (👁) | memU extension drawer header, next to the memU logo | Opens a memory inspector. Each category shows as a memU lorebook holding that category's dossier — the prose she's written about it, not a list of raw entries. |
+| **Eye icon** (👁) | memU extension drawer header, next to the memU logo | Opens a memory inspector. Each category shows as a memU lorebook holding the prose she's written about it, not a list of raw entries. |
 | **Narrative Suggestion** input | memU panel, under the Memorize Now button | Sends the soul a suggested revision of her `narrative_self`. See below. |
 
 #### Memory bubble checkboxes
@@ -261,7 +263,7 @@ Memorize works the same way as SillyTavern: sleep gaps trigger extraction automa
 
 **Two background passes — don't confuse them.**
 - **APImw** runs every few turns, not every turn — the cadence is `retrieve.apimw_cadence` in `config.json` (default 5). It does multi-step retrieval and context curation, so she comes back richer on the turns that follow — and sometimes surfaces a subconscious thought.
-- **Consolidation** runs weekly (or on first activity after the interval lapses). It's two passes: first she revises the dossiers that have fallen out of date, then she rewrites her self-model, manages her intentions, creates memory connections, and writes a reflection.
+- **Consolidation** runs weekly (or on first activity after the interval lapses). It's two passes: first she revises the categories that have fallen out of date, then she rewrites her self-model, manages her intentions, creates memory connections, and writes a reflection.
 
 ---
 
@@ -275,4 +277,4 @@ Memorize works the same way as SillyTavern: sleep gaps trigger extraction automa
 
 memU's design has been informed by reading [MemPalace](https://github.com/MemPalace/mempalace), another local-first AI memory project (MIT-licensed). They approach memory differently — verbatim storage rather than extraction — but share the local-first and temporal-graph commitments, and auditing our implementation against theirs sharpened parts of memU. Thanks to the MemPalace team for the open reference implementation.
 
-The dossier format owes a direct debt to [Nomi](https://nomi.ai). Their approach — a named file with a short description and a body of prose, rather than a bag of loose facts under a label — is what our category summaries grew into. Watching how much better memory reads when it's organized that way drove a substantial rewrite on our side: dossiers now carry titles, descriptions, and revisable prose, are grouped by kind, and cite the memories they were built from. Different implementation, different codebase, but the shape of the idea is theirs and it made ours considerably better.
+How our categories are written owes a direct debt to [Nomi](https://nomi.ai). Their dossier approach — a named file with a short description and a body of prose, rather than a bag of loose facts under a label — is what our category summaries grew into. Watching how much better memory reads when it's organized that way drove a substantial rewrite: categories now carry real titles and descriptions, prose the soul revises rather than regenerates, kinds that separate lore from topics from goals, and citations back to the memories they were built from. The underlying architecture is unchanged, and we borrowed no code — but we borrowed the word dossier along with the shape of the idea, and it made ours considerably better.
