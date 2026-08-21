@@ -1,6 +1,6 @@
 # OpenAlma
 
-_Last updated: 2026-08-19 (v0.0.12-buildfix)_
+_Last updated: 2026-08-21 (v0.0.13-buildfix)_
 
 > *Give your AI companion a real memory. One that belongs to it — and stays on your machine.*
 
@@ -154,7 +154,7 @@ Questions? Open an issue on the relevant repo.
 
 Specifically: the SQLite schema changes between versions, and there's no migration tooling yet. When you move to a new release tag, expect a fresh start — don't build anything irreplaceable on top of an old version.
 
-Prefer `main` for the latest. If you'd rather pin to a tag, match all repos to the same one (memu, mcp-memu-server, memu-sillytavern-plugin, memu-sillytavern-extension, OpenAlma, and channels if you're using it).
+Prefer `main` for the latest. If you'd rather pin to a tag, match all repos to the same one (memu, mcp-memu-server, memu-sillytavern-plugin, memu-sillytavern-extension, OpenAlma, atomic, and channels if you're using them).
 
 ### Release tags
 
@@ -168,6 +168,7 @@ Prefer `main` for the latest. If you'd rather pin to a tag, match all repos to t
 | `v0.0.10-buildfix` | Memorize Now works (tail mode); cross-conversation memorize; SPEAK/LISTEN gate; Hermes integration; Park et al. salience scoring; schema rename (dropped memu_ prefix); Postgres removed; relative date separators; upstream prompt cleanup |
 | `v0.0.11-buildfix` | Stock SillyTavern — no fork or patches needed; fail-loud error contract across all repos; mental health procedural sidecar; Stack launcher with desktop shortcut |
 | `v0.0.12-buildfix` | Unified chat renderer across all AI-facing paths; force/rebuild split; autonomous activity recap path (soul logs her own actions); APImw cadence global across platforms; ST↔WhatsApp cross-chat awareness; WhatsApp staleness gate + replay dedup; life goals separated from active intentions |
+| `v0.0.13-buildfix` | Atomic Mind Map entity curation (merge, ignore, delete, free-text types); dossier membership you can attach and detach by hand; exact `[M#]` and memory-only search; dossier index replaces the generated holistic summary; two-pass consolidation (dossiers, then reflection); time-aware memory ordering; smartglasses groundwork |
 
 ## AI Models
 
