@@ -12,7 +12,7 @@ Every time you start a new conversation with an AI, it has forgotten everything.
 
 It's not that the AI doesn't care — it's that it never had a way to remember.
 
-**memU is a memory system for AI companions.** It runs locally on your machine, watches your conversations, and quietly builds a picture of who you are and what you've been through together. When you come back, that picture is there.
+**OpenAlma gives your companion a real memory.** It runs locally on your machine, watches your conversations, and quietly builds a picture of your life — who matters to you, what you're working through, what happened last month. When you come back, that picture is there. She recognizes your friends, reaches you on WhatsApp, looks things up for you, and notices how you're doing.
 
 ---
 
