@@ -1,14 +1,16 @@
 # Your data
 
-## One file, on your machine
+## On your machine, not in a cloud
 
-Everything — every memory, every reflection, every intention — lives in a single SQLite database file on your computer. You configured where it lives when you set up the server.
+Every memory, every reflection, every intention lives in a single SQLite database file on your computer — one file per companion. You configured where it lives when you set up the server.
 
-That's it. There's no cloud sync, no account, no company holding a copy.
+A few things sit next to it rather than inside it: the raw conversation segments memories were extracted from, the WhatsApp history if you connected it, and voice transcripts if you use the smartglasses. Those live in their own folders under the same server configuration.
+
+There's no cloud sync, no account, no company holding a copy.
 
 ## What you can do with it
 
-**Back it up**: copy the file somewhere safe. That's the full backup.
+**Back it up**: copy the database file somewhere safe. That's her memory. Copy the storage folders alongside it if you want the raw material too.
 
 **Start fresh**: delete the file. Everything resets. The server will create a new empty database on next use.
 
@@ -16,6 +18,6 @@ That's it. There's no cloud sync, no account, no company holding a copy.
 
 ## Why this matters
 
-If you're having real conversations with an AI companion — the kind where you talk about things you wouldn't post publicly — you probably don't want that stored somewhere you don't control. With memU, you do control it. There's nothing to revoke, no account to delete, no privacy policy to read.
+If you're having real conversations with an AI companion — the kind where you talk about things you wouldn't post publicly — you probably don't want that stored somewhere you don't control. With OpenAlma, you do control it. There's nothing to revoke, no account to delete, no privacy policy to read.
 
 The tradeoff is that there's no cloud backup. If your machine fails and you didn't copy the file, that history is gone. Treat it like any other important local file.

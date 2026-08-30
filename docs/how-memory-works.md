@@ -2,7 +2,7 @@
 
 ## It's not a transcript
 
-memU doesn't store what you said. It reads your conversations and extracts what matters — the kind of thing a close friend would carry forward, not a court reporter.
+OpenAlma doesn't store what you said. It reads your conversations and extracts what matters — the kind of thing a close friend would carry forward, not a court reporter.
 
 The difference matters. A transcript gets unwieldy fast and is full of noise. Extracted memory stays sparse and meaningful. She remembers that you're anxious about your job situation, not the exact words you used on a Tuesday to describe it.
 
@@ -18,15 +18,23 @@ Not everything deserves the same kind of storage.
 
 **Social** — the people in your life. Friends, family, coworkers, anyone you talk about. The relationship texture that makes your conversations make sense.
 
+## Dossiers
+
+On top of those four kinds sits a second layer. Related memories are filed together into **dossiers** — one per person, project, place, or theme that keeps coming up. Each dossier carries a written summary of what she understands about that subject, and the summary gets rewritten as new memories land in it.
+
+This is what lets her answer a question about someone without re-reading every conversation you ever had. She reads the dossier.
+
 ## When memories get extracted
 
-Extraction happens during **sleep gaps** — when you end a conversation and come back after several hours overnight. The system reads what you talked about, pulls out what matters, and stores it. The next time you talk, that's already there.
+Extraction runs on its own as you talk. Each turn the system checks whether enough unmemorized conversation has piled up, and when it has, it reads that stretch, pulls out what matters, and stores it.
 
-If you don't want to wait, you can trigger extraction manually at any time.
+A long gap also triggers it — end a conversation, come back the next morning, and what you talked about has already been processed.
+
+If you don't want to wait for either, you can force extraction manually at any time.
 
 ## What gets forgotten on purpose
 
-memU is deliberately sparse. It doesn't try to capture everything — it tries to capture what's worth keeping. A good memory system, like a good friend, knows that forgetting is part of thinking clearly.
+OpenAlma is deliberately sparse. It doesn't try to capture everything — it tries to capture what's worth keeping. A good memory system, like a good friend, knows that forgetting is part of thinking clearly.
 
 When the same thing comes up repeatedly, it gets reinforced rather than duplicated. When something you said earlier turns out to be wrong or outdated, the old version gets retired and the new understanding takes its place.
 

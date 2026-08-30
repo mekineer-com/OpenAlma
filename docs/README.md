@@ -1,4 +1,4 @@
-# How memU works
+# How OpenAlma works
 
 Short guides for people who want to understand the system, not just install it.
 
