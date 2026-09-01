@@ -563,11 +563,26 @@ def memorize_pending(soul_id: str, user_id: str = "") -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _read_mentra_status(port: int, soul_id: str = "", user_id: str = "") -> dict:
+    query = urllib.parse.urlencode({"soul_id": soul_id, "user_id": user_id})
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/integration/mentra/status?{query}", timeout=0.5
+        ) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def _child_status_parts(name: str, data: object) -> dict[str, str] | None:
     if not isinstance(data, dict):
         return None
     state = str(data.get("state") or data.get("status") or "unknown")
     detail_bits = []
+    detail = data.get("detail")
+    if detail:
+        detail_bits.append(str(detail))
     mode = data.get("mode")
     if mode:
         detail_bits.append(f"mode {mode}")
@@ -641,6 +656,18 @@ def status(spec: ServiceSpec) -> dict:
             state = "starting"
             label = "◐ starting"
         detail = f"WhatsApp bridge {bridge_state or 'unknown'}"
+
+    if spec.name == "memu-server" and running:
+        channels_config = _read_channels_config()
+        mentra = _read_mentra_status(
+            spec.port or MEMU_SERVER_PORT,
+            str(channels_config.get("soul_id") or "").strip(),
+            str(channels_config.get("user_id") or "").strip(),
+        )
+        children.append(
+            _child_status_parts("Iris", mentra)
+            or {"name": "Iris", "state": "degraded", "detail": "status unavailable"}
+        )
 
     return {
         "running": running,
