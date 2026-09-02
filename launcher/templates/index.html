@@ -41,9 +41,6 @@
     a { color: #7cb7ff; }
     a:visited { color: #b18cd9; }
     code { background: #2a2a2a; color: #f0f0f0; padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
-    .tight li { margin: 0.3rem 0; }
-    .term-toggle { margin-left: 0.5rem; font-size: 0.9em; color: #aaa; }
-    .term-toggle input { accent-color: #6aa9ff; }
     .spinner {
       display: inline-block;
       width: 0.85em;
@@ -109,12 +106,10 @@
             <button class="btn" onclick="svcAction('{{ s.name }}','stop',this)">Stop</button>
           {% elif s.startable %}
             <button class="btn" onclick="svcAction('{{ s.name }}','start',this)">Start</button>
-            {% if s.supports_terminal %}
-              <label class="term-toggle"><input type="checkbox" id="term-{{ s.name }}" value="1"> show terminal</label>
-            {% endif %}
           {% else %}
             <span class="muted">not startable</span>
           {% endif %}
+          {% if s.open_url %}<a class="btn" href="{{ s.open_url }}" target="_blank" rel="noopener">Open</a>{% endif %}
         </td>
         <td><a href="/logs/{{ s.name }}">view</a></td>
       </tr>
@@ -137,19 +132,6 @@
       <p class="muted">No pending-memorize data — is mcp-memu-server running?</p>
     {% endif %}
   </div>
-
-  <h2>Edit configs</h2>
-  <p class="muted">Opens in your default editor.</p>
-  <ul class="tight">
-    {% for c in editable_configs %}
-      <li>
-        <form class="inline" method="post" action="/edit/{{ c.key }}">
-          <button class="btn" type="submit">Open</button>
-        </form>
-        &nbsp;{{ c.label }}
-      </li>
-    {% endfor %}
-  </ul>
 
   <h2>Hermes Channels Soul selector</h2>
   <p class="muted">One active Hermes Channels soul at a time. This updates <code>hermes-channels/data/config.json</code>.</p>
@@ -246,40 +228,35 @@ function syncMemorize(chatId, policy) {
   box.disabled = false;
 }
 
+var pendingStarts = {};
+
 function svcAction(name, action, btn) {
   var row = btn.closest('tr');
   var statusCell = row.querySelector('.svc-status');
   var actionsCell = row.querySelector('.svc-actions');
-  actionsCell.innerHTML = '<span class="spinner"></span>';
+  if (action === 'start') pendingStarts[name] = Date.now() + 10000;
+  actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Working"></span>';
   statusCell.innerHTML = '<span class="muted">…</span>';
 
-  var body = new URLSearchParams();
-  if (action === 'start') {
-    var cb = document.getElementById('term-' + name);
-    if (cb && cb.checked) body.append('show_terminal', '1');
-  }
-  fetch('/service/' + name + '/' + action, {method: 'POST', body: body})
+  fetch('/service/' + name + '/' + action, {method: 'POST'})
     .then(function(r) { return r.json(); })
     .then(function() { pollStatus(name); })
-    .catch(function() { location.reload(); });
+    .catch(function() { delete pendingStarts[name]; location.reload(); });
 }
 
 function actionHtml(name, data) {
+  var open = data.open_url ? ' <a class="btn" href="' + esc(data.open_url) + '" target="_blank" rel="noopener">Open</a>' : '';
   if (name === 'channels-daemon' && data.pairing_required) {
     return '<a class="btn" href="/settings?pair=1">Pair WhatsApp</a> ' +
       '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button>';
   }
   if (data.stoppable || data.running) {
-    return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button>';
+    return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button>' + open;
   }
   if (data.startable !== false) {
-    var start = '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'start\',this)">Start</button>';
-    if (data.supports_terminal) {
-      start += ' <label class="term-toggle"><input type="checkbox" id="term-' + esc(name) + '" value="1"> show terminal</label>';
-    }
-    return start;
+    return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'start\',this)">Start</button>' + open;
   }
-  return '<span class="muted">not startable</span>';
+  return '<span class="muted">not startable</span>' + open;
 }
 
 function pollStatus(name) {
@@ -305,7 +282,13 @@ function pollStatus(name) {
         html += '</div>';
       }
       statusCell.innerHTML = html;
-      actionsCell.innerHTML = actionHtml(name, data);
+      var waiting = pendingStarts[name] > Date.now() && !data.stoppable && data.startable !== false;
+      if (waiting) {
+        actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Starting"></span>';
+      } else {
+        delete pendingStarts[name];
+        actionsCell.innerHTML = actionHtml(name, data);
+      }
     })
     .catch(function() {});
 }

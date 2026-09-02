@@ -28,10 +28,10 @@ from settings import apps_root as _resolve_apps_root
 from settings import channels_home as _resolve_channels_home
 
 STATE_DIR = Path.home() / ".cache" / "openalma-launcher"
-STARTUP_GRACE_SECONDS = 4.0
 MEMU_SERVER_PORT = 8099
 PROCESS_SCAN_CACHE_SECONDS = 10.0
 PORT_PID_CACHE_SECONDS = 5.0
+STARTUP_GRACE_SECONDS = PORT_PID_CACHE_SECONDS + 1.0
 _PROCESS_SCAN_CACHE: dict[tuple[str, str, str], tuple[float, list[int]]] = {}
 _PORT_PID_CACHE: dict[int, tuple[float, int | None]] = {}
 _CHANNELS_HOME = _resolve_channels_home()
@@ -46,8 +46,8 @@ class ServiceSpec:
     log_path: Path
     pid_path: Path
     env: dict[str, str] = field(default_factory=dict)
-    supports_terminal: bool = False
     port: int | None = None
+    open_url: str | None = None
     adopt_pid_path: Path | None = None
 
 
@@ -129,6 +129,7 @@ def all_services() -> list[ServiceSpec]:
     if root is None:
         return []
     channels_config = _read_channels_config()
+    bun_dir = Path(shutil.which("bun") or Path.home() / ".bun" / "bin" / "bun").parent
     return [
         ServiceSpec(
             name="memu-server",
@@ -147,6 +148,7 @@ def all_services() -> list[ServiceSpec]:
             cwd=root / "mentra-os" / "miniapps" / "openalma",
             log_path=Path.home() / ".local" / "state" / "openalma" / "iris-server.log",
             pid_path=STATE_DIR / "iris-server.pid",
+            env={"PATH": f"{bun_dir}:{os.environ.get('PATH', '')}"},
             port=6789,
         ),
         ServiceSpec(
@@ -157,6 +159,7 @@ def all_services() -> list[ServiceSpec]:
             log_path=Path.home() / ".local" / "state" / "openalma" / "atomic.log",
             pid_path=STATE_DIR / "atomic.pid",
             port=1420,
+            open_url="http://127.0.0.1:1420",
         ),
         ServiceSpec(
             name="channels-daemon",
@@ -173,12 +176,12 @@ def all_services() -> list[ServiceSpec]:
         ServiceSpec(
             name="sillytavern",
             label="SillyTavern",
-            cmd=["bash", "start.sh"],
+            cmd=["bash", "start.sh", "--browserLaunchEnabled=false"],
             cwd=root / "sillytavern" / "SillyTavern",
             log_path=STATE_DIR / "sillytavern.log",
             pid_path=STATE_DIR / "sillytavern.pid",
-            supports_terminal=True,
             port=8001,
+            open_url="http://127.0.0.1:8001",
         ),
     ]
 
@@ -409,23 +412,6 @@ def _within_startup_grace(spec: ServiceSpec) -> bool:
     return age <= STARTUP_GRACE_SECONDS
 
 
-def _terminal_command(cmd: list[str]) -> list[str] | None:
-    # Alpine LXQt default first; then common Linux terminal wrappers.
-    candidates: list[tuple[str, list[str]]] = [
-        ("qterminal", ["qterminal", "-e", *cmd]),
-        ("x-terminal-emulator", ["x-terminal-emulator", "-e", *cmd]),
-        ("lxterminal", ["lxterminal", "-e", shlex.join(cmd)]),
-        ("xfce4-terminal", ["xfce4-terminal", "--command", shlex.join(cmd)]),
-        ("konsole", ["konsole", "-e", *cmd]),
-        ("gnome-terminal", ["gnome-terminal", "--", *cmd]),
-        ("xterm", ["xterm", "-e", *cmd]),
-    ]
-    for binary, terminal_cmd in candidates:
-        if shutil.which(binary):
-            return terminal_cmd
-    return None
-
-
 def _spawn_background(spec: ServiceSpec, env: dict[str, str]) -> subprocess.Popen[bytes]:
     log = spec.log_path.open("ab")
     try:
@@ -631,7 +617,11 @@ def status(spec: ServiceSpec) -> dict:
     elif orphaned:
         detail = "service stopped; child process still running"
 
-    if spec.name == "channels-daemon" and running:
+    if spec.name == "channels-daemon" and running and _within_startup_grace(spec):
+        state = "starting"
+        label = "◐ starting"
+        detail = "Starting WhatsApp services"
+    elif spec.name == "channels-daemon" and running:
         channels_config = _read_channels_config()
         web_source_enabled = _coerce_bool(channels_config.get("web_source_enabled"), True)
         bridge = _channels_bridge_health(channels_config)
@@ -670,22 +660,23 @@ def status(spec: ServiceSpec) -> dict:
             label = "◐ starting"
         detail = f"WhatsApp bridge {bridge_state or 'unknown'}"
 
-    if spec.name == "memu-server" and running:
+    if spec.name == "iris-server" and running:
         channels_config = _read_channels_config()
         mentra = _read_mentra_status(
-            spec.port or MEMU_SERVER_PORT,
+            MEMU_SERVER_PORT,
             str(channels_config.get("soul_id") or "").strip(),
             str(channels_config.get("user_id") or "").strip(),
         )
         if mentra:
-            children.append(_child_status_parts("Iris", mentra))
+            state = str(mentra.get("state") or "running")
+            label = str(mentra.get("detail") or state)
+            detail = ""
 
     return {
         "running": running,
         "stuck": stuck,
         "orphaned": orphaned,
         "blocked": blocked,
-        "supports_terminal": spec.supports_terminal,
         "startable": not running and not stuck and not orphaned and not blocked,
         "stoppable": running or stuck or orphaned,
         "state": state,
@@ -693,10 +684,11 @@ def status(spec: ServiceSpec) -> dict:
         "detail": detail,
         "children": children,
         "pairing_required": pairing_required,
+        "open_url": spec.open_url,
     }
 
 
-def start(spec: ServiceSpec, *, show_terminal: bool = False) -> None:
+def start(spec: ServiceSpec) -> None:
     _clear_port_cache(spec)
     runtime = _runtime_state(spec)
     if runtime.running or runtime.stuck or runtime.orphaned or runtime.port_blocked:
@@ -704,16 +696,7 @@ def start(spec: ServiceSpec, *, show_terminal: bool = False) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     spec.log_path.parent.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, **spec.env}
-    if show_terminal and spec.supports_terminal:
-        full_cmd = _terminal_command(spec.cmd)
-        if full_cmd is not None:
-            proc = subprocess.Popen(
-                full_cmd, cwd=str(spec.cwd), env=env, start_new_session=True
-            )
-        else:
-            proc = _spawn_background(spec, env)
-    else:
-        proc = _spawn_background(spec, env)
+    proc = _spawn_background(spec, env)
     spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
     spec.pid_path.write_text(str(proc.pid))
     _clear_port_cache(spec)

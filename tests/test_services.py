@@ -34,6 +34,7 @@ def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch)
     specs = services.all_services()
     names = [spec.name for spec in specs]
     labels = {spec.name: spec.label for spec in specs}
+    open_urls = {spec.name: spec.open_url for spec in specs}
 
     assert "hermes-gateway" not in names
     assert "channels-daemon" in names
@@ -46,6 +47,9 @@ def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch)
         "channels-daemon": "Hermes Channels",
         "sillytavern": "SillyTavern",
     }
+    assert open_urls["atomic"] == "http://127.0.0.1:1420"
+    assert open_urls["sillytavern"] == "http://127.0.0.1:8001"
+    assert next(spec for spec in specs if spec.name == "sillytavern").cmd[-1] == "--browserLaunchEnabled=false"
 
 
 def test_iris_server_is_managed_by_launcher(tmp_path, monkeypatch):
@@ -56,6 +60,7 @@ def test_iris_server_is_managed_by_launcher(tmp_path, monkeypatch):
 
     assert spec.cwd == root / "mentra-os" / "miniapps" / "openalma"
     assert spec.cmd[-2:] == ["run", "release:private"]
+    assert spec.env["PATH"].split(":", 1)[0].endswith("/.bun/bin")
     assert spec.port == 6789
 
 
@@ -70,6 +75,7 @@ def test_atomic_service_is_managed_by_launcher(tmp_path, monkeypatch):
     assert spec.label == "Atomic Mind Map"
     assert spec.cwd == root / "atomic"
     assert spec.port == 1420
+    assert spec.open_url == "http://127.0.0.1:1420"
     assert spec.cmd[:2] == ["sh", "-c"]
     assert "npm run dev:server" in spec.cmd[2]
 
@@ -544,16 +550,29 @@ def test_channels_daemon_status_requests_pairing_when_qr_is_ready(tmp_path, monk
     assert status["pairing_required"] is True
 
 
-def test_status_json_includes_supports_terminal(tmp_path, monkeypatch):
+def test_channels_daemon_hides_stale_child_status_during_startup(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        services,
+        "_runtime_state",
+        lambda _spec: services.RuntimeState(pid=111, running=True),
+    )
+    monkeypatch.setattr(services, "_within_startup_grace", lambda _spec: True)
+    monkeypatch.setattr(
+        services,
+        "_channels_bridge_health",
+        lambda _config=None: pytest.fail("stale bridge status read during startup"),
+    )
     spec = services.ServiceSpec(
-        name="sillytavern",
-        label="SillyTavern",
+        name="channels-daemon",
+        label="Hermes Channels",
         cmd=[],
         cwd=tmp_path,
-        log_path=tmp_path / "st.log",
-        pid_path=tmp_path / "st.pid",
-        supports_terminal=True,
+        log_path=tmp_path / "channels.log",
+        pid_path=tmp_path / "channels.pid",
     )
-    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [])
 
-    assert services.status(spec)["supports_terminal"] is True
+    status = services.status(spec)
+
+    assert status["state"] == "starting"
+    assert status["detail"] == "Starting WhatsApp services"
+    assert status["children"] == []

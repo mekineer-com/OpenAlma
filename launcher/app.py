@@ -50,7 +50,6 @@ def index(request: Request) -> HTMLResponse:
         ({
             "name": s.name,
             "label": s.label,
-            "supports_terminal": s.supports_terminal,
         } | services.status(s))
         for s in specs
     ]
@@ -71,11 +70,6 @@ def index(request: Request) -> HTMLResponse:
         )
     visible_chats = [c for c in chat_rows if c["policy"] != "excluded"]
     excluded_chats = [c for c in chat_rows if c["policy"] == "excluded"]
-    editable_paths = _editable_configs(apps_root)
-    editable = [
-        {"key": k, "label": CONFIG_LABELS.get(k, k)}
-        for k in editable_paths
-    ]
     active_soul = soul.read_active_soul_id()
     active_user = soul.read_active_user_id()
     soul_ids = soul.list_soul_ids()
@@ -93,7 +87,6 @@ def index(request: Request) -> HTMLResponse:
             "policies": policy.ALL_POLICIES,
             "active_soul": active_soul,
             "soul_ids": soul_ids,
-            "editable_configs": editable,
             "apps_root": str(apps_root) if apps_root else "",
             "needs_setup": apps_root is None,
         },
@@ -112,12 +105,17 @@ def memorize_status() -> dict:
 def settings_page(request: Request) -> HTMLResponse:
     apps_root = settings.apps_root()
     stored = settings.read_paths().get("apps_root") or ""
+    editable = [
+        {"key": key, "label": CONFIG_LABELS.get(key, key)}
+        for key in _editable_configs(apps_root)
+    ]
     return templates.TemplateResponse(
         request,
         "settings.html",
         {
             "apps_root_active": str(apps_root) if apps_root else "",
             "apps_root_stored": str(stored),
+            "editable_configs": editable,
             "settings_path": str(settings.SETTINGS_PATH),
         },
     )
@@ -157,12 +155,9 @@ def logs(request: Request, service_name: str, lines: int = 200) -> HTMLResponse:
 
 
 @app.post("/service/{service_name}/start")
-def service_start(
-    service_name: str,
-    show_terminal: str = Form(default=""),
-) -> dict:
+def service_start(service_name: str) -> dict:
     spec = _find_service(service_name)
-    services.start(spec, show_terminal=bool(show_terminal))
+    services.start(spec)
     return {"ok": True, **services.status(spec)}
 
 

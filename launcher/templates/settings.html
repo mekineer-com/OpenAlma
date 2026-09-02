@@ -30,6 +30,8 @@
     a:visited { color: #b18cd9; }
     code { background: #2a2a2a; color: #f0f0f0; padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
     .hint { font-size: 0.9em; color: #999; margin-top: 0.3rem; }
+    form.inline { display: inline; margin: 0; }
+    .tight li { margin: 0.3rem 0; }
     .pair-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-top: 1rem; }
     .pair-card { border: 1px solid #333; border-radius: 4px; padding: 0.8rem; background: #202020; }
     .pair-card h3 { margin: 0 0 0.4rem 0; color: #f0f0f0; }
@@ -49,6 +51,19 @@
     <p class="hint">Auto-discovery walks up from the launcher's own directory looking for any ancestor containing <code>mcp-memu-server/run.py</code>. Set this only if your layout is non-standard.</p>
     <p><button class="btn" type="submit">Save</button></p>
   </form>
+
+  <h2>Edit configs</h2>
+  <p class="muted">Opens in your default editor.</p>
+  <ul class="tight">
+    {% for c in editable_configs %}
+      <li>
+        <form class="inline" method="post" action="/edit/{{ c.key }}">
+          <button class="btn" type="submit">Open</button>
+        </form>
+        &nbsp;{{ c.label }}
+      </li>
+    {% endfor %}
+  </ul>
 
   <h2>WhatsApp pairing</h2>
   <p><button class="btn" type="button" id="pair-whatsapp">Pair WhatsApp</button></p>
