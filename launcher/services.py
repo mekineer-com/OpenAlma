@@ -664,10 +664,8 @@ def status(spec: ServiceSpec) -> dict:
             str(channels_config.get("soul_id") or "").strip(),
             str(channels_config.get("user_id") or "").strip(),
         )
-        children.append(
-            _child_status_parts("Iris", mentra)
-            or {"name": "Iris", "state": "degraded", "detail": "status unavailable"}
-        )
+        if mentra:
+            children.append(_child_status_parts("Iris", mentra))
 
     return {
         "running": running,
