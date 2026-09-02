@@ -1,10 +1,11 @@
 # OpenAlma Launcher
 
-The memU Server row also shows Iris as a display-only child using mcp's operational status. The launcher never starts, stops, or controls the phone MiniApp.
+The Iris MiniApp Server has its own Start/Stop row. The memU Server row separately shows the phone sitting as display-only Iris status; the launcher never controls the phone session.
 
 A small local web UI that starts, stops, and configures the local OpenAlma services:
 
 - `mcp-memu-server` (memory engine)
+- Iris MiniApp Server
 - Atomic Mind Map
 - Hermes Channels
 - SillyTavern

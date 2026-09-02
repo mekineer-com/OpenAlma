@@ -141,6 +141,15 @@ def all_services() -> list[ServiceSpec]:
             adopt_pid_path=_resolve_memu_server_pid_path(root),
         ),
         ServiceSpec(
+            name="iris-server",
+            label="Iris MiniApp Server",
+            cmd=[shutil.which("npm") or "npm", "run", "release:private"],
+            cwd=root / "mentra-os" / "miniapps" / "openalma",
+            log_path=Path.home() / ".local" / "state" / "openalma" / "iris-server.log",
+            pid_path=STATE_DIR / "iris-server.pid",
+            port=6789,
+        ),
+        ServiceSpec(
             name="atomic",
             label="Atomic Mind Map",
             cmd=["sh", "-c", _atomic_start_command(channels_config)],
@@ -264,6 +273,10 @@ def _matches_service_process(spec: ServiceSpec, pid: int) -> bool:
     cwd_matches = cwd is not None and cwd == spec.cwd
     if spec.name == "memu-server":
         return cwd_matches and ("run.py" in cmd or ("uvicorn" in cmd and "app.main:app" in cmd))
+    if spec.name == "iris-server":
+        return cwd_matches and (
+            "release:private" in cmd or "mentra-miniapp release" in cmd
+        )
     if spec.name == "channels-daemon":
         return cwd_matches and "gateway.daemon" in cmd
     if spec.name == "sillytavern":

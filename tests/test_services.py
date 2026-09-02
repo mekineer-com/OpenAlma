@@ -41,10 +41,22 @@ def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch)
     assert "whatsapp-web-source" not in names
     assert labels == {
         "memu-server": "memU Server",
+        "iris-server": "Iris MiniApp Server",
         "atomic": "Atomic Mind Map",
         "channels-daemon": "Hermes Channels",
         "sillytavern": "SillyTavern",
     }
+
+
+def test_iris_server_is_managed_by_launcher(tmp_path, monkeypatch):
+    root = tmp_path / "apps"
+    monkeypatch.setattr(services, "_resolve_apps_root", lambda: root)
+
+    spec = next(s for s in services.all_services() if s.name == "iris-server")
+
+    assert spec.cwd == root / "mentra-os" / "miniapps" / "openalma"
+    assert spec.cmd[-2:] == ["run", "release:private"]
+    assert spec.port == 6789
 
 
 def test_atomic_service_is_managed_by_launcher(tmp_path, monkeypatch):
