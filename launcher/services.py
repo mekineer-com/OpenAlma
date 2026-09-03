@@ -611,6 +611,7 @@ def status(spec: ServiceSpec) -> dict:
     )
     detail = ""
     children: list[dict[str, str]] = []
+    stop_blocked = False
     pairing_required = False
     if blocked:
         detail = f"port {spec.port} is held by PID {runtime.port_pid}"
@@ -660,7 +661,7 @@ def status(spec: ServiceSpec) -> dict:
             label = "◐ starting"
         detail = f"WhatsApp bridge {bridge_state or 'unknown'}"
 
-    if spec.name == "iris-server" and running:
+    if spec.name == "memu-server" and running:
         channels_config = _read_channels_config()
         mentra = _read_mentra_status(
             MEMU_SERVER_PORT,
@@ -668,9 +669,10 @@ def status(spec: ServiceSpec) -> dict:
             str(channels_config.get("user_id") or "").strip(),
         )
         if mentra:
-            state = str(mentra.get("state") or "running")
-            label = str(mentra.get("detail") or state)
-            detail = ""
+            child = _child_status_parts("Mentra Iris", mentra)
+            if child:
+                children.append(child)
+            stop_blocked = bool(mentra.get("active"))
 
     return {
         "running": running,
@@ -678,7 +680,8 @@ def status(spec: ServiceSpec) -> dict:
         "orphaned": orphaned,
         "blocked": blocked,
         "startable": not running and not stuck and not orphaned and not blocked,
-        "stoppable": running or stuck or orphaned,
+        "stoppable": (running or stuck or orphaned) and not stop_blocked,
+        "stop_blocked": stop_blocked,
         "state": state,
         "status_label": label,
         "detail": detail,

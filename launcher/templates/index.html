@@ -102,7 +102,9 @@
           {% endif %}
         </td>
         <td class="svc-actions">
-          {% if s.stoppable %}
+          {% if s.stop_blocked %}
+            <button class="btn" disabled title="Stop the Iris conversation on the phone first">Stop</button>
+          {% elif s.stoppable %}
             <button class="btn" onclick="svcAction('{{ s.name }}','stop',this)">Stop</button>
           {% elif s.startable %}
             <button class="btn" onclick="svcAction('{{ s.name }}','start',this)">Start</button>
@@ -249,6 +251,9 @@ function actionHtml(name, data) {
   if (name === 'channels-daemon' && data.pairing_required) {
     return '<a class="btn" href="/settings?pair=1">Pair WhatsApp</a> ' +
       '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button>';
+  }
+  if (data.stop_blocked) {
+    return '<button class="btn" disabled title="Stop the Iris conversation on the phone first">Stop</button>' + open;
   }
   if (data.stoppable || data.running) {
     return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button>' + open;
