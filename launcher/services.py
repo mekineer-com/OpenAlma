@@ -282,6 +282,7 @@ def _matches_service_process(spec: ServiceSpec, pid: int) -> bool:
     if spec.name == "iris-server":
         return cwd_matches and (
             "release:private" in cmd or "mentra-miniapp release" in cmd
+            or "scripts/release-private.mjs" in cmd
         )
     if spec.name == "channels-daemon":
         return cwd_matches and "gateway.daemon" in cmd
@@ -472,7 +473,7 @@ def _runtime_state(spec: ServiceSpec) -> RuntimeState:
             running=True,
             port_blocked=port_blocked,
         )
-    running = _within_startup_grace(spec)
+    running = spec.name == "iris-server" or _within_startup_grace(spec)
     return RuntimeState(
         verified_pids=tuple(verified),
         service_pids=service_pids,
@@ -776,7 +777,7 @@ def _read_iris_release_status(spec: ServiceSpec, runtime: RuntimeState) -> dict:
         pid = int(data.get("pid"))
     except (AttributeError, TypeError, ValueError):
         return {}
-    return data if pid in runtime.verified_pids else {}
+    return data if _is_alive(pid) and _matches_service_process(spec, pid) else {}
 
 
 def _seen_age(seen_at: object) -> str:
@@ -818,7 +819,8 @@ def _iris_product_status(
     elif readiness and not readiness.get("enabled"):
         state, label, detail, action = "disabled", "Disabled", "", None
     elif runtime.running:
-        state, label, detail, action = "installing", "◐ waiting for phone installation", "", "stop"
+        label = "◐ waiting for phone installation" if runtime.port_pid else "◐ building installer"
+        state, detail, action = "installing", "", "stop"
     elif runtime.stuck or runtime.orphaned:
         state, label, detail, action = "degraded", "▲ installer failed", "View the Iris log", "stop"
     elif readiness and readiness.get("enabled") and not readiness.get("ready"):

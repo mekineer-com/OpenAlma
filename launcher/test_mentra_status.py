@@ -72,7 +72,8 @@ class MentraStatusTest(TestCase):
         }
         cases = [
             (services.RuntimeState(), {}, "▲ setup needed", "settings"),
-            (services.RuntimeState(running=True), installed, "◐ waiting for phone installation", "stop"),
+            (services.RuntimeState(running=True, port_pid=41), installed, "◐ waiting for phone installation", "stop"),
+            (services.RuntimeState(running=True), installed, "◐ building installer", "stop"),
             (services.RuntimeState(), {"state": "ready"}, "○ not installed", "start"),
             (
                 services.RuntimeState(),
@@ -229,20 +230,43 @@ class MentraStatusTest(TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"pid": 42, "release_uri": "miniapp://fictional"}))
         try:
-            self.assertEqual(services._read_iris_release_status(spec, services.RuntimeState()), {})
-            self.assertEqual(
-                services._read_iris_release_status(
-                    spec, services.RuntimeState(running=True, verified_pids=(41,))
-                ),
-                {},
-            )
-            self.assertEqual(
-                services._read_iris_release_status(
-                    spec, services.RuntimeState(running=True, verified_pids=(42,))
-                )["release_uri"],
-                "miniapp://fictional",
-            )
+            with (
+                patch.object(services, "_is_alive", return_value=True),
+                patch.object(services, "_proc_cwd", return_value=root),
+                patch.object(services, "_proc_cmdline", return_value="node unrelated.mjs"),
+            ):
+                self.assertEqual(
+                    services._read_iris_release_status(spec, services.RuntimeState(running=True)), {}
+                )
+            with (
+                patch.object(services, "_is_alive", return_value=True),
+                patch.object(services, "_proc_cwd", return_value=root),
+                patch.object(services, "_proc_cmdline", return_value="node scripts/release-private.mjs"),
+            ):
+                self.assertEqual(
+                    services._read_iris_release_status(
+                        spec, services.RuntimeState(running=True, verified_pids=(41,))
+                    )["release_uri"],
+                    "miniapp://fictional",
+                )
+            with patch.object(services, "_is_alive", return_value=False):
+                self.assertEqual(
+                    services._read_iris_release_status(spec, services.RuntimeState(running=True)), {}
+                )
         finally:
             path.unlink()
             path.parent.rmdir()
             root.rmdir()
+
+    def test_live_installer_build_outlasts_service_startup_grace(self) -> None:
+        spec = services.ServiceSpec("iris-server", "Iris", [], Path("."), Path("log"), Path("pid"), port=6789)
+        with (
+            patch.object(services, "_verified_pid_candidates", return_value=[41]),
+            patch.object(services, "_matches_service_process", return_value=True),
+            patch.object(services, "_port_listener_pid", return_value=None),
+            patch.object(services, "_remember_verified_pid"),
+            patch.object(services, "_within_startup_grace", return_value=False),
+        ):
+            runtime = services._runtime_state(spec)
+        self.assertTrue(runtime.running)
+        self.assertFalse(runtime.stuck)
