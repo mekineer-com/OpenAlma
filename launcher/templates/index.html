@@ -102,7 +102,14 @@
           {% endif %}
         </td>
         <td class="svc-actions">
-          {% if s.stop_blocked %}
+          {% if s.action_kind == "settings" %}
+            <a class="btn" href="/settings">Settings</a>
+          {% elif s.action_kind == "start" %}
+            <button class="btn" onclick="svcAction('{{ s.name }}','start',this)">{{ s.action_label }}</button>
+          {% elif s.action_kind == "stop" %}
+            <button class="btn" onclick="svcAction('{{ s.name }}','stop',this)">{{ s.action_label }}</button>
+          {% elif s.action_kind is defined %}
+          {% elif s.stop_blocked %}
             <button class="btn" disabled title="Stop the Iris conversation on the phone first">Stop</button>
           {% elif s.stoppable %}
             <button class="btn" onclick="svcAction('{{ s.name }}','stop',this)">Stop</button>
@@ -248,6 +255,11 @@ function svcAction(name, action, btn) {
 
 function actionHtml(name, data) {
   var open = data.open_url ? ' <a class="btn" href="' + esc(data.open_url) + '" target="_blank" rel="noopener">Open</a>' : '';
+  if (data.action_kind === 'settings') return '<a class="btn" href="/settings">Settings</a>';
+  if (data.action_kind === 'start' || data.action_kind === 'stop') {
+    return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'' + data.action_kind + '\',this)">' + esc(data.action_label) + '</button>';
+  }
+  if (Object.prototype.hasOwnProperty.call(data, 'action_kind')) return '';
   if (name === 'channels-daemon' && data.pairing_required) {
     return '<a class="btn" href="/settings?pair=1">Pair WhatsApp</a> ' +
       '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button>';

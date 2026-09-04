@@ -42,7 +42,7 @@ def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch)
     assert "whatsapp-web-source" not in names
     assert labels == {
         "memu-server": "memU Server",
-        "iris-server": "Iris MiniApp Server",
+        "iris-server": "Mentra Iris",
         "atomic": "Atomic Mind Map",
         "channels-daemon": "Hermes Channels",
         "sillytavern": "SillyTavern",

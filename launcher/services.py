@@ -143,7 +143,7 @@ def all_services() -> list[ServiceSpec]:
         ),
         ServiceSpec(
             name="iris-server",
-            label="Iris MiniApp Server",
+            label="Mentra Iris",
             cmd=[shutil.which("npm") or "npm", "run", "release:private"],
             cwd=root / "mentra-os" / "miniapps" / "openalma",
             log_path=Path.home() / ".local" / "state" / "openalma" / "iris-server.log",
@@ -574,6 +574,98 @@ def _read_mentra_status(port: int, soul_id: str = "", user_id: str = "") -> dict
     return data if isinstance(data, dict) else {}
 
 
+def _iris_release_identity(spec: ServiceSpec) -> tuple[str, str]:
+    try:
+        manifest = json.loads((spec.cwd / "miniapp.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "", ""
+    return str(manifest.get("packageName") or "").strip(), str(manifest.get("version") or "").strip()
+
+
+def _seen_age(seen_at: object) -> str:
+    try:
+        seconds = max(0, int(time.time() - float(seen_at)))
+    except (TypeError, ValueError):
+        return ""
+    if seconds < 60:
+        return "last seen just now"
+    if seconds < 3600:
+        return f"last seen {seconds // 60}m ago"
+    if seconds < 86400:
+        return f"last seen {seconds // 3600}h ago"
+    return f"last seen {seconds // 86400}d ago"
+
+
+def _iris_product_status(
+    runtime: RuntimeState,
+    mentra: dict,
+    available_package: str,
+    available_version: str,
+) -> dict:
+    active = bool(mentra.get("active"))
+    installed_package = str(mentra.get("installed_package") or "")
+    installed_version = str(mentra.get("installed_version") or "")
+    mismatch = bool(installed_package) and (
+        installed_package != available_package or installed_version != available_version
+    )
+    age = _seen_age(mentra.get("installed_seen_at"))
+
+    if active:
+        state = str(mentra.get("state") or "active")
+        label = "● active" if state == "active" else f"▲ {state.replace('_', ' ')}"
+        detail = str(mentra.get("detail") or "")
+        if mismatch:
+            detail = "; ".join(part for part in (detail, f"update {available_version} available") if part)
+        action = None
+    elif runtime.running:
+        state, label, detail, action = "installing", "◐ waiting for phone installation", "", "stop"
+    elif runtime.stuck or runtime.orphaned:
+        state, label, detail, action = "degraded", "▲ installer failed", "View the Iris log", "stop"
+    elif (
+        not available_package
+        or not available_version
+        or not mentra
+        or mentra.get("state") == "disabled"
+        or runtime.port_blocked
+    ):
+        state, label, detail, action = "setup", "▲ setup needed", "Open Iris & Phone Setup", "settings"
+    elif not installed_package:
+        state, label, detail, action = "stopped", "○ not installed", "", "start"
+    elif mismatch:
+        state, label, detail, action = "update", "▲ update available", age, "start"
+    elif mentra.get("state") in {"degraded", "transcript_gap"}:
+        state = str(mentra["state"])
+        label = f"▲ {state.replace('_', ' ')}"
+        detail, action = str(mentra.get("detail") or ""), None
+    else:
+        state, label, detail, action = "ready", "● ready", "Ready for phone connection", None
+
+    if age and state not in {"update", "installing"}:
+        detail = "; ".join(part for part in (detail, age) if part)
+    action_label = (
+        ("Update" if mismatch else "Install")
+        if action == "start"
+        else "Cancel" if action == "stop" else "Settings" if action == "settings" else ""
+    )
+    return {
+        "running": runtime.running,
+        "stuck": runtime.stuck,
+        "orphaned": runtime.orphaned,
+        "blocked": runtime.port_blocked,
+        "startable": action == "start",
+        "stoppable": action == "stop",
+        "stop_blocked": False,
+        "state": state,
+        "status_label": label,
+        "detail": detail,
+        "children": [],
+        "pairing_required": False,
+        "open_url": None,
+        "action_kind": action,
+        "action_label": action_label,
+    }
+
+
 def _child_status_parts(name: str, data: object) -> dict[str, str] | None:
     if not isinstance(data, dict):
         return None
@@ -597,6 +689,14 @@ def _child_status_parts(name: str, data: object) -> dict[str, str] | None:
 
 def status(spec: ServiceSpec) -> dict:
     runtime = _runtime_state(spec)
+    if spec.name == "iris-server":
+        channels_config = _read_channels_config()
+        mentra = _read_mentra_status(
+            MEMU_SERVER_PORT,
+            str(channels_config.get("soul_id") or "").strip(),
+            str(channels_config.get("user_id") or "").strip(),
+        )
+        return _iris_product_status(runtime, mentra, *_iris_release_identity(spec))
     running = runtime.running
     stuck = runtime.stuck
     orphaned = runtime.orphaned
@@ -669,9 +769,6 @@ def status(spec: ServiceSpec) -> dict:
             str(channels_config.get("user_id") or "").strip(),
         )
         if mentra:
-            child = _child_status_parts("Mentra Iris", mentra)
-            if child:
-                children.append(child)
             stop_blocked = bool(mentra.get("active"))
 
     return {
