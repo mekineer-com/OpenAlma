@@ -36,11 +36,62 @@
     .pair-card { border: 1px solid #333; border-radius: 4px; padding: 0.8rem; background: #202020; }
     .pair-card h3 { margin: 0 0 0.4rem 0; color: #f0f0f0; }
     .pair-card canvas { width: 220px; height: 220px; background: #fff; border: 8px solid #fff; display: block; }
+    .checklist { list-style: none; padding: 0; }
+    .checklist li { padding: 0.45rem 0; border-bottom: 1px solid #2a2a2a; }
+    .ready { color: #4ade80; }
+    .failure { color: #f87171; }
+    .unknown { color: #888; }
+    #iris-install-qr { width: 220px; height: 220px; background: #fff; border: 8px solid #fff; display: block; }
   </style>
 </head>
 <body>
   <p><a href="/">← back</a></p>
   <h1>Settings</h1>
+
+  <h2>Iris &amp; Phone Setup</h2>
+  {% if not iris_setup.enabled %}
+    <p class="muted">Disabled. Enable Mentra in <code>mcp-memu-server/config.json</code> to use Iris.</p>
+  {% else %}
+    <ul class="checklist">
+      {% for row in iris_setup.rows %}
+        <li><span class="{{ row.state }}">{{ "✓" if row.state == "ready" else "!" }} {{ row.label }}</span> — {{ row.detail }}</li>
+      {% endfor %}
+    </ul>
+    {% if not iris_setup.ready %}<p class="failure">Next: {{ iris_setup.reason }}</p>{% endif %}
+
+    <h3>Iris installation</h3>
+    <p>
+      {% if iris.installed_version %}
+        Installed {{ iris.installed_version }}{% if iris.available_version and iris.installed_version != iris.available_version %}; {{ iris.available_version }} available{% endif %}.
+      {% else %}
+        Not yet observed on this phone.
+      {% endif %}
+    </p>
+    {% if iris.running and iris.release_uri %}
+      <p>Scan this QR in Mentra:</p>
+      <canvas id="iris-install-qr" width="220" height="220"></canvas>
+      <p><a href="{{ iris.release_uri }}">Open installation link</a></p>
+      <p><button class="btn" type="button" onclick="irisAction('stop')">Cancel</button></p>
+    {% elif iris_setup.ready %}
+      <p><button class="btn" type="button" onclick="irisAction('start')">{{ "Reinstall / Repair" if iris.installed_version else "Install Iris" }}</button></p>
+    {% endif %}
+
+    <h3>Phone steps</h3>
+    <ol class="tight">
+      <li>Make the WireGuard UDP endpoint reachable. Behind a home router, forward its UDP port to this host.</li>
+      <li>Install WireGuard on the phone, import the OpenAlma profile, and activate it.</li>
+      <li>Install Mentra.</li>
+      <li>Install or update Iris above, then open it once.</li>
+      <li>Allow Mentra microphone access. Android/Mentra asks for camera or photo access when needed.</li>
+      <li>Start one fictional test sitting and confirm the listening beep.</li>
+    </ol>
+    <p class="muted">
+      Phone connection:
+      {% if iris.active or iris.installed_version %}<span class="ready">observed</span>{% else %}<span class="unknown">not yet observable</span>{% endif %}.
+      The next Iris build is configured for {{ iris_setup.user_id or "?" }} / {{ iris_setup.soul_id or "?" }}.
+      A different selected launcher soul is informational, not a setup error.
+    </p>
+  {% endif %}
 
   <h2>Apps root</h2>
   <p class="muted">Directory that contains the sibling repos: <code>mcp-memu-server</code>, <code>hermes-channels</code>, <code>sillytavern</code>, <code>memu</code>.</p>
@@ -87,6 +138,18 @@
   <p><code>{{ settings_path }}</code></p>
   <script src="/static/vendor/qrcode.min.js"></script>
   <script>
+    function irisAction(action) {
+      fetch('/service/iris-server/' + action, {method: 'POST'})
+        .then(function(response) { if (!response.ok) throw new Error(); location.reload(); })
+        .catch(function() { location.reload(); });
+    }
+
+    {% if iris.release_uri %}
+    try {
+      QRCode.toCanvas(document.getElementById('iris-install-qr'), {{ iris.release_uri|tojson }}, { width: 220, margin: 1 });
+    } catch (_err) {}
+    {% endif %}
+
     const pairButton = document.getElementById("pair-whatsapp");
     const pairPanel = document.getElementById("pair-panel");
     const pairStatus = document.getElementById("pair-status");

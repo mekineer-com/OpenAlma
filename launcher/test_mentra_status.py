@@ -7,6 +7,9 @@ import services
 
 
 class MentraStatusTest(TestCase):
+    def tearDown(self) -> None:
+        services._MENTRA_READINESS_CACHE.clear()
+
     def test_memu_server_keeps_only_iris_stop_guard(self) -> None:
         spec = services.ServiceSpec(
             name="memu-server",
@@ -105,6 +108,112 @@ class MentraStatusTest(TestCase):
                     )
                     self.assertEqual(result["status_label"], label)
                     self.assertEqual(result["action_kind"], action)
+
+    def test_disabled_mentra_skips_all_live_probes(self) -> None:
+        root = Path(self._testMethodName)
+        config = root / "mcp-memu-server" / "config.json"
+        config.parent.mkdir(parents=True)
+        config.write_text(json.dumps({"mentra": {"enabled": False}}))
+        try:
+            with (
+                patch.object(services, "all_services", side_effect=AssertionError("service probe")),
+                patch.object(services.subprocess, "check_output", side_effect=AssertionError("network probe")),
+            ):
+                result = services.mentra_readiness(root)
+            self.assertFalse(result["enabled"])
+            self.assertEqual(result["step"], "disabled")
+            product = services._iris_product_status(
+                services.RuntimeState(),
+                {"state": "disabled"},
+                "com.openalma.mentra",
+                "0.1.0",
+                result,
+            )
+            self.assertEqual(product["state"], "disabled")
+            self.assertIsNone(product["action_kind"])
+        finally:
+            config.unlink()
+            config.parent.rmdir()
+            root.rmdir()
+
+    def test_readiness_checks_private_ingress_once_per_cache_window(self) -> None:
+        root = Path(self._testMethodName)
+        config = root / "mcp-memu-server" / "config.json"
+        env_path = root / "mentra-os" / "miniapps" / "openalma" / ".env.local"
+        config.parent.mkdir(parents=True)
+        env_path.parent.mkdir(parents=True)
+        config.write_text(json.dumps({
+            "mentra": {
+                "enabled": True,
+                "integration_bearer_token": "fictional",
+                "gemini_api_key": "fictional",
+                "model": "fictional-model",
+                "voice": "fictional-voice",
+            }
+        }))
+        env_path.write_text(
+            "MENTRA_PUBLIC_OPENALMA_BASE_URL=http://10.77.0.1\n"
+            "MENTRA_PUBLIC_OPENALMA_BEARER=fictional\n"
+            "MENTRA_PUBLIC_OPENALMA_USER_ID=Fictional User\n"
+            "MENTRA_PUBLIC_OPENALMA_SOUL_ID=Fictional Soul\n"
+            "MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID=fictional-phone\n"
+        )
+        memu = services.ServiceSpec("memu-server", "memU", [], root, root / "log", root / "pid")
+
+        def command_output(command: list[str], **_kwargs) -> str:
+            if command[:2] == ["ip", "-j"]:
+                return json.dumps([{"addr_info": [{"local": "10.77.0.1"}]}])
+            return "LISTEN 0 4096 10.77.0.1:80 0.0.0.0:*\n"
+
+        try:
+            with (
+                patch.object(services, "all_services", return_value=[memu]),
+                patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
+                patch.object(services.subprocess, "check_output", side_effect=command_output) as probe,
+                patch.object(services, "_mentra_http_status", side_effect=[200, 404]) as http,
+            ):
+                first = services.mentra_readiness(root)
+                second = services.mentra_readiness(root)
+            self.assertTrue(first["ready"])
+            self.assertIs(first, second)
+            self.assertEqual(probe.call_count, 2)
+            self.assertEqual(http.call_count, 2)
+            self.assertEqual(len(first["rows"]), 5)
+
+            services._MENTRA_READINESS_CACHE.clear()
+            with (
+                patch.object(services, "all_services", return_value=[memu]),
+                patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
+                patch.object(
+                    services.subprocess,
+                    "check_output",
+                    side_effect=[
+                        json.dumps([{"addr_info": [{"local": "10.77.0.1"}]}]),
+                        "LISTEN 0 4096 10.77.0.1:80 0.0.0.0:*\n"
+                        "LISTEN 0 4096 0.0.0.0:80 0.0.0.0:*\n",
+                    ],
+                ),
+                patch.object(services, "_mentra_http_status", side_effect=AssertionError("HTTP probe")),
+            ):
+                exposed = services.mentra_readiness(root)
+            self.assertFalse(exposed["ready"])
+            self.assertEqual(exposed["step"], "ingress")
+        finally:
+            for path in (env_path, config):
+                path.unlink()
+            for path in (env_path.parent, env_path.parent.parent, env_path.parent.parent.parent, config.parent, root):
+                path.rmdir()
+
+    def test_active_sitting_outranks_setup_failure(self) -> None:
+        result = services._iris_product_status(
+            services.RuntimeState(),
+            {"active": True, "state": "active"},
+            "com.openalma.mentra",
+            "0.1.0",
+            {"enabled": True, "ready": False, "reason": "fictional failure"},
+        )
+        self.assertEqual(result["state"], "active")
+        self.assertIsNone(result["action_kind"])
 
     def test_iris_release_status_requires_its_verified_live_pid(self) -> None:
         root = Path(self._testMethodName)

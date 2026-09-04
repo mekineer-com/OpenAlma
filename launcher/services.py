@@ -11,6 +11,7 @@ relative to the launcher's own directory, otherwise None.
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import re
@@ -19,6 +20,7 @@ import shutil
 import signal
 import subprocess
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
@@ -34,6 +36,7 @@ PORT_PID_CACHE_SECONDS = 5.0
 STARTUP_GRACE_SECONDS = PORT_PID_CACHE_SECONDS + 1.0
 _PROCESS_SCAN_CACHE: dict[tuple[str, str, str], tuple[float, list[int]]] = {}
 _PORT_PID_CACHE: dict[int, tuple[float, int | None]] = {}
+_MENTRA_READINESS_CACHE: dict[str, tuple[float, dict]] = {}
 _CHANNELS_HOME = _resolve_channels_home()
 
 
@@ -562,8 +565,14 @@ def memorize_pending(soul_id: str, user_id: str = "") -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _read_mentra_status(port: int, soul_id: str = "", user_id: str = "") -> dict:
-    query = urllib.parse.urlencode({"soul_id": soul_id, "user_id": user_id})
+def _read_mentra_status(
+    port: int, soul_id: str = "", user_id: str = "", device_session_id: str = ""
+) -> dict:
+    query = urllib.parse.urlencode({
+        "soul_id": soul_id,
+        "user_id": user_id,
+        "device_session_id": device_session_id,
+    })
     try:
         with urllib.request.urlopen(
             f"http://127.0.0.1:{port}/integration/mentra/status?{query}", timeout=0.5
@@ -572,6 +581,180 @@ def _read_mentra_status(port: int, soul_id: str = "", user_id: str = "") -> dict
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _read_dotenv(path: Path) -> dict[str, str]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+    values: dict[str, str] = {}
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.removeprefix("export ").split("=", 1)
+        values[key.strip()] = value.strip().strip("'\"")
+    return values
+
+
+def _mentra_http_status(url: str, bearer: str = "") -> int:
+    headers = {"Authorization": f"Bearer {bearer}"} if bearer else {}
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=2) as response:
+            return response.status
+    except urllib.error.HTTPError as exc:
+        return exc.code
+    except OSError:
+        return 0
+
+
+def _mentra_readiness_uncached(root: Path) -> dict:
+    config_path = root / "mcp-memu-server" / "config.json"
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        config = {}
+    mentra = config.get("mentra") if isinstance(config, dict) else {}
+    mentra = mentra if isinstance(mentra, dict) else {}
+    if not _coerce_bool(mentra.get("enabled")):
+        return {"enabled": False, "ready": False, "reason": "Mentra is disabled", "step": "disabled", "rows": []}
+
+    rows: list[dict[str, str]] = []
+    details: dict[str, str] = {}
+    row_labels = (
+        "OpenAlma / mcp configuration",
+        "memU Server",
+        "Next Iris build",
+        "WireGuard host route",
+        "Authenticated narrow ingress",
+    )
+
+    def fail(step: str, label: str, reason: str) -> dict:
+        rows.append({"label": label, "state": "failure", "detail": reason})
+        rows.extend(
+            {"label": remaining, "state": "unknown", "detail": "Not yet observable"}
+            for remaining in row_labels[len(rows):]
+        )
+        return {
+            "enabled": True,
+            "ready": False,
+            "reason": reason,
+            "step": step,
+            "rows": rows,
+            **details,
+        }
+
+    required = ("integration_bearer_token", "gemini_api_key", "model", "voice")
+    missing = [name for name in required if not str(mentra.get(name) or "").strip()]
+    if missing:
+        return fail("config", "OpenAlma / mcp configuration", f"Configure Mentra: {', '.join(missing)}")
+    rows.append({"label": "OpenAlma / mcp configuration", "state": "ready", "detail": "Ready"})
+
+    memu_spec = next((spec for spec in all_services() if spec.name == "memu-server"), None)
+    if memu_spec is None or not _runtime_state(memu_spec).running:
+        return fail("server", "memU Server", "Start memU Server")
+    rows.append({"label": "memU Server", "state": "ready", "detail": "Ready"})
+
+    env = _read_dotenv(root / "mentra-os" / "miniapps" / "openalma" / ".env.local")
+    env_keys = (
+        "MENTRA_PUBLIC_OPENALMA_BASE_URL",
+        "MENTRA_PUBLIC_OPENALMA_BEARER",
+        "MENTRA_PUBLIC_OPENALMA_USER_ID",
+        "MENTRA_PUBLIC_OPENALMA_SOUL_ID",
+        "MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID",
+    )
+    missing = [name for name in env_keys if not env.get(name)]
+    if missing:
+        return fail("iris_config", "Next Iris build", f"Configure {', '.join(missing)} in Iris .env.local")
+    rows.append({
+        "label": "Next Iris build",
+        "state": "ready",
+        "detail": f"{env['MENTRA_PUBLIC_OPENALMA_USER_ID']} / {env['MENTRA_PUBLIC_OPENALMA_SOUL_ID']}",
+    })
+    details.update(
+        device_session_id=env["MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID"],
+        user_id=env["MENTRA_PUBLIC_OPENALMA_USER_ID"],
+        soul_id=env["MENTRA_PUBLIC_OPENALMA_SOUL_ID"],
+    )
+
+    base_url = env["MENTRA_PUBLIC_OPENALMA_BASE_URL"].rstrip("/")
+    parsed = urllib.parse.urlsplit(base_url)
+    host = parsed.hostname or ""
+    try:
+        private_host = ipaddress.ip_address(host).is_private
+    except ValueError:
+        private_host = False
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not private_host
+        or host in {"127.0.0.1", "::1"}
+    ):
+        return fail("wireguard", "WireGuard host route", "Iris base URL must use a private host address")
+    try:
+        addresses = json.loads(subprocess.check_output(["ip", "-j", "address", "show"], text=True))
+    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError):
+        return fail("wireguard", "WireGuard host route", "Could not inspect local interfaces")
+    if not any(
+        address.get("local") == host
+        for interface in addresses
+        for address in interface.get("addr_info", [])
+    ):
+        return fail("wireguard", "WireGuard host route", f"No local interface owns {host}")
+    rows.append({"label": "WireGuard host route", "state": "ready", "detail": "Ready"})
+
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError:
+        return fail("ingress", "Authenticated narrow ingress", "Iris base URL has an invalid port")
+    try:
+        listeners = subprocess.check_output(["ss", "-H", "-ltn"], text=True)
+    except (OSError, subprocess.CalledProcessError):
+        return fail("ingress", "Authenticated narrow ingress", "Could not inspect listening ports")
+    local_addresses = [line.split()[3] for line in listeners.splitlines() if len(line.split()) >= 4]
+    same_port = [address for address in local_addresses if address.rsplit(":", 1)[-1] == str(port)]
+    unsafe_bind = False
+    for address in same_port:
+        listener_host = address.rsplit(":", 1)[0].strip("[]")
+        try:
+            unsafe_bind = (
+                unsafe_bind
+                or listener_host in {"*", "0.0.0.0", "::"}
+                or not ipaddress.ip_address(listener_host).is_private
+            )
+        except ValueError:
+            unsafe_bind = True
+    if f"{host}:{port}" not in local_addresses or unsafe_bind:
+        return fail("ingress", "Authenticated narrow ingress", f"Ingress is not bound to {host}:{port}")
+
+    bearer = env["MENTRA_PUBLIC_OPENALMA_BEARER"]
+    if _mentra_http_status(f"{base_url}/integration/mentra/health", bearer) != 200:
+        return fail("ingress", "Authenticated narrow ingress", "Authenticated Mentra health check failed")
+    if _mentra_http_status(f"{base_url}/_openalma_setup_probe") not in {401, 404}:
+        return fail("ingress", "Authenticated narrow ingress", "Ingress exposes an unrelated path")
+    rows.append({"label": "Authenticated narrow ingress", "state": "ready", "detail": "Ready"})
+    return {
+        "enabled": True,
+        "ready": True,
+        "reason": "Ready",
+        "step": "ready",
+        "rows": rows,
+        **details,
+    }
+
+
+def mentra_readiness(root: Path | None = None) -> dict:
+    root = root or _resolve_apps_root()
+    if root is None:
+        return {"enabled": True, "ready": False, "reason": "Set the apps-root directory", "step": "apps_root", "rows": []}
+    key = str(root)
+    now = time.monotonic()
+    cached = _MENTRA_READINESS_CACHE.get(key)
+    if cached and now - cached[0] < 10:
+        return cached[1]
+    result = _mentra_readiness_uncached(root)
+    _MENTRA_READINESS_CACHE[key] = (now, result)
+    return result
 
 
 def _iris_release_identity(spec: ServiceSpec) -> tuple[str, str]:
@@ -615,6 +798,7 @@ def _iris_product_status(
     mentra: dict,
     available_package: str,
     available_version: str,
+    readiness: dict | None = None,
 ) -> dict:
     active = bool(mentra.get("active"))
     installed_package = str(mentra.get("installed_package") or "")
@@ -631,10 +815,14 @@ def _iris_product_status(
         if mismatch:
             detail = "; ".join(part for part in (detail, f"update {available_version} available") if part)
         action = None
+    elif readiness and not readiness.get("enabled"):
+        state, label, detail, action = "disabled", "Disabled", "", None
     elif runtime.running:
         state, label, detail, action = "installing", "◐ waiting for phone installation", "", "stop"
     elif runtime.stuck or runtime.orphaned:
         state, label, detail, action = "degraded", "▲ installer failed", "View the Iris log", "stop"
+    elif readiness and readiness.get("enabled") and not readiness.get("ready"):
+        state, label, detail, action = "setup", "▲ setup needed", str(readiness.get("reason") or "Open Iris & Phone Setup"), "settings"
     elif (
         not available_package
         or not available_version
@@ -677,6 +865,11 @@ def _iris_product_status(
         "open_url": None,
         "action_kind": action,
         "action_label": action_label,
+        "active": active,
+        "installed_package": installed_package or None,
+        "installed_version": installed_version or None,
+        "available_package": available_package or None,
+        "available_version": available_version or None,
     }
 
 
@@ -702,19 +895,29 @@ def _child_status_parts(name: str, data: object) -> dict[str, str] | None:
 
 
 def status(spec: ServiceSpec) -> dict:
-    runtime = _runtime_state(spec)
     if spec.name == "iris-server":
+        readiness = mentra_readiness()
+        runtime = _runtime_state(spec)
         channels_config = _read_channels_config()
-        mentra = _read_mentra_status(
-            MEMU_SERVER_PORT,
-            str(channels_config.get("soul_id") or "").strip(),
-            str(channels_config.get("user_id") or "").strip(),
+        soul_id = str(readiness.get("soul_id") or channels_config.get("soul_id") or "").strip()
+        user_id = str(readiness.get("user_id") or channels_config.get("user_id") or "").strip()
+        mentra = (
+            _read_mentra_status(
+                MEMU_SERVER_PORT,
+                soul_id,
+                user_id,
+                str(readiness.get("device_session_id") or ""),
+            )
+            if readiness.get("enabled") and soul_id and user_id
+            else {"state": "disabled"} if not readiness.get("enabled") else {}
         )
-        result = _iris_product_status(runtime, mentra, *_iris_release_identity(spec))
+        result = _iris_product_status(runtime, mentra, *_iris_release_identity(spec), readiness)
+        result["setup"] = readiness
         release = _read_iris_release_status(spec, runtime)
         if release:
             result["release_uri"] = release.get("release_uri")
         return result
+    runtime = _runtime_state(spec)
     running = runtime.running
     stuck = runtime.stuck
     orphaned = runtime.orphaned

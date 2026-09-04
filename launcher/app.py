@@ -74,6 +74,17 @@ def index(request: Request) -> HTMLResponse:
     active_user = soul.read_active_user_id()
     soul_ids = soul.list_soul_ids()
     memorize = services.memorize_pending(active_soul, active_user) if active_soul else {}
+    setup_issue = next(
+        (
+            str(row.get("setup", {}).get("reason") or "")
+            for row in rows
+            if row.get("name") == "iris-server"
+            and row.get("setup", {}).get("enabled")
+            and not row.get("setup", {}).get("ready")
+            and not row.get("active")
+        ),
+        "",
+    )
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -89,6 +100,7 @@ def index(request: Request) -> HTMLResponse:
             "soul_ids": soul_ids,
             "apps_root": str(apps_root) if apps_root else "",
             "needs_setup": apps_root is None,
+            "setup_issue": setup_issue,
         },
     )
 
@@ -109,6 +121,9 @@ def settings_page(request: Request) -> HTMLResponse:
         {"key": key, "label": CONFIG_LABELS.get(key, key)}
         for key in _editable_configs(apps_root)
     ]
+    iris_spec = next((spec for spec in services.all_services() if spec.name == "iris-server"), None)
+    iris = services.status(iris_spec) if iris_spec else {}
+    iris_setup = iris.get("setup") or services.mentra_readiness(apps_root)
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -117,6 +132,8 @@ def settings_page(request: Request) -> HTMLResponse:
             "apps_root_stored": str(stored),
             "editable_configs": editable,
             "settings_path": str(settings.SETTINGS_PATH),
+            "iris": iris,
+            "iris_setup": iris_setup,
         },
     )
 

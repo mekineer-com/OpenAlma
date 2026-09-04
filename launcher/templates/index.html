@@ -54,6 +54,9 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .banner { padding: 0.6rem 0.8rem; margin: 1rem 0; border-radius: 3px;
               background: #3a2415; color: #f5c084; border: 1px solid #6b3a16; }
+    .setup-cue { color: #ff6b6b; font-family: cursive; font-size: 1rem; font-weight: 700;
+                 animation: point 0.8s ease-in-out infinite alternate; }
+    @keyframes point { to { transform: translateX(0.35rem); } }
     .meter { width: 100%; max-width: 28rem; height: 0.6rem; background: #2a2a2a;
              border: 1px solid #444; border-radius: 3px; overflow: hidden; }
     .meter-fill { height: 100%; background: #6aa9ff; }
@@ -80,6 +83,10 @@
     <a href="/settings">Set it manually</a> — point at the parent of <code>mcp-memu-server</code>, <code>hermes-channels</code>, etc.
   </div>
   {% endif %}
+
+  <div id="setup-cue" class="setup-cue" {% if not setup_issue %}hidden{% endif %}>
+    <span id="setup-reason">{{ setup_issue }} &nbsp;↗ </span><a href="/settings">Settings</a>
+  </div>
 
   <h2>Services</h2>
   <table>
@@ -299,6 +306,13 @@ function pollStatus(name) {
         html += '</div>';
       }
       statusCell.innerHTML = html;
+      if (name === 'iris-server') {
+        var cue = document.getElementById('setup-cue');
+        var issue = !data.active && data.setup && data.setup.enabled && !data.setup.ready
+          ? data.setup.reason : '';
+        cue.hidden = !issue;
+        document.getElementById('setup-reason').textContent = issue ? issue + '  ↗ ' : '';
+      }
       var waiting = pendingStarts[name] > Date.now() && !data.stoppable && data.startable !== false;
       if (waiting) {
         actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Starting"></span>';
