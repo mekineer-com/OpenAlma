@@ -582,6 +582,20 @@ def _iris_release_identity(spec: ServiceSpec) -> tuple[str, str]:
     return str(manifest.get("packageName") or "").strip(), str(manifest.get("version") or "").strip()
 
 
+def _read_iris_release_status(spec: ServiceSpec, runtime: RuntimeState) -> dict:
+    if not runtime.running:
+        return {}
+    try:
+        data = json.loads((spec.cwd / "build" / "release-private-status.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    try:
+        pid = int(data.get("pid"))
+    except (AttributeError, TypeError, ValueError):
+        return {}
+    return data if pid in runtime.verified_pids else {}
+
+
 def _seen_age(seen_at: object) -> str:
     try:
         seconds = max(0, int(time.time() - float(seen_at)))
@@ -696,7 +710,11 @@ def status(spec: ServiceSpec) -> dict:
             str(channels_config.get("soul_id") or "").strip(),
             str(channels_config.get("user_id") or "").strip(),
         )
-        return _iris_product_status(runtime, mentra, *_iris_release_identity(spec))
+        result = _iris_product_status(runtime, mentra, *_iris_release_identity(spec))
+        release = _read_iris_release_status(spec, runtime)
+        if release:
+            result["release_uri"] = release.get("release_uri")
+        return result
     running = runtime.running
     stuck = runtime.stuck
     orphaned = runtime.orphaned

@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -104,3 +105,35 @@ class MentraStatusTest(TestCase):
                     )
                     self.assertEqual(result["status_label"], label)
                     self.assertEqual(result["action_kind"], action)
+
+    def test_iris_release_status_requires_its_verified_live_pid(self) -> None:
+        root = Path(self._testMethodName)
+        spec = services.ServiceSpec(
+            name="iris-server",
+            label="Mentra Iris",
+            cmd=[],
+            cwd=root,
+            log_path=Path("log"),
+            pid_path=Path("pid"),
+        )
+        path = root / "build" / "release-private-status.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"pid": 42, "release_uri": "miniapp://fictional"}))
+        try:
+            self.assertEqual(services._read_iris_release_status(spec, services.RuntimeState()), {})
+            self.assertEqual(
+                services._read_iris_release_status(
+                    spec, services.RuntimeState(running=True, verified_pids=(41,))
+                ),
+                {},
+            )
+            self.assertEqual(
+                services._read_iris_release_status(
+                    spec, services.RuntimeState(running=True, verified_pids=(42,))
+                )["release_uri"],
+                "miniapp://fictional",
+            )
+        finally:
+            path.unlink()
+            path.parent.rmdir()
+            root.rmdir()
