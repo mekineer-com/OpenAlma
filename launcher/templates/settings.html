@@ -72,7 +72,10 @@
       <canvas id="iris-install-qr" width="220" height="220"></canvas>
       <p><a href="{{ iris.release_uri }}">Open installation link</a></p>
       <p><button class="btn" type="button" onclick="irisAction('stop')">Cancel</button></p>
-    {% elif iris_setup.ready %}
+    {% elif iris.running %}
+      <p>{{ iris.status_label }}</p>
+      <p><button class="btn" type="button" onclick="irisAction('stop')">Cancel</button></p>
+    {% elif iris_setup.ready and not iris.active %}
       <p><button class="btn" type="button" onclick="irisAction('start')">{{ "Reinstall / Repair" if iris.installed_version else "Install Iris" }}</button></p>
     {% endif %}
 
@@ -138,6 +141,17 @@
   <p><code>{{ settings_path }}</code></p>
   <script src="/static/vendor/qrcode.min.js"></script>
   <script>
+    {% if iris.running %}
+    const releaseUri = {{ (iris.release_uri or '')|tojson }};
+    setInterval(async function() {
+      try {
+        const response = await fetch('/service/iris-server/status');
+        if (!response.ok) return;
+        const status = await response.json();
+        if (!status.running || (status.release_uri || '') !== releaseUri) location.reload();
+      } catch (_err) {}
+    }, 2000);
+    {% endif %}
     function irisAction(action) {
       fetch('/service/iris-server/' + action, {method: 'POST'})
         .then(function(response) { if (!response.ok) throw new Error(); location.reload(); })

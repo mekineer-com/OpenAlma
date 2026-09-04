@@ -181,6 +181,7 @@ class MentraStatusTest(TestCase):
             self.assertIs(first, second)
             self.assertEqual(probe.call_count, 2)
             self.assertEqual(http.call_count, 2)
+            self.assertEqual(http.call_args_list[1].args, ("http://10.77.0.1/health",))
             self.assertEqual(len(first["rows"]), 5)
 
             services._MENTRA_READINESS_CACHE.clear()
@@ -306,3 +307,18 @@ class MentraStatusTest(TestCase):
             self.assertEqual(result["state"], expected)
             self.assertEqual(bool(result["setup_issue"]), expected == "setup")
         self.assertFalse(readiness["ready"])
+
+    def test_installed_soul_status_ignores_next_build_identity(self) -> None:
+        spec = services.ServiceSpec("iris-server", "Iris", [], Path("."), Path("log"), Path("pid"))
+        installed = {"installed_soul": "Installed Soul", "installed_package": "com.openalma.mentra", "installed_version": "0.1.0"}
+        with (
+            patch.object(services, "mentra_readiness", return_value={"enabled": True, "ready": True, "soul_id": "Next Build", "device_session_id": "other-phone"}),
+            patch.object(services, "_runtime_state", return_value=services.RuntimeState()),
+            patch.object(services, "_read_channels_config", return_value={"user_id": "Fictional User", "soul_id": "Selected Soul"}),
+            patch.object(services, "_iris_release_identity", return_value=("com.openalma.mentra", "0.1.0")),
+            patch.object(services, "_read_mentra_status", side_effect=[installed, {**installed, "active": True, "state": "active"}]) as status,
+        ):
+            result = services.status(spec)
+        self.assertTrue(result["active"])
+        self.assertEqual(status.call_args_list[0].args, (8099, "Selected Soul", "Fictional User"))
+        self.assertEqual(status.call_args_list[1].args, (8099, "Installed Soul", "Fictional User"))

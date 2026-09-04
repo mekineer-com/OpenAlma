@@ -615,7 +615,7 @@ def _mentra_readiness_uncached(root: Path) -> dict:
     try:
         config = json.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        config = {}
+        return {"enabled": True, "ready": False, "reason": "Cannot read mcp config.json", "step": "config", "rows": []}
     mentra = config.get("mentra") if isinstance(config, dict) else {}
     mentra = mentra if isinstance(mentra, dict) else {}
     if not _coerce_bool(mentra.get("enabled")):
@@ -693,7 +693,7 @@ def _mentra_readiness_uncached(root: Path) -> dict:
     ):
         return fail("wireguard", "WireGuard host route", "Iris base URL must use a private host address")
     try:
-        addresses = json.loads(subprocess.check_output(["ip", "-j", "address", "show"], text=True))
+        addresses = json.loads(subprocess.check_output(["ip", "-j", "address", "show", "type", "wireguard"], text=True))
     except (OSError, subprocess.CalledProcessError, json.JSONDecodeError):
         return fail("wireguard", "WireGuard host route", "Could not inspect local interfaces")
     if not any(
@@ -731,7 +731,7 @@ def _mentra_readiness_uncached(root: Path) -> dict:
     bearer = env["MENTRA_PUBLIC_OPENALMA_BEARER"]
     if _mentra_http_status(f"{base_url}/integration/mentra/health", bearer) != 200:
         return fail("ingress", "Authenticated narrow ingress", "Authenticated Mentra health check failed")
-    if _mentra_http_status(f"{base_url}/_openalma_setup_probe") not in {401, 404}:
+    if _mentra_http_status(f"{base_url}/health") not in {401, 404}:
         return fail("ingress", "Authenticated narrow ingress", "Ingress exposes an unrelated path")
     rows.append({"label": "Authenticated narrow ingress", "state": "ready", "detail": "Ready"})
     return {
@@ -825,6 +825,8 @@ def _iris_product_status(
     elif runtime.running:
         label = "◐ waiting for phone installation" if runtime.port_pid else "◐ building installer"
         state, detail, action = "installing", "", "stop"
+        if runtime.port_blocked:
+            state, label, detail = "blocked", "▲ installer port occupied", "Cancel and free port 6789"
     elif runtime.stuck or runtime.orphaned:
         state, label, detail, action = "degraded", "▲ installer failed", "View the Iris log", "stop"
     elif setup_required:
@@ -872,7 +874,7 @@ def _iris_product_status(
         "action_kind": action,
         "action_label": action_label,
         "active": active,
-        "setup_issue": str(readiness.get("reason") or "") if setup_required and not active else "",
+        "setup_issue": str(readiness.get("reason") or "") if setup_required and not active and not runtime.running else "",
         "installed_package": installed_package or None,
         "installed_version": installed_version or None,
         "available_package": available_package or None,
@@ -906,18 +908,20 @@ def status(spec: ServiceSpec) -> dict:
         readiness = mentra_readiness()
         runtime = _runtime_state(spec)
         channels_config = _read_channels_config()
-        soul_id = str(readiness.get("soul_id") or channels_config.get("soul_id") or "").strip()
-        user_id = str(readiness.get("user_id") or channels_config.get("user_id") or "").strip()
+        soul_id = str(channels_config.get("soul_id") or "").strip()
+        user_id = str(channels_config.get("user_id") or "").strip()
         mentra = (
             _read_mentra_status(
                 MEMU_SERVER_PORT,
                 soul_id,
                 user_id,
-                str(readiness.get("device_session_id") or ""),
             )
             if readiness.get("enabled") and soul_id and user_id
             else {"state": "disabled"} if not readiness.get("enabled") else {}
         )
+        installed_soul = str(mentra.get("installed_soul") or "")
+        if installed_soul and installed_soul != soul_id:
+            mentra = _read_mentra_status(MEMU_SERVER_PORT, installed_soul, user_id)
         result = _iris_product_status(runtime, mentra, *_iris_release_identity(spec), readiness)
         result["setup"] = readiness
         release = _read_iris_release_status(spec, runtime)
