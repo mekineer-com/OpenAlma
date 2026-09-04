@@ -18,13 +18,13 @@ def _render(memorize: dict) -> str:
         visible_chats=[],
         excluded_chats=[],
         policies=("full", "listen_only", "excluded"),
-        active_soul="Siri",
-        soul_ids=["Siri"],
+        active_soul="Fictional Soul",
+        soul_ids=["Fictional Soul"],
         editable_configs=[],
         apps_root="",
         needs_setup=False,
         memorize=memorize,
-    )
+    ).split('<script>', 1)[0]
 
 
 def test_memorize_gauge_under_threshold():

@@ -1,5 +1,7 @@
 from pathlib import Path
 import json
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from threading import Thread
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -216,7 +218,7 @@ class MentraStatusTest(TestCase):
         self.assertEqual(result["state"], "active")
         self.assertIsNone(result["action_kind"])
 
-    def test_iris_release_status_requires_its_verified_live_pid(self) -> None:
+    def test_iris_release_status_verifies_wrapper_independently_of_parent_pid(self) -> None:
         root = Path(self._testMethodName)
         spec = services.ServiceSpec(
             name="iris-server",
@@ -270,3 +272,37 @@ class MentraStatusTest(TestCase):
             runtime = services._runtime_state(spec)
         self.assertTrue(runtime.running)
         self.assertFalse(runtime.stuck)
+
+    def test_http_probe_sends_bearer_and_preserves_rejection_status(self) -> None:
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                authorized = self.headers.get("Authorization") == "Bearer fictional-secret"
+                code = 404 if self.path == "/unrelated" else 200 if authorized else 401
+                self.send_response(code)
+                self.end_headers()
+
+            def log_message(self, *_args):
+                pass
+
+        with HTTPServer(("127.0.0.1", 0), Handler) as server:
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            url = f"http://127.0.0.1:{server.server_port}"
+            try:
+                self.assertEqual(services._mentra_http_status(url, "fictional-secret"), 200)
+                self.assertEqual(services._mentra_http_status(url, "wrong"), 401)
+                self.assertEqual(services._mentra_http_status(url + "/unrelated"), 404)
+            finally:
+                server.shutdown()
+                thread.join()
+
+    def test_missing_build_inputs_do_not_nag_installed_iris(self) -> None:
+        readiness = {"enabled": True, "ready": False, "step": "iris_config", "reason": "Missing build inputs"}
+        installed = {"state": "ready", "installed_package": "com.openalma.mentra", "installed_version": "0.1.0"}
+        for mentra, expected in ((installed, "ready"), ({"state": "ready"}, "setup")):
+            result = services._iris_product_status(
+                services.RuntimeState(), mentra, "com.openalma.mentra", "0.1.0", readiness
+            )
+            self.assertEqual(result["state"], expected)
+            self.assertEqual(bool(result["setup_issue"]), expected == "setup")
+        self.assertFalse(readiness["ready"])

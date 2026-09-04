@@ -308,8 +308,7 @@ function pollStatus(name) {
       statusCell.innerHTML = html;
       if (name === 'iris-server') {
         var cue = document.getElementById('setup-cue');
-        var issue = !data.active && data.setup && data.setup.enabled && !data.setup.ready
-          ? data.setup.reason : '';
+        var issue = data.setup_issue || '';
         cue.hidden = !issue;
         document.getElementById('setup-reason').textContent = issue ? issue + '  ↗ ' : '';
       }

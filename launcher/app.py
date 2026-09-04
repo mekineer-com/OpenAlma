@@ -76,12 +76,9 @@ def index(request: Request) -> HTMLResponse:
     memorize = services.memorize_pending(active_soul, active_user) if active_soul else {}
     setup_issue = next(
         (
-            str(row.get("setup", {}).get("reason") or "")
+            str(row.get("setup_issue") or "")
             for row in rows
             if row.get("name") == "iris-server"
-            and row.get("setup", {}).get("enabled")
-            and not row.get("setup", {}).get("ready")
-            and not row.get("active")
         ),
         "",
     )

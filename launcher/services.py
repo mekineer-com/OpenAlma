@@ -808,6 +808,10 @@ def _iris_product_status(
         installed_package != available_package or installed_version != available_version
     )
     age = _seen_age(mentra.get("installed_seen_at"))
+    setup_required = bool(
+        readiness and readiness.get("enabled") and not readiness.get("ready")
+        and not (installed_package and readiness.get("step") == "iris_config")
+    )
 
     if active:
         state = str(mentra.get("state") or "active")
@@ -823,7 +827,7 @@ def _iris_product_status(
         state, detail, action = "installing", "", "stop"
     elif runtime.stuck or runtime.orphaned:
         state, label, detail, action = "degraded", "▲ installer failed", "View the Iris log", "stop"
-    elif readiness and readiness.get("enabled") and not readiness.get("ready"):
+    elif setup_required:
         state, label, detail, action = "setup", "▲ setup needed", str(readiness.get("reason") or "Open Iris & Phone Setup"), "settings"
     elif (
         not available_package
@@ -868,6 +872,7 @@ def _iris_product_status(
         "action_kind": action,
         "action_label": action_label,
         "active": active,
+        "setup_issue": str(readiness.get("reason") or "") if setup_required and not active else "",
         "installed_package": installed_package or None,
         "installed_version": installed_version or None,
         "available_package": available_package or None,
