@@ -42,6 +42,15 @@ def _find_service(name: str) -> services.ServiceSpec:
     raise HTTPException(status_code=404, detail=f"Unknown service: {name}")
 
 
+def _resolve_soul(user_id: str, soul_id: str, use_existing: bool) -> str:
+    try:
+        return services.resolve_soul(user_id, soul_id, use_existing)
+    except services.SoulServiceUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
     apps_root = settings.apps_root()
@@ -73,7 +82,13 @@ def index(request: Request) -> HTMLResponse:
     channels_configured = soul.CHANNELS_CONFIG_PATH.exists()
     active_soul = soul.read_active_soul_id() if channels_configured else ""
     active_user = soul.read_active_user_id() if channels_configured else ""
-    soul_ids = soul.list_soul_ids() if channels_configured else []
+    soul_ids: list[str] = []
+    soul_error = ""
+    if channels_configured:
+        try:
+            soul_ids = services.list_souls(active_user)
+        except (services.SoulServiceUnavailable, ValueError) as exc:
+            soul_error = str(exc)
     memorize = services.memorize_pending(active_soul, active_user) if active_soul else {}
     setup_issue = next(
         (
@@ -97,6 +112,7 @@ def index(request: Request) -> HTMLResponse:
             "active_soul": active_soul,
             "channels_configured": channels_configured,
             "soul_ids": soul_ids,
+            "soul_error": soul_error,
             "apps_root": str(apps_root) if apps_root else "",
             "needs_setup": apps_root is None,
             "setup_issue": setup_issue,
@@ -183,15 +199,28 @@ def service_start(service_name: str) -> dict:
 
 
 @app.post("/iris/install")
-def iris_install(user_id: str = Form(), soul_id: str = Form(), device_session_id: str = Form()) -> RedirectResponse:
+def iris_install(
+    user_id: str = Form(), soul_id: str = Form(), device_session_id: str = Form(), use_existing: bool = Form(default=False),
+) -> RedirectResponse:
     spec = _find_service("iris-server")
+    resolved_soul = _resolve_soul(user_id, soul_id, use_existing)
     try:
         services.start(spec, install_target={
-            "user_id": user_id, "soul_id": soul_id, "device_session_id": device_session_id,
+            "user_id": user_id, "soul_id": resolved_soul, "device_session_id": device_session_id,
         })
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RedirectResponse("/settings", status_code=303)
+
+
+@app.get("/souls")
+def souls(user_id: str) -> dict:
+    try:
+        return {"souls": services.list_souls(user_id)}
+    except services.SoulServiceUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/service/{service_name}/stop")
@@ -236,8 +265,8 @@ async def policy_save(request: Request) -> RedirectResponse:
 
 
 @app.post("/soul")
-def soul_save(soul_id: str = Form(default="")) -> RedirectResponse:
-    soul.set_active_soul_id(soul_id)
+def soul_save(soul_id: str = Form(default=""), use_existing: bool = Form(default=False)) -> RedirectResponse:
+    soul.set_active_soul_id(_resolve_soul(soul.read_active_user_id(), soul_id, use_existing))
     return RedirectResponse("/", status_code=303)
 
 

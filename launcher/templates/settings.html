@@ -77,11 +77,14 @@
       <p><button class="btn" type="button" onclick="irisAction('stop')">Cancel</button></p>
     {% elif iris_setup.ready and not iris.active %}
       {% if not iris.installed_version %}
-      <form method="post" action="/iris/install">
+      <form method="post" action="/iris/install" id="iris-install-form">
         <label for="iris-user">Your name</label><input type="text" id="iris-user" name="user_id" required>
-        <label for="iris-soul">Soul name</label><input type="text" id="iris-soul" name="soul_id" required>
+        <label for="iris-soul">Soul name</label><input type="text" id="iris-soul" name="soul_id" list="iris-soul-options" required>
+        <input id="iris-use-existing" type="hidden" name="use_existing" value="false">
+        <datalist id="iris-soul-options"></datalist>
+        <p class="hint" id="iris-soul-status" aria-live="polite">Enter your name, then leave the field to load existing souls.</p>
         <label for="iris-device">Phone ID (letters, digits, dots, hyphens or underscores)</label><input type="text" id="iris-device" name="device_session_id" required pattern="[A-Za-z0-9._-]{1,128}">
-        <p><button class="btn" type="submit">Install Iris</button></p>
+        <p><button class="btn" id="iris-install-button" type="submit" disabled>Install Iris</button></p>
       </form>
       {% else %}
       <p><button class="btn" type="button" onclick="irisAction('start')">{{ "Reinstall / Repair" if iris.installed_version else "Install Iris" }}</button></p>
@@ -149,6 +152,66 @@
   <p><code>{{ settings_path }}</code></p>
   <script src="/static/vendor/qrcode.min.js"></script>
   <script>
+    const irisInstallForm = document.getElementById("iris-install-form");
+    if (irisInstallForm) {
+      const irisUser = document.getElementById("iris-user");
+      const irisSoul = document.getElementById("iris-soul");
+      const irisOptions = document.getElementById("iris-soul-options");
+      const irisStatus = document.getElementById("iris-soul-status");
+      const irisButton = document.getElementById("iris-install-button");
+      const irisUseExisting = document.getElementById("iris-use-existing");
+      let irisLookupUser = "";
+      let irisSouls = new Set();
+
+      async function loadIrisSouls() {
+        const userId = irisUser.value.trim();
+        if (!userId) {
+          irisLookupUser = "";
+          irisSouls = new Set();
+          irisOptions.replaceChildren();
+          irisButton.disabled = true;
+          irisStatus.textContent = "Enter your name, then leave the field to load existing souls.";
+          return false;
+        }
+        irisButton.disabled = true;
+        irisStatus.textContent = "Loading souls...";
+        try {
+          const response = await fetch("/souls?user_id=" + encodeURIComponent(userId));
+          if (!response.ok) throw new Error();
+          const payload = await response.json();
+          irisSouls = new Set(payload.souls);
+          irisOptions.replaceChildren(...payload.souls.map(function(soul) {
+            const option = document.createElement("option");
+            option.value = soul;
+            return option;
+          }));
+          irisLookupUser = userId;
+          irisButton.disabled = false;
+          irisStatus.textContent = payload.souls.length ? "Choose an existing soul or enter a new name." : "No existing souls. Enter a name to create the first soul.";
+          return true;
+        } catch (_err) {
+          irisLookupUser = "";
+          irisSouls = new Set();
+          irisOptions.replaceChildren();
+          irisStatus.textContent = "Souls unavailable. Start mcp-memu-server before installing Iris.";
+          return false;
+        }
+      }
+
+      irisUser.addEventListener("change", loadIrisSouls);
+      irisInstallForm.addEventListener("submit", async function(event) {
+        if (irisLookupUser !== irisUser.value.trim()) {
+          event.preventDefault();
+          if (await loadIrisSouls()) irisInstallForm.requestSubmit();
+          return;
+        }
+        const soulId = irisSoul.value.trim();
+        irisUseExisting.value = "false";
+        if (irisSouls.has(soulId) && !confirm("Soul exists. Use existing database?")) event.preventDefault();
+        else if (irisSouls.has(soulId)) irisUseExisting.value = "true";
+      });
+    }
+
     {% if iris.running %}
     const releaseUri = {{ (iris.release_uri or '')|tojson }};
     setInterval(async function() {

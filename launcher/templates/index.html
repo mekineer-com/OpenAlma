@@ -152,10 +152,14 @@
   {% if channels_configured %}
   <h2>Hermes Channels Soul selector</h2>
   <p class="muted">One active Hermes Channels soul at a time. This updates <code>hermes-channels/data/config.json</code>.</p>
+  {% if soul_error %}
+  <p class="failure">Souls unavailable: {{ soul_error }}. Start mcp-memu-server before changing the active soul.</p>
+  {% else %}
   <form method="post" action="/soul">
     <label for="soul_id">Active soul ID:</label>
     <input list="soul-options" id="soul_id" name="soul_id" value="{{ active_soul }}" placeholder="Echo" required
            style="font: inherit; padding: 0.2rem 0.35rem; background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 3px; min-width: 18rem;">
+    <input id="soul-use-existing" type="hidden" name="use_existing" value="false">
     <datalist id="soul-options">
       {% for s in soul_ids %}
         <option value="{{ s }}"></option>
@@ -163,6 +167,8 @@
     </datalist>
     <button class="btn" type="submit">Set Channels soul</button>
   </form>
+  <p class="muted">A matching existing soul asks for confirmation. Native datalists do not reliably report whether a matching value was selected or typed.</p>
+  {% endif %}
   {% endif %}
 
   <h2>WhatsApp channel policy</h2>
@@ -228,7 +234,19 @@
     <p><em>No WhatsApp chats in <code>{{ channel_directory_path }}</code> yet.</em></p>
   {% endif %}
 
-<script>
+  <script>
+    const soulForm = document.querySelector('form[action="/soul"]');
+    if (soulForm) {
+      const knownSouls = new Set({{ soul_ids|tojson }});
+      soulForm.addEventListener("submit", function(event) {
+        const soulId = document.getElementById("soul_id").value.trim();
+        const useExisting = document.getElementById("soul-use-existing");
+        useExisting.value = "false";
+        if (knownSouls.has(soulId) && !confirm("Soul exists. Use existing database?")) event.preventDefault();
+        else if (knownSouls.has(soulId)) useExisting.value = "true";
+      });
+    }
+
 function esc(text) {
   return String(text || '').replace(/[&<>"']/g, function(ch) {
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];

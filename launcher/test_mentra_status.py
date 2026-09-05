@@ -347,6 +347,108 @@ class MentraStatusTest(TestCase):
         self.assertTrue(result["active"])
         status.assert_called_once_with(8099)
 
+    def test_soul_api_uses_authoritative_server_contract(self) -> None:
+        requests = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                requests.append(("GET", self.path))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"souls":["Codexia","Echo"]}')
+
+            def do_POST(self):
+                payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                requests.append(("POST", payload))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"soul_id":"Codexia","created":false}')
+
+            def log_message(self, *_args):
+                pass
+
+        with HTTPServer(("127.0.0.1", 0), Handler) as server:
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with patch.object(services, "MEMU_SERVER_PORT", server.server_port):
+                    self.assertEqual(services.list_souls("Fictional User"), ["Codexia", "Echo"])
+                    self.assertEqual(services.resolve_soul("Fictional User", "Codexia", True), "Codexia")
+            finally:
+                server.shutdown()
+                thread.join()
+        self.assertEqual(requests, [
+            ("GET", "/souls?user_id=Fictional+User"),
+            ("POST", {"user_id": "Fictional User", "soul_id": "Codexia", "use_existing": True}),
+        ])
+
+    def test_soul_conflicts_distinguish_consent_from_sanitized_collision(self) -> None:
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                self.send_response(409)
+                self.end_headers()
+                if payload["use_existing"]:
+                    self.wfile.write(b'{"reason":"sanitized_collision","message":"Fictional collision"}')
+                else:
+                    self.wfile.write(b'{"reason":"existing_exact","message":"Fictional existing soul"}')
+
+            def log_message(self, *_args):
+                pass
+
+        with HTTPServer(("127.0.0.1", 0), Handler) as server:
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with patch.object(services, "MEMU_SERVER_PORT", server.server_port):
+                    with self.assertRaisesRegex(ValueError, "Fictional existing soul"):
+                        services.resolve_soul("Fictional User", "Codexia", False)
+                    with self.assertRaisesRegex(ValueError, "Fictional collision"):
+                        services.resolve_soul("Fictional User", "Codexia", True)
+            finally:
+                server.shutdown()
+                thread.join()
+
+    def test_soul_selector_requires_server_before_updating_channels_config(self) -> None:
+        from fastapi.testclient import TestClient
+        import app
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "config.json"
+            state_db = root / "state.db"
+            config.write_text(json.dumps({
+                "user_id": "Fictional User",
+                "soul_id": "Old Soul",
+                "souls": ["Wrong Source"],
+                "reply_prefix_template": "*{soul}*: ",
+            }))
+            with (
+                patch.object(app.soul, "CHANNELS_CONFIG_PATH", config),
+                patch.object(app.soul, "HERMES_STATE_DB_PATH", state_db),
+                patch.object(app.policy, "list_whatsapp_chats", return_value=[]),
+                patch.object(app.policy, "read_channel_settings", return_value={}),
+                patch.object(app.settings, "apps_root", return_value=None),
+                patch.object(services, "all_services", return_value=[]),
+                patch.object(services, "memorize_pending", return_value={}),
+                patch.object(services, "list_souls", return_value=["Codexia"]),
+            ):
+                client = TestClient(app.app)
+                page = client.get("/").text
+                self.assertIn('value="Codexia"', page)
+                self.assertNotIn('value="Wrong Source"', page)
+                self.assertEqual(client.get("/souls?user_id=Fictional%20User").json(), {"souls": ["Codexia"]})
+                with patch.object(services, "resolve_soul", side_effect=services.SoulServiceUnavailable("Soul service unavailable")):
+                    self.assertEqual(client.post("/soul", data={"soul_id": "New Soul"}).status_code, 503)
+                self.assertEqual(json.loads(config.read_text())["soul_id"], "Old Soul")
+                with patch.object(services, "resolve_soul", return_value="Codexia") as resolve:
+                    self.assertEqual(client.post("/soul", data={"soul_id": "Codexia", "use_existing": "true"}, follow_redirects=False).status_code, 303)
+                resolve.assert_called_once_with("Fictional User", "Codexia", True)
+            saved = json.loads(config.read_text())
+            self.assertEqual(saved["soul_id"], "Codexia")
+            self.assertEqual(saved["reply_prefix"], "*Codexia*: ")
+            self.assertTrue(state_db.exists())
+
     def test_channels_free_pages_and_stop_action_guard(self) -> None:
         from fastapi.testclient import TestClient
         import app
@@ -355,6 +457,8 @@ class MentraStatusTest(TestCase):
             patch.object(app.soul, "CHANNELS_CONFIG_PATH", Path(directory) / "absent.json"),
             patch.object(app.policy, "list_whatsapp_chats", return_value=[]),
             patch.object(app.policy, "read_channel_settings", return_value={}),
+            patch.object(app.settings, "apps_root", return_value=None),
+            patch.object(app.settings, "read_paths", return_value={}),
             patch.object(services, "all_services", return_value=[]),
         ):
             client = TestClient(app.app)
@@ -367,6 +471,7 @@ class MentraStatusTest(TestCase):
                 patch.object(services, "_read_mentra_status", return_value={"state": "ready", "busy": False}),
                 patch.object(services, "_runtime_state", return_value=services.RuntimeState()),
                 patch.object(services, "_iris_release_identity", return_value=("com.openalma.mentra", "0.1.0")),
+                patch.object(services, "resolve_soul", return_value="Fictional Soul"),
                 patch.object(services, "start") as start,
             ):
                 self.assertIn('data-service="iris-server"', client.get("/").text)
