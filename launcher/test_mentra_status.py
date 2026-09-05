@@ -75,6 +75,7 @@ class MentraStatusTest(TestCase):
             "installed_seen_at": 100.0,
         }
         cases = [
+            (services.RuntimeState(), {"state": "unavailable", "detail": "Cannot read mcp config.json"}, "▲ status unavailable", None),
             (services.RuntimeState(running=True), {"state": "unavailable", "detail": "Status unreachable"}, "▲ status unavailable", "stop"),
             (services.RuntimeState(), {}, "▲ setup needed", "settings"),
             (services.RuntimeState(running=True, port_pid=41), installed, "◐ waiting for phone installation", "stop"),
@@ -389,6 +390,9 @@ class MentraStatusTest(TestCase):
                     with patch.object(services, "_verified_pid_candidates", side_effect=[[123], []]):
                         self.assertEqual(client.post("/service/memu-server/stop?confirm_unknown=true").status_code, 200)
                     signal.assert_called_once_with(123, services.signal.SIGTERM)
+                with patch.object(services, "stop", side_effect=ValueError("unexpected failure")):
+                    response = TestClient(app.app, raise_server_exceptions=False).post("/service/memu-server/stop")
+                    self.assertEqual(response.status_code, 500)
 
     def test_generated_build_uses_host_and_recorded_phone_not_ambient_env(self) -> None:
         with TemporaryDirectory() as directory:

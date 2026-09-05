@@ -201,7 +201,7 @@ def service_stop(service_name: str, confirm_unknown: bool = False) -> dict:
         services.stop(spec, confirm_unknown=confirm_unknown)
     except PermissionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except ValueError as exc:
+    except services.StopConfirmationRequired as exc:
         raise HTTPException(status_code=428, detail=str(exc)) from exc
     return {"ok": True, **services.status(spec)}
 

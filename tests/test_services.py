@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -110,21 +111,22 @@ def test_memorize_pending_sends_user_id(monkeypatch):
     monkeypatch.setattr(services, "all_services", lambda: [])
     monkeypatch.setattr(services.urllib.request, "urlopen", fake_urlopen)
 
-    out = services.memorize_pending("Siri", "Marcos")
+    out = services.memorize_pending("Fictional Soul", "Fictional User")
     query = parse_qs(urlparse(seen["url"]).query)
 
     assert out == {"threshold": 5000}
-    assert query == {"soul_id": ["Siri"], "user_id": ["Marcos"]}
+    assert query == {"soul_id": ["Fictional Soul"], "user_id": ["Fictional User"]}
     assert seen["timeout"] == 2
 
 
-def test_memorize_status_uses_active_soul_and_user(monkeypatch):
+def test_memorize_status_uses_active_soul_and_user(tmp_path, monkeypatch):
     pytest.importorskip("fastapi")
     import app as launcher_app  # noqa: PLC0415
 
     seen = {}
-    monkeypatch.setattr(launcher_app.soul, "read_active_soul_id", lambda: "Siri")
-    monkeypatch.setattr(launcher_app.soul, "read_active_user_id", lambda: "Marcos")
+    config = tmp_path / "channels.json"
+    config.write_text(json.dumps({"soul_id": "Fictional Soul", "user_id": "Fictional User"}))
+    monkeypatch.setattr(launcher_app.soul, "CHANNELS_CONFIG_PATH", config)
     monkeypatch.setattr(
         launcher_app.services,
         "memorize_pending",
@@ -132,7 +134,38 @@ def test_memorize_status_uses_active_soul_and_user(monkeypatch):
     )
 
     assert launcher_app.memorize_status() == {"threshold": 6000}
-    assert ("Siri", "Marcos") in seen
+    assert ("Fictional Soul", "Fictional User") in seen
+
+
+def test_service_action_spinner_confirmation_and_error_display():
+    template = Path(__file__).resolve().parents[1] / "launcher/templates/index.html"
+    subprocess.run(["node", "-e", r'''
+const fs = require('fs'), vm = require('vm'), assert = require('assert');
+const text = fs.readFileSync(process.argv[1], 'utf8');
+const script = text.slice(text.indexOf('var pendingStarts = {}'), text.indexOf('function actionHtml('));
+(async () => {
+  for (const scenario of ['start', 'start-failed', 'decline', 'confirm']) {
+    const urls = [], alerts = []; let polls = 0;
+    const context = {
+      Date, confirm: () => scenario === 'confirm', alert: x => alerts.push(x), pollStatus: () => polls++,
+      fetch: async url => {
+        urls.push(url);
+        const status = scenario === 'start' ? 200 : scenario === 'start-failed' || urls.length === 2 ? 409 : 428;
+        return {status, ok: status === 200, json: async () => ({detail: 'Service message'})};
+      },
+    };
+    vm.createContext(context); vm.runInContext(script, context);
+    await context.svcAction('test', scenario.startsWith('start') ? 'start' : 'stop', {
+      closest: () => ({querySelector: () => ({innerHTML: ''})}),
+    });
+    assert.equal(polls, 1);
+    assert.equal(Boolean(context.pendingStarts.test), scenario === 'start');
+    assert.equal(urls.length, scenario === 'confirm' ? 2 : 1);
+    assert.equal(alerts.length, ['confirm', 'start-failed'].includes(scenario) ? 1 : 0);
+    if (scenario === 'confirm') assert(urls[1].endsWith('?confirm_unknown=true'));
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });
+''', str(template)], check=True, capture_output=True, text=True)
 
 
 def test_memu_server_uses_configured_pidfile_for_adoption(tmp_path, monkeypatch):

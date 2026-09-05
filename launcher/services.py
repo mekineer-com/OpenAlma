@@ -40,6 +40,10 @@ _MENTRA_READINESS_CACHE: dict[str, tuple[float, dict]] = {}
 _CHANNELS_HOME = _resolve_channels_home()
 
 
+class StopConfirmationRequired(Exception):
+    pass
+
+
 @dataclass
 class ServiceSpec:
     name: str
@@ -587,7 +591,7 @@ def _read_mentra_status(
             f"http://127.0.0.1:{port}/integration/mentra/status?{query}",
             headers={"Authorization": f"Bearer {mentra.get('integration_bearer_token') or ''}"},
         )
-        with urllib.request.urlopen(request, timeout=0.5) as resp:
+        with urllib.request.urlopen(request, timeout=2) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = {401: "Mentra credential rejected", 404: "Mentra status route unavailable"}.get(
@@ -1060,7 +1064,7 @@ def stop(spec: ServiceSpec, *, timeout: float = 10.0, confirm_unknown: bool = Fa
         if mentra.get("busy") is True:
             raise PermissionError("Stop the Iris conversation on the phone first")
         if mentra.get("busy") is not False and not confirm_unknown:
-            raise ValueError("Iris activity cannot be checked. Stopping may interrupt a conversation or lose pending work. Stop anyway?")
+            raise StopConfirmationRequired("Iris activity cannot be checked. Stopping may interrupt a conversation or lose pending work. Stop anyway?")
     for pid in pids:
         try:
             _signal_pid(pid, signal.SIGTERM)

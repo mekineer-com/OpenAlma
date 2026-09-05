@@ -264,11 +264,14 @@ async function svcAction(name, action, btn) {
       response = await fetch(url + '?confirm_unknown=true', {method: 'POST'});
       result = await response.json();
     }
-    if (!response.ok && response.status !== 428) alert(result.detail || 'Service action failed');
+    if (!response.ok) {
+      delete pendingStarts[name];
+      if (response.status !== 428) alert(result.detail || 'Service action failed');
+    }
   } catch (error) {
+    delete pendingStarts[name];
     alert('Service action failed: ' + error.message);
   } finally {
-    delete pendingStarts[name];
     pollStatus(name);
   }
 }
