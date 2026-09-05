@@ -577,8 +577,6 @@ def _read_mentra_status(
         return {"state": "unavailable", "detail": "Cannot read mcp config.json"}
     if not root:
         return {"state": "unavailable", "detail": "Set the apps-root directory"}
-    if not _coerce_bool(mentra.get("enabled")):
-        return {"state": "disabled", "active": False, "busy": False}
     query = urllib.parse.urlencode({
         "soul_id": soul_id,
         "user_id": user_id,
@@ -605,7 +603,7 @@ def _iris_build_env(spec: ServiceSpec, target: dict[str, str] | None) -> dict[st
     root = _resolve_apps_root()
     if root is None:
         raise ValueError("Set the apps-root directory")
-    mentra = json.loads((root / "mcp-memu-server" / "config.json").read_text())["mentra"]
+    mentra = json.loads((root / "mcp-memu-server" / "config.json").read_text()).get("mentra") or {}
     if not mentra.get("enabled"):
         raise ValueError("Enable Mentra before installing Iris")
     if target is None:
@@ -628,7 +626,12 @@ def _iris_build_env(spec: ServiceSpec, target: dict[str, str] | None) -> dict[st
     backup = path.with_name(".env.local.orig")
     if path.exists() and not backup.exists():
         shutil.copy2(path, backup)
-    path.write_text("".join(f'{key}="{value}"\n' for key, value in env.items()))
+    if backup.exists():
+        backup.chmod(0o600)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as output:
+        os.fchmod(output.fileno(), 0o600)
+        output.write("".join(f'{key}="{value}"\n' for key, value in env.items()))
     return env
 
 
@@ -990,11 +993,13 @@ def status(spec: ServiceSpec) -> dict:
             label = "◐ starting"
         detail = f"WhatsApp bridge {bridge_state or 'unknown'}"
 
-    if spec.name == "memu-server" and running:
+    if spec.name == "memu-server" and (running or stuck or orphaned):
         mentra = _read_mentra_status(MEMU_SERVER_PORT)
-        stop_blocked = mentra.get("busy") is not False
+        stop_blocked = mentra.get("busy") is True
         if stop_blocked:
-            detail = str(mentra.get("detail") or "Iris conversation in progress")
+            detail = "Iris conversation in progress"
+        elif mentra.get("busy") is not False:
+            detail = str(mentra.get("detail") or "Iris status unknown") + "; Stop requires confirmation"
 
     return {
         "running": running,
@@ -1042,7 +1047,7 @@ def _signal_pid(pid: int, sig: signal.Signals) -> None:
         os.kill(pid, sig)
 
 
-def stop(spec: ServiceSpec, *, timeout: float = 10.0) -> None:
+def stop(spec: ServiceSpec, *, timeout: float = 10.0, confirm_unknown: bool = False) -> None:
     _clear_port_cache(spec)
     pids = _verified_pid_candidates(spec)
     if not pids:
@@ -1050,6 +1055,12 @@ def stop(spec: ServiceSpec, *, timeout: float = 10.0) -> None:
         if spec.adopt_pid_path is not None:
             _clear_dead_pidfile(spec.adopt_pid_path)
         return
+    if spec.name == "memu-server":
+        mentra = _read_mentra_status(MEMU_SERVER_PORT)
+        if mentra.get("busy") is True:
+            raise PermissionError("Stop the Iris conversation on the phone first")
+        if mentra.get("busy") is not False and not confirm_unknown:
+            raise ValueError("Iris activity cannot be checked. Stopping may interrupt a conversation or lose pending work. Stop anyway?")
     for pid in pids:
         try:
             _signal_pid(pid, signal.SIGTERM)

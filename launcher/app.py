@@ -195,11 +195,14 @@ def iris_install(user_id: str = Form(), soul_id: str = Form(), device_session_id
 
 
 @app.post("/service/{service_name}/stop")
-def service_stop(service_name: str) -> dict:
+def service_stop(service_name: str, confirm_unknown: bool = False) -> dict:
     spec = _find_service(service_name)
-    if spec.name == "memu-server" and services._read_mentra_status(services.MEMU_SERVER_PORT).get("busy") is not False:
-        raise HTTPException(status_code=409, detail="Finish the Iris conversation first; status must be available")
-    services.stop(spec)
+    try:
+        services.stop(spec, confirm_unknown=confirm_unknown)
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=428, detail=str(exc)) from exc
     return {"ok": True, **services.status(spec)}
 
 

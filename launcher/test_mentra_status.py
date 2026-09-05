@@ -53,6 +53,7 @@ class MentraStatusTest(TestCase):
             "detail": "Transcript durability gap",
             "mode": "continuous",
             "active": True,
+            "busy": True,
         }
         with (
             patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
@@ -319,6 +320,8 @@ class MentraStatusTest(TestCase):
                     config.write_text(json.dumps({"mentra": {"enabled": True, "integration_bearer_token": "fictional-secret"}}))
                     with patch.object(services, "_resolve_apps_root", return_value=root):
                         self.assertIs(services._read_mentra_status(server.server_port)["busy"], False)
+                        config.write_text(json.dumps({"mentra": {"enabled": False, "integration_bearer_token": "fictional-secret"}}))
+                        self.assertEqual(services._read_mentra_status(server.server_port)["state"], "ready")
                         config.write_text(json.dumps({"mentra": {"enabled": True, "integration_bearer_token": "wrong"}}))
                         rejected = services._read_mentra_status(server.server_port)
                         self.assertEqual(rejected["state"], "unavailable")
@@ -359,19 +362,33 @@ class MentraStatusTest(TestCase):
             iris = services.ServiceSpec("iris-server", "Iris", [], Path(directory), Path("log"), Path("pid"))
             with (
                 patch.object(services, "all_services", return_value=[iris]),
-                patch.object(services, "status", return_value={"setup": {"enabled": True, "ready": True, "rows": []}}),
+                patch.object(services, "mentra_readiness", return_value={"enabled": True, "ready": True, "rows": []}),
+                patch.object(services, "_read_mentra_status", return_value={"state": "ready", "busy": False}),
+                patch.object(services, "_runtime_state", return_value=services.RuntimeState()),
+                patch.object(services, "_iris_release_identity", return_value=("com.openalma.mentra", "0.1.0")),
                 patch.object(services, "start") as start,
             ):
+                self.assertIn('data-service="iris-server"', client.get("/").text)
                 self.assertIn('action="/iris/install"', client.get("/settings").text)
                 target = {"user_id": "Fictional User", "soul_id": "Fictional Soul", "device_session_id": "test-phone"}
                 self.assertEqual(client.post("/iris/install", data=target, follow_redirects=False).status_code, 303)
                 start.assert_called_once_with(iris, install_target=target)
-            spec = services.ServiceSpec("memu-server", "memU", [], Path(directory), Path("log"), Path("pid"))
-            with patch.object(app, "_find_service", return_value=spec), patch.object(services, "stop") as stop:
-                for payload in ({"busy": True}, {"state": "unavailable"}, {}):
-                    with patch.object(services, "_read_mentra_status", return_value=payload):
-                        self.assertEqual(client.post("/service/memu-server/stop").status_code, 409)
-                stop.assert_not_called()
+            spec = services.ServiceSpec("memu-server", "memU", [], Path(directory), Path("log"), Path(directory) / "pid")
+            with (
+                patch.object(app, "_find_service", return_value=spec),
+                patch.object(services, "_runtime_state", return_value=services.RuntimeState(stuck=True)),
+                patch.object(services, "_verified_pid_candidates", return_value=[123]),
+                patch.object(services, "_signal_pid") as signal,
+            ):
+                with patch.object(services, "_read_mentra_status", return_value={"busy": True}):
+                    self.assertEqual(client.post("/service/memu-server/stop?confirm_unknown=true").status_code, 409)
+                with patch.object(services, "_read_mentra_status", return_value={"state": "unavailable"}):
+                    self.assertTrue(services.status(spec)["stoppable"])
+                    self.assertEqual(client.post("/service/memu-server/stop").status_code, 428)
+                    signal.assert_not_called()
+                    with patch.object(services, "_verified_pid_candidates", side_effect=[[123], []]):
+                        self.assertEqual(client.post("/service/memu-server/stop?confirm_unknown=true").status_code, 200)
+                    signal.assert_called_once_with(123, services.signal.SIGTERM)
 
     def test_generated_build_uses_host_and_recorded_phone_not_ambient_env(self) -> None:
         with TemporaryDirectory() as directory:
@@ -400,3 +417,8 @@ class MentraStatusTest(TestCase):
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID"], "test-phone")
                 self.assertIn('BEARER="new-key"', env_path.read_text())
                 self.assertIn("old-key", (root / ".env.local.orig").read_text())
+                self.assertEqual(env_path.stat().st_mode & 0o777, 0o600)
+                self.assertEqual((root / ".env.local.orig").stat().st_mode & 0o777, 0o600)
+                (root / "mcp-memu-server" / "config.json").write_text("{}")
+                with self.assertRaisesRegex(ValueError, "Enable Mentra"):
+                    services._iris_build_env(spec, None)

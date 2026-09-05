@@ -1,6 +1,6 @@
 # OpenAlma Launcher
 
-Mentra Iris has a permanent Services row for installation and phone status. Its temporary installer serves port 6789 only while installing/updating; it is not the conversation server. The launcher does not remotely stop phone conversations. memU Stop is blocked while any Iris sitting/start claim is busy, or its status is unknown.
+Mentra Iris has a permanent Services row for installation and phone status. Its temporary installer serves port 6789 only while installing/updating; it is not the conversation server. The launcher does not remotely stop phone conversations. memU Stop is blocked while any Iris sitting/start claim is busy. Unknown status requires an explicit interruption-risk confirmation, so a hung server or broken credential cannot trap the operator.
 
 A small local web UI that starts, stops, and configures the local OpenAlma services:
 
