@@ -616,6 +616,7 @@ def resolve_soul(user_id: str, soul_id: str, use_existing: bool) -> str:
                 conflict = json.loads(exc.read().decode("utf-8"))
             except (OSError, ValueError):
                 conflict = {}
+            conflict = conflict.get("detail") if isinstance(conflict, dict) else None
             reason = conflict.get("reason") if isinstance(conflict, dict) else ""
             message = conflict.get("message") if isinstance(conflict, dict) else ""
             if reason == "existing_exact":
@@ -664,7 +665,7 @@ def _read_mentra_status(
     return data if isinstance(data, dict) else {"state": "unavailable", "detail": "Invalid Mentra status"}
 
 
-def _iris_build_env(spec: ServiceSpec, target: dict[str, str] | None) -> dict[str, str]:
+def iris_install_env(target: dict[str, str] | None) -> dict[str, str]:
     root = _resolve_apps_root()
     if root is None:
         raise ValueError("Set the apps-root directory")
@@ -686,7 +687,11 @@ def _iris_build_env(spec: ServiceSpec, target: dict[str, str] | None) -> dict[st
             raise ValueError(f"Set a valid Iris install {key} in Settings")
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", values["DEVICE_SESSION_ID"]):
         raise ValueError("Iris device ID must be 1-128 letters, digits, dots, underscores or hyphens")
-    env = {f"MENTRA_PUBLIC_OPENALMA_{key}": value for key, value in values.items()}
+    return {f"MENTRA_PUBLIC_OPENALMA_{key}": value for key, value in values.items()}
+
+
+def _iris_build_env(spec: ServiceSpec, target: dict[str, str] | None) -> dict[str, str]:
+    env = iris_install_env(target)
     path = spec.cwd / ".env.local"
     backup = path.with_name(".env.local.orig")
     if path.exists() and not backup.exists():

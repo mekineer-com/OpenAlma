@@ -203,11 +203,11 @@ def iris_install(
     user_id: str = Form(), soul_id: str = Form(), device_session_id: str = Form(), use_existing: bool = Form(default=False),
 ) -> RedirectResponse:
     spec = _find_service("iris-server")
-    resolved_soul = _resolve_soul(user_id, soul_id, use_existing)
+    target = {"user_id": user_id, "soul_id": soul_id, "device_session_id": device_session_id}
     try:
-        services.start(spec, install_target={
-            "user_id": user_id, "soul_id": resolved_soul, "device_session_id": device_session_id,
-        })
+        services.iris_install_env(target)
+        target["soul_id"] = _resolve_soul(user_id, soul_id, use_existing)
+        services.start(spec, install_target=target)
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RedirectResponse("/settings", status_code=303)

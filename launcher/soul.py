@@ -69,21 +69,6 @@ def read_active_user_id() -> str:
     return str(config.get("user_id") or "").strip()
 
 
-def list_soul_ids() -> list[str]:
-    config = _load_channels_config()
-    souls_raw = config.get("souls")
-    souls: set[str] = set()
-    if isinstance(souls_raw, list):
-        for raw in souls_raw:
-            sid = str(raw or "").strip()
-            if sid:
-                souls.add(sid)
-    current = str(config.get("soul_id") or "").strip()
-    if current:
-        souls.add(current)
-    return sorted(souls, key=lambda v: v.lower())
-
-
 def set_active_soul_id(soul_id: str) -> None:
     selected = str(soul_id or "").strip()
     if not selected:

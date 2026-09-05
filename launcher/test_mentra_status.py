@@ -389,9 +389,9 @@ class MentraStatusTest(TestCase):
                 self.send_response(409)
                 self.end_headers()
                 if payload["use_existing"]:
-                    self.wfile.write(b'{"reason":"sanitized_collision","message":"Fictional collision"}')
+                    self.wfile.write(b'{"detail":{"reason":"sanitized_collision","message":"Fictional collision"}}')
                 else:
-                    self.wfile.write(b'{"reason":"existing_exact","message":"Fictional existing soul"}')
+                    self.wfile.write(b'{"detail":{"reason":"existing_exact","message":"Fictional existing soul"}}')
 
             def log_message(self, *_args):
                 pass
@@ -437,6 +437,12 @@ class MentraStatusTest(TestCase):
                 page = client.get("/").text
                 self.assertIn('value="Codexia"', page)
                 self.assertNotIn('value="Wrong Source"', page)
+                with patch.object(services, "list_souls", side_effect=services.SoulServiceUnavailable("Soul service unavailable")):
+                    unavailable = client.get("/")
+                    self.assertEqual(unavailable.status_code, 200)
+                    self.assertIn("Souls unavailable", unavailable.text)
+                    self.assertNotIn('<form method="post" action="/soul">', unavailable.text)
+                    self.assertEqual(json.loads(config.read_text())["soul_id"], "Old Soul")
                 self.assertEqual(client.get("/souls?user_id=Fictional%20User").json(), {"souls": ["Codexia"]})
                 with patch.object(services, "resolve_soul", side_effect=services.SoulServiceUnavailable("Soul service unavailable")):
                     self.assertEqual(client.post("/soul", data={"soul_id": "New Soul"}).status_code, 503)
@@ -472,6 +478,7 @@ class MentraStatusTest(TestCase):
                 patch.object(services, "_runtime_state", return_value=services.RuntimeState()),
                 patch.object(services, "_iris_release_identity", return_value=("com.openalma.mentra", "0.1.0")),
                 patch.object(services, "resolve_soul", return_value="Fictional Soul"),
+                patch.object(services, "iris_install_env", return_value={}),
                 patch.object(services, "start") as start,
             ):
                 self.assertIn('data-service="iris-server"', client.get("/").text)
@@ -479,6 +486,13 @@ class MentraStatusTest(TestCase):
                 target = {"user_id": "Fictional User", "soul_id": "Fictional Soul", "device_session_id": "test-phone"}
                 self.assertEqual(client.post("/iris/install", data=target, follow_redirects=False).status_code, 303)
                 start.assert_called_once_with(iris, install_target=target)
+                with (
+                    patch.object(services, "iris_install_env", side_effect=ValueError("Invalid install target")),
+                    patch.object(services, "resolve_soul") as resolve,
+                ):
+                    self.assertEqual(client.post("/iris/install", data=target).status_code, 400)
+                    resolve.assert_not_called()
+                    self.assertEqual(start.call_count, 1)
             spec = services.ServiceSpec("memu-server", "memU", [], Path(directory), Path("log"), Path(directory) / "pid")
             with (
                 patch.object(app, "_find_service", return_value=spec),

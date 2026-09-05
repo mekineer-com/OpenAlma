@@ -79,9 +79,10 @@
       {% if not iris.installed_version %}
       <form method="post" action="/iris/install" id="iris-install-form">
         <label for="iris-user">Your name</label><input type="text" id="iris-user" name="user_id" required>
-        <label for="iris-soul">Soul name</label><input type="text" id="iris-soul" name="soul_id" list="iris-soul-options" required>
+        <label for="iris-soul">Soul name</label><input type="text" id="iris-soul" name="soul_id" required>
         <input id="iris-use-existing" type="hidden" name="use_existing" value="false">
-        <datalist id="iris-soul-options"></datalist>
+        <label for="iris-soul-existing">Existing soul</label>
+        <select id="iris-soul-existing"><option value="">Select existing soul</option></select>
         <p class="hint" id="iris-soul-status" aria-live="polite">Enter your name, then leave the field to load existing souls.</p>
         <label for="iris-device">Phone ID (letters, digits, dots, hyphens or underscores)</label><input type="text" id="iris-device" name="device_session_id" required pattern="[A-Za-z0-9._-]{1,128}">
         <p><button class="btn" id="iris-install-button" type="submit" disabled>Install Iris</button></p>
@@ -151,24 +152,26 @@
   <h2>Stored at</h2>
   <p><code>{{ settings_path }}</code></p>
   <script src="/static/vendor/qrcode.min.js"></script>
+  <script src="/static/soul-selector.js"></script>
   <script>
     const irisInstallForm = document.getElementById("iris-install-form");
     if (irisInstallForm) {
       const irisUser = document.getElementById("iris-user");
       const irisSoul = document.getElementById("iris-soul");
-      const irisOptions = document.getElementById("iris-soul-options");
+      const irisExisting = document.getElementById("iris-soul-existing");
       const irisStatus = document.getElementById("iris-soul-status");
       const irisButton = document.getElementById("iris-install-button");
       const irisUseExisting = document.getElementById("iris-use-existing");
       let irisLookupUser = "";
-      let irisSouls = new Set();
+      let lookupVersion = 0;
+      const irisSelector = createSoulSelector(irisSoul, irisExisting, irisUseExisting);
 
       async function loadIrisSouls() {
+        const version = ++lookupVersion;
         const userId = irisUser.value.trim();
         if (!userId) {
           irisLookupUser = "";
-          irisSouls = new Set();
-          irisOptions.replaceChildren();
+          irisSelector.setSouls([]);
           irisButton.disabled = true;
           irisStatus.textContent = "Enter your name, then leave the field to load existing souls.";
           return false;
@@ -179,36 +182,38 @@
           const response = await fetch("/souls?user_id=" + encodeURIComponent(userId));
           if (!response.ok) throw new Error();
           const payload = await response.json();
-          irisSouls = new Set(payload.souls);
-          irisOptions.replaceChildren(...payload.souls.map(function(soul) {
-            const option = document.createElement("option");
-            option.value = soul;
-            return option;
-          }));
+          if (version !== lookupVersion) return false;
+          irisSelector.setSouls(payload.souls);
           irisLookupUser = userId;
           irisButton.disabled = false;
           irisStatus.textContent = payload.souls.length ? "Choose an existing soul or enter a new name." : "No existing souls. Enter a name to create the first soul.";
           return true;
         } catch (_err) {
+          if (version !== lookupVersion) return false;
           irisLookupUser = "";
-          irisSouls = new Set();
-          irisOptions.replaceChildren();
+          irisSelector.setSouls([]);
           irisStatus.textContent = "Souls unavailable. Start mcp-memu-server before installing Iris.";
           return false;
         }
       }
 
+      irisUser.addEventListener("input", function() {
+        ++lookupVersion;
+        irisLookupUser = "";
+        irisSelector.setSouls([]);
+        irisButton.disabled = true;
+      });
       irisUser.addEventListener("change", loadIrisSouls);
+      irisSoul.addEventListener("focus", function() {
+        if (!irisLookupUser) loadIrisSouls();
+      });
       irisInstallForm.addEventListener("submit", async function(event) {
         if (irisLookupUser !== irisUser.value.trim()) {
           event.preventDefault();
           if (await loadIrisSouls()) irisInstallForm.requestSubmit();
           return;
         }
-        const soulId = irisSoul.value.trim();
-        irisUseExisting.value = "false";
-        if (irisSouls.has(soulId) && !confirm("Soul exists. Use existing database?")) event.preventDefault();
-        else if (irisSouls.has(soulId)) irisUseExisting.value = "true";
+        if (!irisSelector.prepareSubmit()) event.preventDefault();
       });
     }
 
