@@ -125,7 +125,7 @@
           {% else %}
             <span class="muted">not startable</span>
           {% endif %}
-          {% if s.open_url %}<a class="btn" href="{{ s.open_url }}" target="_blank" rel="noopener">Open</a>{% endif %}
+          {% if s.running and s.open_url %}<a class="btn" href="{{ s.open_url }}" target="_blank" rel="noopener">Open</a>{% endif %}
         </td>
         <td><a href="/logs/{{ s.name }}">view</a></td>
       </tr>
@@ -263,7 +263,7 @@ function svcAction(name, action, btn) {
 }
 
 function actionHtml(name, data) {
-  var open = data.open_url ? ' <a class="btn" href="' + esc(data.open_url) + '" target="_blank" rel="noopener">Open</a>' : '';
+  var open = data.running && data.open_url ? ' <a class="btn" href="' + esc(data.open_url) + '" target="_blank" rel="noopener">Open</a>' : '';
   if (data.action_kind === 'settings') return '<a class="btn" href="/settings">Settings</a>';
   if (data.action_kind === 'start' || data.action_kind === 'stop') {
     return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'' + data.action_kind + '\',this)">' + esc(data.action_label) + '</button>';
