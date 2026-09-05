@@ -2,6 +2,7 @@ from pathlib import Path
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
+from tempfile import TemporaryDirectory
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -28,7 +29,7 @@ class MentraStatusTest(TestCase):
             patch.object(
                 services,
                 "_read_mentra_status",
-                return_value={"state": "ready", "detail": "Ready for phone connection", "active": False},
+                return_value={"state": "ready", "detail": "Ready for phone connection", "active": False, "busy": False},
             ),
         ):
             result = services.status(spec)
@@ -73,17 +74,18 @@ class MentraStatusTest(TestCase):
             "installed_seen_at": 100.0,
         }
         cases = [
+            (services.RuntimeState(running=True), {"state": "unavailable", "detail": "Status unreachable"}, "▲ status unavailable", "stop"),
             (services.RuntimeState(), {}, "▲ setup needed", "settings"),
             (services.RuntimeState(running=True, port_pid=41), installed, "◐ waiting for phone installation", "stop"),
             (services.RuntimeState(running=True), installed, "◐ building installer", "stop"),
-            (services.RuntimeState(), {"state": "ready"}, "○ not installed", "start"),
+            (services.RuntimeState(), {"state": "ready"}, "○ not installed", "settings"),
             (
                 services.RuntimeState(),
                 {**installed, "installed_version": "0.0.9"},
                 "▲ update available",
                 "start",
             ),
-            (services.RuntimeState(), installed, "● ready", None),
+            (services.RuntimeState(), installed, "● Host ready", None),
             (
                 services.RuntimeState(),
                 {**installed, "state": "transcript_gap", "detail": "Transcript durability gap"},
@@ -93,7 +95,7 @@ class MentraStatusTest(TestCase):
             (
                 services.RuntimeState(running=True),
                 {**installed, "state": "active", "active": True},
-                "● active",
+                "● Connected",
                 None,
             ),
             (
@@ -149,6 +151,7 @@ class MentraStatusTest(TestCase):
             "mentra": {
                 "enabled": True,
                 "integration_bearer_token": "fictional",
+                "public_base_url": "http://10.77.0.1",
                 "gemini_api_key": "fictional",
                 "model": "fictional-model",
                 "voice": "fictional-voice",
@@ -173,16 +176,30 @@ class MentraStatusTest(TestCase):
                 patch.object(services, "all_services", return_value=[memu]),
                 patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
                 patch.object(services.subprocess, "check_output", side_effect=command_output) as probe,
-                patch.object(services, "_mentra_http_status", side_effect=[200, 404]) as http,
+                patch.object(services, "_mentra_http_status", side_effect=[200, 401, 404]) as http,
             ):
                 first = services.mentra_readiness(root)
                 second = services.mentra_readiness(root)
             self.assertTrue(first["ready"])
             self.assertIs(first, second)
             self.assertEqual(probe.call_count, 2)
-            self.assertEqual(http.call_count, 2)
-            self.assertEqual(http.call_args_list[1].args, ("http://10.77.0.1/health",))
-            self.assertEqual(len(first["rows"]), 5)
+            self.assertEqual(http.call_count, 3)
+            self.assertEqual(http.call_args_list[2].args, ("http://10.77.0.1/health",))
+            self.assertEqual(len(first["rows"]), 4)
+
+            for content in ("MENTRA_PUBLIC_OPENALMA_BASE_URL=http://wrong\nMENTRA_PUBLIC_OPENALMA_BEARER=wrong\n", None):
+                if content is None:
+                    env_path.unlink()
+                else:
+                    env_path.write_text(content)
+                services._MENTRA_READINESS_CACHE.clear()
+                with (
+                    patch.object(services, "all_services", return_value=[memu]),
+                    patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
+                    patch.object(services.subprocess, "check_output", side_effect=command_output),
+                    patch.object(services, "_mentra_http_status", side_effect=[200, 401, 404]),
+                ):
+                    self.assertTrue(services.mentra_readiness(root)["ready"])
 
             services._MENTRA_READINESS_CACHE.clear()
             with (
@@ -204,7 +221,7 @@ class MentraStatusTest(TestCase):
             self.assertEqual(exposed["step"], "ingress")
         finally:
             for path in (env_path, config):
-                path.unlink()
+                path.unlink(missing_ok=True)
             for path in (env_path.parent, env_path.parent.parent, env_path.parent.parent.parent, config.parent, root):
                 path.rmdir()
 
@@ -281,6 +298,8 @@ class MentraStatusTest(TestCase):
                 code = 404 if self.path == "/unrelated" else 200 if authorized else 401
                 self.send_response(code)
                 self.end_headers()
+                if code == 200:
+                    self.wfile.write(b'{"state":"ready","busy":false}')
 
             def log_message(self, *_args):
                 pass
@@ -293,20 +312,22 @@ class MentraStatusTest(TestCase):
                 self.assertEqual(services._mentra_http_status(url, "fictional-secret"), 200)
                 self.assertEqual(services._mentra_http_status(url, "wrong"), 401)
                 self.assertEqual(services._mentra_http_status(url + "/unrelated"), 404)
+                with TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    config = root / "mcp-memu-server" / "config.json"
+                    config.parent.mkdir()
+                    config.write_text(json.dumps({"mentra": {"enabled": True, "integration_bearer_token": "fictional-secret"}}))
+                    with patch.object(services, "_resolve_apps_root", return_value=root):
+                        self.assertIs(services._read_mentra_status(server.server_port)["busy"], False)
+                        config.write_text(json.dumps({"mentra": {"enabled": True, "integration_bearer_token": "wrong"}}))
+                        rejected = services._read_mentra_status(server.server_port)
+                        self.assertEqual(rejected["state"], "unavailable")
+                        self.assertIn("credential", rejected["detail"])
+                        with patch.object(services.urllib.request, "urlopen", side_effect=TimeoutError):
+                            self.assertNotIn("busy", services._read_mentra_status(server.server_port))
             finally:
                 server.shutdown()
                 thread.join()
-
-    def test_missing_build_inputs_do_not_nag_installed_iris(self) -> None:
-        readiness = {"enabled": True, "ready": False, "step": "iris_config", "reason": "Missing build inputs"}
-        installed = {"state": "ready", "installed_package": "com.openalma.mentra", "installed_version": "0.1.0"}
-        for mentra, expected in ((installed, "ready"), ({"state": "ready"}, "setup")):
-            result = services._iris_product_status(
-                services.RuntimeState(), mentra, "com.openalma.mentra", "0.1.0", readiness
-            )
-            self.assertEqual(result["state"], expected)
-            self.assertEqual(bool(result["setup_issue"]), expected == "setup")
-        self.assertFalse(readiness["ready"])
 
     def test_installed_soul_status_ignores_next_build_identity(self) -> None:
         spec = services.ServiceSpec("iris-server", "Iris", [], Path("."), Path("log"), Path("pid"))
@@ -314,11 +335,68 @@ class MentraStatusTest(TestCase):
         with (
             patch.object(services, "mentra_readiness", return_value={"enabled": True, "ready": True, "soul_id": "Next Build", "device_session_id": "other-phone"}),
             patch.object(services, "_runtime_state", return_value=services.RuntimeState()),
-            patch.object(services, "_read_channels_config", return_value={"user_id": "Fictional User", "soul_id": "Selected Soul"}),
+            patch.object(services, "_read_channels_config", side_effect=AssertionError("Channels must not be consulted")),
             patch.object(services, "_iris_release_identity", return_value=("com.openalma.mentra", "0.1.0")),
-            patch.object(services, "_read_mentra_status", side_effect=[installed, {**installed, "active": True, "state": "active"}]) as status,
+            patch.object(services, "_read_mentra_status", return_value={**installed, "active": True, "state": "active"}) as status,
         ):
             result = services.status(spec)
         self.assertTrue(result["active"])
-        self.assertEqual(status.call_args_list[0].args, (8099, "Selected Soul", "Fictional User"))
-        self.assertEqual(status.call_args_list[1].args, (8099, "Installed Soul", "Fictional User"))
+        status.assert_called_once_with(8099)
+
+    def test_channels_free_pages_and_stop_action_guard(self) -> None:
+        from fastapi.testclient import TestClient
+        import app
+        with (
+            TemporaryDirectory() as directory,
+            patch.object(app.soul, "CHANNELS_CONFIG_PATH", Path(directory) / "absent.json"),
+            patch.object(app.policy, "list_whatsapp_chats", return_value=[]),
+            patch.object(app.policy, "read_channel_settings", return_value={}),
+            patch.object(services, "all_services", return_value=[]),
+        ):
+            client = TestClient(app.app)
+            self.assertEqual(client.get("/").status_code, 200)
+            self.assertEqual(client.get("/memorize/status").json(), {})
+            iris = services.ServiceSpec("iris-server", "Iris", [], Path(directory), Path("log"), Path("pid"))
+            with (
+                patch.object(services, "all_services", return_value=[iris]),
+                patch.object(services, "status", return_value={"setup": {"enabled": True, "ready": True, "rows": []}}),
+                patch.object(services, "start") as start,
+            ):
+                self.assertIn('action="/iris/install"', client.get("/settings").text)
+                target = {"user_id": "Fictional User", "soul_id": "Fictional Soul", "device_session_id": "test-phone"}
+                self.assertEqual(client.post("/iris/install", data=target, follow_redirects=False).status_code, 303)
+                start.assert_called_once_with(iris, install_target=target)
+            spec = services.ServiceSpec("memu-server", "memU", [], Path(directory), Path("log"), Path("pid"))
+            with patch.object(app, "_find_service", return_value=spec), patch.object(services, "stop") as stop:
+                for payload in ({"busy": True}, {"state": "unavailable"}, {}):
+                    with patch.object(services, "_read_mentra_status", return_value=payload):
+                        self.assertEqual(client.post("/service/memu-server/stop").status_code, 409)
+                stop.assert_not_called()
+
+    def test_generated_build_uses_host_and_recorded_phone_not_ambient_env(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "mcp-memu-server").mkdir()
+            (root / "mcp-memu-server" / "config.json").write_text(json.dumps({"mentra": {
+                "enabled": True, "public_base_url": "http://10.77.0.1", "integration_bearer_token": "new-key",
+            }}))
+            spec = services.ServiceSpec("iris-server", "Iris", [], root, root / "log", root / "pid")
+            env_path = root / ".env.local"
+            env_path.write_text("MENTRA_PUBLIC_OPENALMA_BEARER=old-key\n")
+            with (
+                patch.object(services, "_resolve_apps_root", return_value=root),
+                patch.object(services, "_read_mentra_status", return_value={
+                    "installed_user": "Fictional User", "installed_soul": "Fictional Soul", "installed_device": "test-phone",
+                }),
+                patch.dict(services.os.environ, {"MENTRA_PUBLIC_OPENALMA_BEARER": "stale-ambient-key"}),
+                patch.object(services, "_runtime_state", return_value=services.RuntimeState()),
+                patch.object(services, "_spawn_background") as spawn,
+                patch.object(services, "STATE_DIR", root),
+            ):
+                spawn.return_value.pid = 123
+                services.start(spec)
+                built = spawn.call_args.args[1]
+                self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_BEARER"], "new-key")
+                self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID"], "test-phone")
+                self.assertIn('BEARER="new-key"', env_path.read_text())
+                self.assertIn("old-key", (root / ".env.local.orig").read_text())

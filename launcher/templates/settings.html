@@ -57,7 +57,7 @@
         <li><span class="{{ row.state }}">{{ "✓" if row.state == "ready" else "!" }} {{ row.label }}</span> — {{ row.detail }}</li>
       {% endfor %}
     </ul>
-    {% if not iris_setup.ready %}<p class="failure">Next: {{ iris_setup.reason }}</p>{% endif %}
+    {% if iris_setup.ready %}<p class="ready">Host ready</p>{% else %}<p class="failure">Next: {{ iris_setup.reason }}</p>{% endif %}
 
     <h3>Iris installation</h3>
     <p>
@@ -76,7 +76,16 @@
       <p>{{ iris.status_label }}</p>
       <p><button class="btn" type="button" onclick="irisAction('stop')">Cancel</button></p>
     {% elif iris_setup.ready and not iris.active %}
+      {% if not iris.installed_version %}
+      <form method="post" action="/iris/install">
+        <label for="iris-user">Your name</label><input type="text" id="iris-user" name="user_id" required>
+        <label for="iris-soul">Soul name</label><input type="text" id="iris-soul" name="soul_id" required>
+        <label for="iris-device">Phone ID (letters, digits, dots, hyphens or underscores)</label><input type="text" id="iris-device" name="device_session_id" required pattern="[A-Za-z0-9._-]{1,128}">
+        <p><button class="btn" type="submit">Install Iris</button></p>
+      </form>
+      {% else %}
       <p><button class="btn" type="button" onclick="irisAction('start')">{{ "Reinstall / Repair" if iris.installed_version else "Install Iris" }}</button></p>
+      {% endif %}
     {% endif %}
 
     <h3>Phone steps</h3>
@@ -90,9 +99,8 @@
     </ol>
     <p class="muted">
       Phone connection:
-      {% if iris.active or iris.installed_version %}<span class="ready">observed</span>{% else %}<span class="unknown">not yet observable</span>{% endif %}.
-      The next Iris build is configured for {{ iris_setup.user_id or "?" }} / {{ iris_setup.soul_id or "?" }}.
-      A different selected launcher soul is informational, not a setup error.
+      {% if iris.active %}<span class="ready">Connected</span>{% elif iris.installed_version %}{{ iris.detail }}{% else %}<span class="unknown">Not yet verified</span>{% endif %}.
+      Installation uses the host connection settings. Repair preserves the recorded phone identity.
     </p>
   {% endif %}
 

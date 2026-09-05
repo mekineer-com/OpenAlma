@@ -149,6 +149,7 @@
     {% endif %}
   </div>
 
+  {% if channels_configured %}
   <h2>Hermes Channels Soul selector</h2>
   <p class="muted">One active Hermes Channels soul at a time. This updates <code>hermes-channels/data/config.json</code>.</p>
   <form method="post" action="/soul">
@@ -162,6 +163,7 @@
     </datalist>
     <button class="btn" type="submit">Set Channels soul</button>
   </form>
+  {% endif %}
 
   <h2>WhatsApp channel policy</h2>
   {% if chats %}

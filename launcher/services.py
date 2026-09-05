@@ -569,34 +569,67 @@ def memorize_pending(soul_id: str, user_id: str = "") -> dict:
 def _read_mentra_status(
     port: int, soul_id: str = "", user_id: str = "", device_session_id: str = ""
 ) -> dict:
+    root = _resolve_apps_root()
+    try:
+        config = json.loads((root / "mcp-memu-server" / "config.json").read_text()) if root else {}
+        mentra = config.get("mentra") or {}
+    except (OSError, ValueError):
+        return {"state": "unavailable", "detail": "Cannot read mcp config.json"}
+    if not root:
+        return {"state": "unavailable", "detail": "Set the apps-root directory"}
+    if not _coerce_bool(mentra.get("enabled")):
+        return {"state": "disabled", "active": False, "busy": False}
     query = urllib.parse.urlencode({
         "soul_id": soul_id,
         "user_id": user_id,
         "device_session_id": device_session_id,
     })
     try:
-        with urllib.request.urlopen(
-            f"http://127.0.0.1:{port}/integration/mentra/status?{query}", timeout=0.5
-        ) as resp:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/integration/mentra/status?{query}",
+            headers={"Authorization": f"Bearer {mentra.get('integration_bearer_token') or ''}"},
+        )
+        with urllib.request.urlopen(request, timeout=0.5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = {401: "Mentra credential rejected", 404: "Mentra status route unavailable"}.get(
+            exc.code, f"Mentra status failed (HTTP {exc.code})"
+        )
+        return {"state": "unavailable", "detail": detail}
     except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
+        return {"state": "unavailable", "detail": "Mentra status unreachable or invalid"}
+    return data if isinstance(data, dict) else {"state": "unavailable", "detail": "Invalid Mentra status"}
 
 
-def _read_dotenv(path: Path) -> dict[str, str]:
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return {}
-    values: dict[str, str] = {}
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.removeprefix("export ").split("=", 1)
-        values[key.strip()] = value.strip().strip("'\"")
-    return values
+def _iris_build_env(spec: ServiceSpec, target: dict[str, str] | None) -> dict[str, str]:
+    root = _resolve_apps_root()
+    if root is None:
+        raise ValueError("Set the apps-root directory")
+    mentra = json.loads((root / "mcp-memu-server" / "config.json").read_text())["mentra"]
+    if not mentra.get("enabled"):
+        raise ValueError("Enable Mentra before installing Iris")
+    if target is None:
+        installed = _read_mentra_status(MEMU_SERVER_PORT)
+        target = {key: installed.get(f"installed_{field}") or "" for key, field in (
+            ("user_id", "user"), ("soul_id", "soul"), ("device_session_id", "device")
+        )}
+    values = {
+        "BASE_URL": str(mentra.get("public_base_url") or ""),
+        "BEARER": str(mentra.get("integration_bearer_token") or ""),
+        **{key.upper(): str(target.get(key) or "").strip() for key in ("user_id", "soul_id", "device_session_id")},
+    }
+    for key, value in values.items():
+        if not value or any(char in value for char in '\r\n"'):
+            raise ValueError(f"Set a valid Iris install {key} in Settings")
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", values["DEVICE_SESSION_ID"]):
+        raise ValueError("Iris device ID must be 1-128 letters, digits, dots, underscores or hyphens")
+    env = {f"MENTRA_PUBLIC_OPENALMA_{key}": value for key, value in values.items()}
+    path = spec.cwd / ".env.local"
+    backup = path.with_name(".env.local.orig")
+    if path.exists() and not backup.exists():
+        shutil.copy2(path, backup)
+    path.write_text("".join(f'{key}="{value}"\n' for key, value in env.items()))
+    return env
 
 
 def _mentra_http_status(url: str, bearer: str = "") -> int:
@@ -622,11 +655,9 @@ def _mentra_readiness_uncached(root: Path) -> dict:
         return {"enabled": False, "ready": False, "reason": "Mentra is disabled", "step": "disabled", "rows": []}
 
     rows: list[dict[str, str]] = []
-    details: dict[str, str] = {}
     row_labels = (
         "OpenAlma / mcp configuration",
         "memU Server",
-        "Next Iris build",
         "WireGuard host route",
         "Authenticated narrow ingress",
     )
@@ -643,10 +674,9 @@ def _mentra_readiness_uncached(root: Path) -> dict:
             "reason": reason,
             "step": step,
             "rows": rows,
-            **details,
         }
 
-    required = ("integration_bearer_token", "gemini_api_key", "model", "voice")
+    required = ("public_base_url", "integration_bearer_token", "gemini_api_key", "model", "voice")
     missing = [name for name in required if not str(mentra.get(name) or "").strip()]
     if missing:
         return fail("config", "OpenAlma / mcp configuration", f"Configure Mentra: {', '.join(missing)}")
@@ -657,29 +687,7 @@ def _mentra_readiness_uncached(root: Path) -> dict:
         return fail("server", "memU Server", "Start memU Server")
     rows.append({"label": "memU Server", "state": "ready", "detail": "Ready"})
 
-    env = _read_dotenv(root / "mentra-os" / "miniapps" / "openalma" / ".env.local")
-    env_keys = (
-        "MENTRA_PUBLIC_OPENALMA_BASE_URL",
-        "MENTRA_PUBLIC_OPENALMA_BEARER",
-        "MENTRA_PUBLIC_OPENALMA_USER_ID",
-        "MENTRA_PUBLIC_OPENALMA_SOUL_ID",
-        "MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID",
-    )
-    missing = [name for name in env_keys if not env.get(name)]
-    if missing:
-        return fail("iris_config", "Next Iris build", f"Configure {', '.join(missing)} in Iris .env.local")
-    rows.append({
-        "label": "Next Iris build",
-        "state": "ready",
-        "detail": f"{env['MENTRA_PUBLIC_OPENALMA_USER_ID']} / {env['MENTRA_PUBLIC_OPENALMA_SOUL_ID']}",
-    })
-    details.update(
-        device_session_id=env["MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID"],
-        user_id=env["MENTRA_PUBLIC_OPENALMA_USER_ID"],
-        soul_id=env["MENTRA_PUBLIC_OPENALMA_SOUL_ID"],
-    )
-
-    base_url = env["MENTRA_PUBLIC_OPENALMA_BASE_URL"].rstrip("/")
+    base_url = str(mentra["public_base_url"]).rstrip("/")
     parsed = urllib.parse.urlsplit(base_url)
     host = parsed.hostname or ""
     try:
@@ -728,19 +736,20 @@ def _mentra_readiness_uncached(root: Path) -> dict:
     if f"{host}:{port}" not in local_addresses or unsafe_bind:
         return fail("ingress", "Authenticated narrow ingress", f"Ingress is not bound to {host}:{port}")
 
-    bearer = env["MENTRA_PUBLIC_OPENALMA_BEARER"]
+    bearer = str(mentra["integration_bearer_token"])
     if _mentra_http_status(f"{base_url}/integration/mentra/health", bearer) != 200:
         return fail("ingress", "Authenticated narrow ingress", "Authenticated Mentra health check failed")
+    if _mentra_http_status(f"{base_url}/integration/mentra/health") != 401:
+        return fail("ingress", "Authenticated narrow ingress", "Mentra health accepts missing credentials")
     if _mentra_http_status(f"{base_url}/health") not in {401, 404}:
         return fail("ingress", "Authenticated narrow ingress", "Ingress exposes an unrelated path")
     rows.append({"label": "Authenticated narrow ingress", "state": "ready", "detail": "Ready"})
     return {
         "enabled": True,
         "ready": True,
-        "reason": "Ready",
+        "reason": "Host ready",
         "step": "ready",
         "rows": rows,
-        **details,
     }
 
 
@@ -786,12 +795,12 @@ def _seen_age(seen_at: object) -> str:
     except (TypeError, ValueError):
         return ""
     if seconds < 60:
-        return "last seen just now"
+        return "Last reached server just now"
     if seconds < 3600:
-        return f"last seen {seconds // 60}m ago"
+        return f"Last reached server {seconds // 60}m ago"
     if seconds < 86400:
-        return f"last seen {seconds // 3600}h ago"
-    return f"last seen {seconds // 86400}d ago"
+        return f"Last reached server {seconds // 3600}h ago"
+    return f"Last reached server {seconds // 86400}d ago"
 
 
 def _iris_product_status(
@@ -810,12 +819,14 @@ def _iris_product_status(
     age = _seen_age(mentra.get("installed_seen_at"))
     setup_required = bool(
         readiness and readiness.get("enabled") and not readiness.get("ready")
-        and not (installed_package and readiness.get("step") == "iris_config")
     )
 
-    if active:
+    if mentra.get("state") == "unavailable":
+        state, label, detail = "unavailable", "▲ status unavailable", mentra["detail"]
+        action = "stop" if runtime.running or runtime.stuck or runtime.orphaned else None
+    elif active:
         state = str(mentra.get("state") or "active")
-        label = "● active" if state == "active" else f"▲ {state.replace('_', ' ')}"
+        label = "● Connected" if state == "active" else f"▲ {state.replace('_', ' ')}"
         detail = str(mentra.get("detail") or "")
         if mismatch:
             detail = "; ".join(part for part in (detail, f"update {available_version} available") if part)
@@ -840,7 +851,7 @@ def _iris_product_status(
     ):
         state, label, detail, action = "setup", "▲ setup needed", "Open Iris & Phone Setup", "settings"
     elif not installed_package:
-        state, label, detail, action = "stopped", "○ not installed", "", "start"
+        state, label, detail, action = "stopped", "○ not installed", "Not yet verified", "settings"
     elif mismatch:
         state, label, detail, action = "update", "▲ update available", age, "start"
     elif mentra.get("state") in {"degraded", "transcript_gap"}:
@@ -848,7 +859,7 @@ def _iris_product_status(
         label = f"▲ {state.replace('_', ' ')}"
         detail, action = str(mentra.get("detail") or ""), None
     else:
-        state, label, detail, action = "ready", "● ready", "Ready for phone connection", None
+        state, label, detail, action = "ready", "● Host ready", "", None
 
     if age and state not in {"update", "installing"}:
         detail = "; ".join(part for part in (detail, age) if part)
@@ -907,21 +918,7 @@ def status(spec: ServiceSpec) -> dict:
     if spec.name == "iris-server":
         readiness = mentra_readiness()
         runtime = _runtime_state(spec)
-        channels_config = _read_channels_config()
-        soul_id = str(channels_config.get("soul_id") or "").strip()
-        user_id = str(channels_config.get("user_id") or "").strip()
-        mentra = (
-            _read_mentra_status(
-                MEMU_SERVER_PORT,
-                soul_id,
-                user_id,
-            )
-            if readiness.get("enabled") and soul_id and user_id
-            else {"state": "disabled"} if not readiness.get("enabled") else {}
-        )
-        installed_soul = str(mentra.get("installed_soul") or "")
-        if installed_soul and installed_soul != soul_id:
-            mentra = _read_mentra_status(MEMU_SERVER_PORT, installed_soul, user_id)
+        mentra = _read_mentra_status(MEMU_SERVER_PORT)
         result = _iris_product_status(runtime, mentra, *_iris_release_identity(spec), readiness)
         result["setup"] = readiness
         release = _read_iris_release_status(spec, runtime)
@@ -994,14 +991,10 @@ def status(spec: ServiceSpec) -> dict:
         detail = f"WhatsApp bridge {bridge_state or 'unknown'}"
 
     if spec.name == "memu-server" and running:
-        channels_config = _read_channels_config()
-        mentra = _read_mentra_status(
-            MEMU_SERVER_PORT,
-            str(channels_config.get("soul_id") or "").strip(),
-            str(channels_config.get("user_id") or "").strip(),
-        )
-        if mentra:
-            stop_blocked = bool(mentra.get("active"))
+        mentra = _read_mentra_status(MEMU_SERVER_PORT)
+        stop_blocked = mentra.get("busy") is not False
+        if stop_blocked:
+            detail = str(mentra.get("detail") or "Iris conversation in progress")
 
     return {
         "running": running,
@@ -1020,7 +1013,7 @@ def status(spec: ServiceSpec) -> dict:
     }
 
 
-def start(spec: ServiceSpec) -> None:
+def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None) -> None:
     _clear_port_cache(spec)
     runtime = _runtime_state(spec)
     if runtime.running or runtime.stuck or runtime.orphaned or runtime.port_blocked:
@@ -1028,6 +1021,8 @@ def start(spec: ServiceSpec) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     spec.log_path.parent.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, **spec.env}
+    if spec.name == "iris-server":
+        env.update(_iris_build_env(spec, install_target))
     proc = _spawn_background(spec, env)
     spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
     spec.pid_path.write_text(str(proc.pid))

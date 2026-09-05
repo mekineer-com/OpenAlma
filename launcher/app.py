@@ -70,9 +70,10 @@ def index(request: Request) -> HTMLResponse:
         )
     visible_chats = [c for c in chat_rows if c["policy"] != "excluded"]
     excluded_chats = [c for c in chat_rows if c["policy"] == "excluded"]
-    active_soul = soul.read_active_soul_id()
-    active_user = soul.read_active_user_id()
-    soul_ids = soul.list_soul_ids()
+    channels_configured = soul.CHANNELS_CONFIG_PATH.exists()
+    active_soul = soul.read_active_soul_id() if channels_configured else ""
+    active_user = soul.read_active_user_id() if channels_configured else ""
+    soul_ids = soul.list_soul_ids() if channels_configured else []
     memorize = services.memorize_pending(active_soul, active_user) if active_soul else {}
     setup_issue = next(
         (
@@ -94,6 +95,7 @@ def index(request: Request) -> HTMLResponse:
             "channel_directory_path": str(policy.DIRECTORY_PATH),
             "policies": policy.ALL_POLICIES,
             "active_soul": active_soul,
+            "channels_configured": channels_configured,
             "soul_ids": soul_ids,
             "apps_root": str(apps_root) if apps_root else "",
             "needs_setup": apps_root is None,
@@ -104,6 +106,8 @@ def index(request: Request) -> HTMLResponse:
 
 @app.get("/memorize/status")
 def memorize_status() -> dict:
+    if not soul.CHANNELS_CONFIG_PATH.exists():
+        return {}
     active_soul = soul.read_active_soul_id()
     if not active_soul:
         return {}
@@ -171,13 +175,30 @@ def logs(request: Request, service_name: str, lines: int = 200) -> HTMLResponse:
 @app.post("/service/{service_name}/start")
 def service_start(service_name: str) -> dict:
     spec = _find_service(service_name)
-    services.start(spec)
+    try:
+        services.start(spec)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, **services.status(spec)}
+
+
+@app.post("/iris/install")
+def iris_install(user_id: str = Form(), soul_id: str = Form(), device_session_id: str = Form()) -> RedirectResponse:
+    spec = _find_service("iris-server")
+    try:
+        services.start(spec, install_target={
+            "user_id": user_id, "soul_id": soul_id, "device_session_id": device_session_id,
+        })
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse("/settings", status_code=303)
 
 
 @app.post("/service/{service_name}/stop")
 def service_stop(service_name: str) -> dict:
     spec = _find_service(service_name)
+    if spec.name == "memu-server" and services._read_mentra_status(services.MEMU_SERVER_PORT).get("busy") is not False:
+        raise HTTPException(status_code=409, detail="Finish the Iris conversation first; status must be available")
     services.stop(spec)
     return {"ok": True, **services.status(spec)}
 
