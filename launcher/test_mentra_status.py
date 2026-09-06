@@ -386,9 +386,11 @@ class MentraStatusTest(TestCase):
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
                 payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                self.send_response(409)
+                self.send_response(422 if payload["soul_id"] == "Invalid Soul" else 409)
                 self.end_headers()
-                if payload["use_existing"]:
+                if payload["soul_id"] == "Invalid Soul":
+                    self.wfile.write(b'{"detail":"Fictional validation failure"}')
+                elif payload["use_existing"]:
                     self.wfile.write(b'{"detail":{"reason":"sanitized_collision","message":"Fictional collision"}}')
                 else:
                     self.wfile.write(b'{"detail":{"reason":"existing_exact","message":"Fictional existing soul"}}')
@@ -405,6 +407,8 @@ class MentraStatusTest(TestCase):
                         services.resolve_soul("Fictional User", "Codexia", False)
                     with self.assertRaisesRegex(ValueError, "Fictional collision"):
                         services.resolve_soul("Fictional User", "Codexia", True)
+                    with self.assertRaisesRegex(ValueError, "Fictional validation failure"):
+                        services.resolve_soul("Fictional User", "Invalid Soul", False)
             finally:
                 server.shutdown()
                 thread.join()

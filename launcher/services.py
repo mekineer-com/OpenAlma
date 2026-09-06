@@ -574,62 +574,44 @@ def memorize_pending(soul_id: str, user_id: str = "") -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def list_souls(user_id: str) -> list[str]:
-    user_id = user_id.strip()
-    if not user_id:
-        raise ValueError("A user ID is required to list souls")
-    query = urllib.parse.urlencode({"user_id": user_id})
-    try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{MEMU_SERVER_PORT}/souls?{query}", timeout=2) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        raise SoulServiceUnavailable(f"Soul service unavailable (HTTP {exc.code})") from exc
-    except (OSError, ValueError) as exc:
-        raise SoulServiceUnavailable("Soul service unavailable") from exc
-    souls = data.get("souls") if isinstance(data, dict) else None
-    if not isinstance(souls, list) or any(not isinstance(soul, str) or not soul.strip() for soul in souls):
-        raise SoulServiceUnavailable("Soul service returned an invalid list")
-    return [soul.strip() for soul in souls]
-
-
-def resolve_soul(user_id: str, soul_id: str, use_existing: bool) -> str:
-    user_id, soul_id = user_id.strip(), soul_id.strip()
-    if not user_id or not soul_id:
-        raise ValueError("A user ID and soul name are required")
-    payload = json.dumps({
-        "user_id": user_id,
-        "soul_id": soul_id,
-        "use_existing": use_existing,
-    }).encode("utf-8")
+def _soul_request(user_id: str, **selection: object) -> dict:
     request = urllib.request.Request(
-        f"http://127.0.0.1:{MEMU_SERVER_PORT}/souls",
-        data=payload,
+        f"http://127.0.0.1:{MEMU_SERVER_PORT}/souls?{urllib.parse.urlencode({'user_id': user_id.strip()})}",
+        data=json.dumps({"user_id": user_id, **selection}).encode() if selection else None,
         headers={"Content-Type": "application/json"},
-        method="POST",
     )
     try:
         with urllib.request.urlopen(request, timeout=2) as response:
             data = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        if exc.code == 409:
+        if exc.code in {409, 422}:
             try:
-                conflict = json.loads(exc.read().decode("utf-8"))
+                detail = json.load(exc).get("detail")
             except (OSError, ValueError):
-                conflict = {}
-            conflict = conflict.get("detail") if isinstance(conflict, dict) else None
-            reason = conflict.get("reason") if isinstance(conflict, dict) else ""
-            message = conflict.get("message") if isinstance(conflict, dict) else ""
-            if reason == "existing_exact":
-                raise ValueError(str(message or "Soul already exists. Confirm use of the existing soul.")) from exc
-            if reason == "sanitized_collision":
-                raise ValueError(str(message or "Soul name conflicts with an existing soul.")) from exc
+                detail = None
+            message = detail.get("message") if isinstance(detail, dict) else detail
+            raise ValueError(message if isinstance(message, str) else "Invalid soul selection") from exc
         raise SoulServiceUnavailable(f"Soul service unavailable (HTTP {exc.code})") from exc
     except (OSError, ValueError) as exc:
         raise SoulServiceUnavailable("Soul service unavailable") from exc
-    resolved = data.get("soul_id") if isinstance(data, dict) else None
-    if not isinstance(resolved, str) or not resolved.strip() or not isinstance(data.get("created"), bool):
+    if not isinstance(data, dict):
         raise SoulServiceUnavailable("Soul service returned an invalid response")
-    return resolved.strip()
+    return data
+
+
+def list_souls(user_id: str) -> list[str]:
+    souls = _soul_request(user_id).get("souls")
+    if not isinstance(souls, list) or any(not isinstance(soul, str) or not soul.strip() for soul in souls):
+        raise SoulServiceUnavailable("Soul service returned an invalid list")
+    return souls
+
+
+def resolve_soul(user_id: str, soul_id: str, use_existing: bool) -> str:
+    soul_id = soul_id.strip()
+    data = _soul_request(user_id, soul_id=soul_id, use_existing=use_existing)
+    if data.get("soul_id") != soul_id:
+        raise SoulServiceUnavailable("Soul service returned a different soul")
+    return soul_id
 
 
 def _read_mentra_status(
