@@ -792,14 +792,21 @@ def _mentra_readiness_uncached(root: Path) -> dict:
         return fail("ingress", "Authenticated narrow ingress", f"Ingress is not bound to {host}:{port}")
 
     bearer = str(mentra["integration_bearer_token"])
-    if _mentra_http_status(f"{base_url}/integration/mentra/health", bearer) != 200:
-        return fail("ingress", "Authenticated narrow ingress", "Authenticated Mentra health check failed")
+    status = _mentra_http_status(f"{base_url}/integration/mentra/health", bearer)
+    if status != 200:
+        reason = "Cannot reach Mentra; check the server and connection" if not status else (
+            "Mentra rejected the bearer; check the configured credential (HTTP 401)" if status == 401
+            else f"Mentra health check failed (HTTP {status}); check the server and proxy"
+        )
+        return fail("ingress", "Authenticated narrow ingress", reason)
     status = _mentra_http_status(f"{base_url}/integration/mentra/health")
     if status != 401:
-        return fail("ingress", "Authenticated narrow ingress", f"Credential rejection check failed ({status or 'no connection'}; expected 401)")
+        reason = "Mentra health accepts missing credentials" if 200 <= status < 300 else "Could not verify credential protection"
+        return fail("ingress", "Authenticated narrow ingress", f"{reason} ({status or 'no connection'})")
     status = _mentra_http_status(f"{base_url}/health")
     if status not in {401, 404}:
-        return fail("ingress", "Authenticated narrow ingress", f"Unrelated-route blocking check failed ({status or 'no connection'}; expected 401 or 404)")
+        reason = "Ingress exposes an unrelated path" if 200 <= status < 300 else "Could not verify unrelated-route blocking"
+        return fail("ingress", "Authenticated narrow ingress", f"{reason} ({status or 'no connection'})")
     rows.append({"label": "Authenticated narrow ingress", "state": "ready", "detail": "Ready"})
     return {
         "enabled": True,
@@ -878,7 +885,7 @@ def _iris_product_status(
         readiness and readiness.get("enabled") and not readiness.get("ready")
     )
 
-    if mentra.get("state") == "unavailable":
+    if mentra.get("state") == "unavailable" and not (readiness and readiness.get("step") == "server"):
         state, label, detail = "unavailable", "▲ status unavailable", mentra["detail"]
         action = "stop" if runtime.running or runtime.stuck or runtime.orphaned else None
     elif active:

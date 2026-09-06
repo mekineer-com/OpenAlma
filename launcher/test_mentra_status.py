@@ -143,8 +143,8 @@ class MentraStatusTest(TestCase):
                 "com.openalma.mentra", "0.1.0", result,
             )
             self.assertEqual(product["action_label"], "Cancel")
-            from jinja2 import Environment, FileSystemLoader
-            template = Environment(loader=FileSystemLoader(Path(__file__).parent / "templates")).get_template("settings.html")
+            from app import templates
+            template = templates.get_template("settings.html")
             self.assertIn("irisAction('stop')", template.render(iris_setup=result, iris=product))
         finally:
             config.unlink()
@@ -197,13 +197,16 @@ class MentraStatusTest(TestCase):
             self.assertEqual(http.call_args_list[2].args, ("http://10.77.0.1/health",))
             self.assertEqual(len(first["rows"]), 4)
 
-            with (
-                patch.object(services, "all_services", return_value=[memu]),
-                patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
-                patch.object(services.subprocess, "check_output", side_effect=command_output),
-                patch.object(services, "_mentra_http_status", side_effect=[200, 401, 0]),
-            ):
-                self.assertIn("no connection", services._mentra_readiness_uncached(root)["reason"])
+            for responses, detail in (([0], "Cannot reach"), ([401], "rejected the bearer"), ([502], "HTTP 502"),
+                                      ([200, 200], "accepts missing credentials"), ([200, 401, 200], "exposes an unrelated path"),
+                                      ([200, 401, 0], "no connection")):
+                with (
+                    patch.object(services, "all_services", return_value=[memu]),
+                    patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
+                    patch.object(services.subprocess, "check_output", side_effect=command_output),
+                    patch.object(services, "_mentra_http_status", side_effect=responses),
+                ):
+                    self.assertIn(detail, services._mentra_readiness_uncached(root)["reason"])
 
             for content in ("MENTRA_PUBLIC_OPENALMA_BASE_URL=http://wrong\nMENTRA_PUBLIC_OPENALMA_BEARER=wrong\n", None):
                 if content is None:
@@ -256,7 +259,7 @@ class MentraStatusTest(TestCase):
 
     def test_stopped_memu_does_not_direct_user_to_settings(self) -> None:
         result = services._iris_product_status(
-            services.RuntimeState(), {}, "com.openalma.mentra", "0.1.0",
+            services.RuntimeState(), {"state": "unavailable", "detail": "Mentra status unreachable or invalid"}, "com.openalma.mentra", "0.1.0",
             {"enabled": True, "ready": False, "step": "server", "reason": "Start memU Server"},
         )
         self.assertEqual(result["setup_issue"], "")
