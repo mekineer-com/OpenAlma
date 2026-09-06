@@ -574,10 +574,10 @@ def memorize_pending(soul_id: str, user_id: str = "") -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _soul_request(user_id: str, **selection: object) -> dict:
+def _soul_request(**selection: object) -> dict:
     request = urllib.request.Request(
-        f"http://127.0.0.1:{MEMU_SERVER_PORT}/souls?{urllib.parse.urlencode({'user_id': user_id.strip()})}",
-        data=json.dumps({"user_id": user_id, **selection}).encode() if selection else None,
+        f"http://127.0.0.1:{MEMU_SERVER_PORT}/souls",
+        data=json.dumps(selection).encode() if selection else None,
         headers={"Content-Type": "application/json"},
     )
     try:
@@ -599,19 +599,19 @@ def _soul_request(user_id: str, **selection: object) -> dict:
     return data
 
 
-def list_souls(user_id: str) -> list[str]:
-    souls = _soul_request(user_id).get("souls")
+def list_souls() -> list[str]:
+    souls = _soul_request().get("souls")
     if not isinstance(souls, list) or any(not isinstance(soul, str) or not soul.strip() for soul in souls):
         raise SoulServiceUnavailable("Soul service returned an invalid list")
     return souls
 
 
-def resolve_soul(user_id: str, soul_id: str, use_existing: bool) -> str:
+def resolve_soul(soul_id: str, use_existing: bool) -> str:
     soul_id = soul_id.strip()
-    data = _soul_request(user_id, soul_id=soul_id, use_existing=use_existing)
-    if data.get("soul_id") != soul_id:
+    data = _soul_request(soul_id=soul_id, use_existing=use_existing)
+    if not isinstance(data.get("soul_id"), str) or not data["soul_id"]:
         raise SoulServiceUnavailable("Soul service returned a different soul")
-    return soul_id
+    return data["soul_id"]
 
 
 def _read_mentra_status(

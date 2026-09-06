@@ -400,17 +400,17 @@ class MentraStatusTest(TestCase):
             thread.start()
             try:
                 with patch.object(services, "MEMU_SERVER_PORT", server.server_port):
-                    self.assertEqual(services.list_souls("Fictional User"), ["Codexia", "Echo"])
-                    self.assertEqual(services.resolve_soul("Fictional User", "Codexia", True), "Codexia")
+                    self.assertEqual(services.list_souls(), ["Codexia", "Echo"])
+                    self.assertEqual(services.resolve_soul("Codexia", True), "Codexia")
             finally:
                 server.shutdown()
                 thread.join()
         self.assertEqual(requests, [
-            ("GET", "/souls?user_id=Fictional+User"),
-            ("POST", {"user_id": "Fictional User", "soul_id": "Codexia", "use_existing": True}),
+            ("GET", "/souls"),
+            ("POST", {"soul_id": "Codexia", "use_existing": True}),
         ])
 
-    def test_soul_conflicts_distinguish_consent_from_sanitized_collision(self) -> None:
+    def test_soul_errors_preserve_server_guidance(self) -> None:
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
                 payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -418,8 +418,6 @@ class MentraStatusTest(TestCase):
                 self.end_headers()
                 if payload["soul_id"] == "Invalid Soul":
                     self.wfile.write(b'{"detail":"Fictional validation failure"}')
-                elif payload["use_existing"]:
-                    self.wfile.write(b'{"detail":{"reason":"sanitized_collision","message":"Fictional collision"}}')
                 else:
                     self.wfile.write(b'{"detail":{"reason":"existing_exact","message":"Fictional existing soul"}}')
 
@@ -432,11 +430,9 @@ class MentraStatusTest(TestCase):
             try:
                 with patch.object(services, "MEMU_SERVER_PORT", server.server_port):
                     with self.assertRaisesRegex(ValueError, "Fictional existing soul"):
-                        services.resolve_soul("Fictional User", "Codexia", False)
-                    with self.assertRaisesRegex(ValueError, "Fictional collision"):
-                        services.resolve_soul("Fictional User", "Codexia", True)
+                        services.resolve_soul("Codexia", False)
                     with self.assertRaisesRegex(ValueError, "Fictional validation failure"):
-                        services.resolve_soul("Fictional User", "Invalid Soul", False)
+                        services.resolve_soul("Invalid Soul", False)
             finally:
                 server.shutdown()
                 thread.join()
@@ -475,13 +471,13 @@ class MentraStatusTest(TestCase):
                     self.assertIn("Souls unavailable", unavailable.text)
                     self.assertNotIn('<form method="post" action="/soul">', unavailable.text)
                     self.assertEqual(json.loads(config.read_text())["soul_id"], "Old Soul")
-                self.assertEqual(client.get("/souls?user_id=Fictional%20User").json(), {"souls": ["Codexia"]})
+                self.assertEqual(client.get("/souls").json(), {"souls": ["Codexia"]})
                 with patch.object(services, "resolve_soul", side_effect=services.SoulServiceUnavailable("Soul service unavailable")):
                     self.assertEqual(client.post("/soul", data={"soul_id": "New Soul"}).status_code, 503)
                 self.assertEqual(json.loads(config.read_text())["soul_id"], "Old Soul")
                 with patch.object(services, "resolve_soul", return_value="Codexia") as resolve:
                     self.assertEqual(client.post("/soul", data={"soul_id": "Codexia", "use_existing": "true"}, follow_redirects=False).status_code, 303)
-                resolve.assert_called_once_with("Fictional User", "Codexia", True)
+                resolve.assert_called_once_with("Codexia", True)
             saved = json.loads(config.read_text())
             self.assertEqual(saved["soul_id"], "Codexia")
             self.assertEqual(saved["reply_prefix"], "*Codexia*: ")

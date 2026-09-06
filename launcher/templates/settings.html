@@ -157,59 +157,43 @@
   <script>
     const irisInstallForm = document.getElementById("iris-install-form");
     if (irisInstallForm) {
-      const irisUser = document.getElementById("iris-user");
       const irisSoul = document.getElementById("iris-soul");
       const irisExisting = document.getElementById("iris-soul-existing");
       const irisStatus = document.getElementById("iris-soul-status");
       const irisButton = document.getElementById("iris-install-button");
       const irisUseExisting = document.getElementById("iris-use-existing");
-      let irisLookupUser = "";
+      let irisSoulsLoaded = false;
       let lookupVersion = 0;
       const irisSelector = createSoulSelector(irisSoul, irisExisting, irisUseExisting);
 
       async function loadIrisSouls() {
         const version = ++lookupVersion;
-        const userId = irisUser.value.trim();
-        if (!userId) {
-          irisLookupUser = "";
-          irisSelector.setSouls([]);
-          irisButton.disabled = true;
-          irisStatus.textContent = "Enter your name, then leave the field to load existing souls.";
-          return false;
-        }
         irisButton.disabled = true;
         irisStatus.textContent = "Loading souls...";
         try {
-          const response = await fetch("/souls?user_id=" + encodeURIComponent(userId));
+          const response = await fetch("/souls");
           if (!response.ok) throw new Error();
           const payload = await response.json();
           if (version !== lookupVersion) return false;
           irisSelector.setSouls(payload.souls);
-          irisLookupUser = userId;
+          irisSoulsLoaded = true;
           irisButton.disabled = false;
           irisStatus.textContent = payload.souls.length ? "Choose an existing soul or enter a new name." : "No existing souls. Enter a name to create the first soul.";
           return true;
         } catch (_err) {
           if (version !== lookupVersion) return false;
-          irisLookupUser = "";
+          irisSoulsLoaded = false;
           irisSelector.setSouls([]);
           irisStatus.textContent = "Souls unavailable. Start mcp-memu-server before installing Iris.";
           return false;
         }
       }
 
-      irisUser.addEventListener("input", function() {
-        ++lookupVersion;
-        irisLookupUser = "";
-        irisSelector.setSouls([]);
-        irisButton.disabled = true;
-      });
-      irisUser.addEventListener("change", loadIrisSouls);
       irisSoul.addEventListener("focus", function() {
-        if (!irisLookupUser) loadIrisSouls();
+        if (!irisSoulsLoaded) loadIrisSouls();
       });
       irisInstallForm.addEventListener("submit", async function(event) {
-        if (irisLookupUser !== irisUser.value.trim()) {
+        if (!irisSoulsLoaded) {
           event.preventDefault();
           if (await loadIrisSouls()) irisInstallForm.requestSubmit();
           return;

@@ -42,9 +42,9 @@ def _find_service(name: str) -> services.ServiceSpec:
     raise HTTPException(status_code=404, detail=f"Unknown service: {name}")
 
 
-def _resolve_soul(user_id: str, soul_id: str, use_existing: bool) -> str:
+def _resolve_soul(soul_id: str, use_existing: bool) -> str:
     try:
-        return services.resolve_soul(user_id, soul_id, use_existing)
+        return services.resolve_soul(soul_id, use_existing)
     except services.SoulServiceUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
@@ -86,7 +86,7 @@ def index(request: Request) -> HTMLResponse:
     soul_error = ""
     if channels_configured:
         try:
-            soul_ids = services.list_souls(active_user)
+            soul_ids = services.list_souls()
         except (services.SoulServiceUnavailable, ValueError) as exc:
             soul_error = str(exc)
     memorize = services.memorize_pending(active_soul, active_user) if active_soul else {}
@@ -206,7 +206,7 @@ def iris_install(
     target = {"user_id": user_id, "soul_id": soul_id, "device_session_id": device_session_id}
     try:
         services.iris_install_env(target)
-        target["soul_id"] = _resolve_soul(user_id, soul_id, use_existing)
+        target["soul_id"] = _resolve_soul(soul_id, use_existing)
         services.start(spec, install_target=target)
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -214,9 +214,9 @@ def iris_install(
 
 
 @app.get("/souls")
-def souls(user_id: str) -> dict:
+def souls() -> dict:
     try:
-        return {"souls": services.list_souls(user_id)}
+        return {"souls": services.list_souls()}
     except services.SoulServiceUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
@@ -266,7 +266,7 @@ async def policy_save(request: Request) -> RedirectResponse:
 
 @app.post("/soul")
 def soul_save(soul_id: str = Form(default=""), use_existing: bool = Form(default=False)) -> RedirectResponse:
-    soul.set_active_soul_id(_resolve_soul(soul.read_active_user_id(), soul_id, use_existing))
+    soul.set_active_soul_id(_resolve_soul(soul_id, use_existing))
     return RedirectResponse("/", status_code=303)
 
 
