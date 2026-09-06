@@ -615,8 +615,8 @@ def list_souls() -> list[str]:
 def resolve_soul(soul_id: str, use_existing: bool) -> str:
     soul_id = soul_id.strip()
     data = _soul_request(soul_id=soul_id, use_existing=use_existing)
-    if not isinstance(data.get("soul_id"), str) or not data["soul_id"]:
-        raise SoulServiceUnavailable("Soul service returned an invalid soul")
+    if data.get("soul_id") != soul_id:
+        raise SoulServiceUnavailable("Soul service returned a different soul")
     return data["soul_id"]
 
 
@@ -675,6 +675,8 @@ def iris_install_env(target: dict[str, str] | None) -> dict[str, str]:
             raise ValueError(f"Set a valid Iris install {key} in Settings")
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", values["DEVICE_SESSION_ID"]):
         raise ValueError("Iris device ID must be 1-128 letters, digits, dots, underscores or hyphens")
+    for key in ("USER_ID", "SOUL_ID"):
+        values[key] = urllib.parse.quote(values[key], safe="")
     return {f"MENTRA_PUBLIC_OPENALMA_{key}": value for key, value in values.items()}
 
 

@@ -402,12 +402,15 @@ class MentraStatusTest(TestCase):
                 with patch.object(services, "MEMU_SERVER_PORT", server.server_port):
                     self.assertEqual(services.list_souls(), ["Codexia", "Echo"])
                     self.assertEqual(services.resolve_soul("Codexia", True), "Codexia")
+                    with self.assertRaisesRegex(services.SoulServiceUnavailable, "different soul"):
+                        services.resolve_soul("Echo", True)
             finally:
                 server.shutdown()
                 thread.join()
         self.assertEqual(requests, [
             ("GET", "/souls"),
             ("POST", {"soul_id": "Codexia", "use_existing": True}),
+            ("POST", {"soul_id": "Echo", "use_existing": True}),
         ])
 
     def test_soul_errors_preserve_server_guidance(self) -> None:
@@ -566,9 +569,9 @@ class MentraStatusTest(TestCase):
                 built = spawn.call_args.args[1]
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_BEARER"], "new-key")
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID"], "test-phone")
-                self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_SOUL_ID"], 'Fictional "Soul"')
+                self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_SOUL_ID"], "Fictional%20%22Soul%22")
                 self.assertIn('BEARER="new-key"', env_path.read_text())
-                self.assertIn('SOUL_ID="Fictional \\"Soul\\""', env_path.read_text())
+                self.assertIn('SOUL_ID="Fictional%20%22Soul%22"', env_path.read_text())
                 self.assertIn("old-key", (root / ".env.local.orig").read_text())
                 self.assertEqual(env_path.stat().st_mode & 0o777, 0o600)
                 self.assertEqual((root / ".env.local.orig").stat().st_mode & 0o777, 0o600)
