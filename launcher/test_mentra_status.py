@@ -138,6 +138,14 @@ class MentraStatusTest(TestCase):
             )
             self.assertEqual(product["state"], "disabled")
             self.assertIsNone(product["action_kind"])
+            product = services._iris_product_status(
+                services.RuntimeState(running=True), {"state": "disabled"},
+                "com.openalma.mentra", "0.1.0", result,
+            )
+            self.assertEqual(product["action_label"], "Cancel")
+            from jinja2 import Environment, FileSystemLoader
+            template = Environment(loader=FileSystemLoader(Path(__file__).parent / "templates")).get_template("settings.html")
+            self.assertIn("irisAction('stop')", template.render(iris_setup=result, iris=product))
         finally:
             config.unlink()
             config.parent.rmdir()

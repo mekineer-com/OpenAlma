@@ -51,6 +51,7 @@
   <h2>Iris &amp; Phone Setup</h2>
   {% if not iris_setup.enabled %}
     <p class="muted">Disabled. Enable Mentra in <code>mcp-memu-server/config.json</code> to use Iris.</p>
+    {% if iris.stoppable %}<p><button class="btn" type="button" onclick="irisAction('stop')">Cancel</button></p>{% endif %}
   {% else %}
     <ul class="checklist">
       {% for row in iris_setup.rows %}

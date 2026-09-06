@@ -886,8 +886,6 @@ def _iris_product_status(
         if mismatch:
             detail = "; ".join(part for part in (detail, f"update {available_version} available") if part)
         action = None
-    elif readiness and not readiness.get("enabled"):
-        state, label, detail, action = "disabled", "Disabled", "", None
     elif runtime.running:
         label = "◐ waiting for phone installation" if runtime.port_pid else "◐ building installer"
         state, detail, action = "installing", "", "stop"
@@ -895,6 +893,8 @@ def _iris_product_status(
             state, label, detail = "blocked", "▲ installer port occupied", "Cancel and free port 6789"
     elif runtime.stuck or runtime.orphaned:
         state, label, detail, action = "degraded", "▲ installer failed", "View the Iris log", "stop"
+    elif readiness and not readiness.get("enabled"):
+        state, label, detail, action = "disabled", "Disabled", "", None
     elif setup_required:
         state, label, detail, action = "setup", "▲ setup needed", str(readiness.get("reason") or "Open Iris & Phone Setup"), "settings"
     elif (
