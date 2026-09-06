@@ -45,6 +45,11 @@ def _find_service(name: str) -> services.ServiceSpec:
 def _resolve_soul(soul_id: str, use_existing: bool) -> str:
     try:
         return services.resolve_soul(soul_id, use_existing)
+    except services.SoulAlreadyExists as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "existing_exact", "message": str(exc)},
+        ) from exc
     except services.SoulServiceUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:

@@ -48,6 +48,10 @@ class SoulServiceUnavailable(Exception):
     pass
 
 
+class SoulAlreadyExists(ValueError):
+    pass
+
+
 @dataclass
 class ServiceSpec:
     name: str
@@ -590,6 +594,8 @@ def _soul_request(**selection: object) -> dict:
             except (OSError, ValueError):
                 detail = None
             message = detail.get("message") if isinstance(detail, dict) else detail
+            if exc.code == 409 and isinstance(detail, dict) and detail.get("reason") == "existing_exact":
+                raise SoulAlreadyExists(message or "Soul already exists") from exc
             raise ValueError(message if isinstance(message, str) else "Invalid soul selection") from exc
         raise SoulServiceUnavailable(f"Soul service unavailable (HTTP {exc.code})") from exc
     except (OSError, ValueError) as exc:
@@ -610,7 +616,7 @@ def resolve_soul(soul_id: str, use_existing: bool) -> str:
     soul_id = soul_id.strip()
     data = _soul_request(soul_id=soul_id, use_existing=use_existing)
     if not isinstance(data.get("soul_id"), str) or not data["soul_id"]:
-        raise SoulServiceUnavailable("Soul service returned a different soul")
+        raise SoulServiceUnavailable("Soul service returned an invalid soul")
     return data["soul_id"]
 
 
@@ -665,7 +671,7 @@ def iris_install_env(target: dict[str, str] | None) -> dict[str, str]:
         **{key.upper(): str(target.get(key) or "").strip() for key in ("user_id", "soul_id", "device_session_id")},
     }
     for key, value in values.items():
-        if not value or any(char in value for char in '\r\n"'):
+        if not value or any(char in value for char in "\r\n"):
             raise ValueError(f"Set a valid Iris install {key} in Settings")
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", values["DEVICE_SESSION_ID"]):
         raise ValueError("Iris device ID must be 1-128 letters, digits, dots, underscores or hyphens")
@@ -683,7 +689,7 @@ def _iris_build_env(spec: ServiceSpec, target: dict[str, str] | None) -> dict[st
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as output:
         os.fchmod(output.fileno(), 0o600)
-        output.write("".join(f'{key}="{value}"\n' for key, value in env.items()))
+        output.write("".join(f"{key}={json.dumps(value)}\n" for key, value in env.items()))
     return env
 
 

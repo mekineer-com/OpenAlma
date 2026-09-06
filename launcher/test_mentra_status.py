@@ -554,7 +554,7 @@ class MentraStatusTest(TestCase):
             with (
                 patch.object(services, "_resolve_apps_root", return_value=root),
                 patch.object(services, "_read_mentra_status", return_value={
-                    "installed_user": "Fictional User", "installed_soul": "Fictional Soul", "installed_device": "test-phone",
+                    "installed_user": "Fictional User", "installed_soul": 'Fictional "Soul"', "installed_device": "test-phone",
                 }),
                 patch.dict(services.os.environ, {"MENTRA_PUBLIC_OPENALMA_BEARER": "stale-ambient-key"}),
                 patch.object(services, "_runtime_state", return_value=services.RuntimeState()),
@@ -566,7 +566,9 @@ class MentraStatusTest(TestCase):
                 built = spawn.call_args.args[1]
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_BEARER"], "new-key")
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID"], "test-phone")
+                self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_SOUL_ID"], 'Fictional "Soul"')
                 self.assertIn('BEARER="new-key"', env_path.read_text())
+                self.assertIn('SOUL_ID="Fictional \\"Soul\\""', env_path.read_text())
                 self.assertIn("old-key", (root / ".env.local.orig").read_text())
                 self.assertEqual(env_path.stat().st_mode & 0o777, 0o600)
                 self.assertEqual((root / ".env.local.orig").stat().st_mode & 0o777, 0o600)

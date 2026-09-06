@@ -37,7 +37,12 @@ async function submitSoulForm(form) {
     const response = await fetch(form.action, {method: "POST", body: new FormData(form)});
     if (!response.ok) {
       const error = await response.json();
-      alert(typeof error.detail === "string" ? error.detail : error.detail?.message || "Soul selection failed");
+      const message = typeof error.detail === "string" ? error.detail : error.detail?.message || "Soul selection failed";
+      if (response.status === 409 && error.detail?.reason === "existing_exact" && confirm(message)) {
+        form.querySelector('[name="use_existing"]').value = "true";
+        return submitSoulForm(form);
+      }
+      alert(message);
       return;
     }
     location.href = response.url;
