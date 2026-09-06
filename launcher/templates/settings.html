@@ -214,7 +214,8 @@
           if (await loadIrisSouls()) irisInstallForm.requestSubmit();
           return;
         }
-        if (!irisSelector.prepareSubmit()) event.preventDefault();
+        event.preventDefault();
+        if (irisSelector.prepareSubmit()) void submitSoulForm(irisInstallForm);
       });
     }
 

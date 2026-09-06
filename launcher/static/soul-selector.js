@@ -31,3 +31,17 @@ function createSoulSelector(input, select, useExisting) {
     },
   };
 }
+
+async function submitSoulForm(form) {
+  try {
+    const response = await fetch(form.action, {method: "POST", body: new FormData(form)});
+    if (!response.ok) {
+      const error = await response.json();
+      alert(typeof error.detail === "string" ? error.detail : error.detail?.message || "Soul selection failed");
+      return;
+    }
+    location.href = response.url;
+  } catch (error) {
+    alert("Could not submit: " + error.message);
+  }
+}

@@ -153,6 +153,7 @@
   <h2>Hermes Channels Soul selector</h2>
   <p class="muted">One active Hermes Channels soul at a time. This updates <code>hermes-channels/data/config.json</code>.</p>
   {% if soul_error %}
+  <p>Active soul: <strong>{{ active_soul }}</strong></p>
   <p class="failure">Souls unavailable: {{ soul_error }}. Start mcp-memu-server before changing the active soul.</p>
   {% else %}
   <form method="post" action="/soul">
@@ -245,7 +246,8 @@
       );
       soulSelector.setSouls({{ soul_ids|tojson }});
       soulForm.addEventListener("submit", function(event) {
-        if (!soulSelector.prepareSubmit()) event.preventDefault();
+        event.preventDefault();
+        if (soulSelector.prepareSubmit()) void submitSoulForm(soulForm);
       });
     }
 
