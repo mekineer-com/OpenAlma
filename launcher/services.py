@@ -794,10 +794,12 @@ def _mentra_readiness_uncached(root: Path) -> dict:
     bearer = str(mentra["integration_bearer_token"])
     if _mentra_http_status(f"{base_url}/integration/mentra/health", bearer) != 200:
         return fail("ingress", "Authenticated narrow ingress", "Authenticated Mentra health check failed")
-    if _mentra_http_status(f"{base_url}/integration/mentra/health") != 401:
-        return fail("ingress", "Authenticated narrow ingress", "Mentra health accepts missing credentials")
-    if _mentra_http_status(f"{base_url}/health") not in {401, 404}:
-        return fail("ingress", "Authenticated narrow ingress", "Ingress exposes an unrelated path")
+    status = _mentra_http_status(f"{base_url}/integration/mentra/health")
+    if status != 401:
+        return fail("ingress", "Authenticated narrow ingress", f"Credential rejection check failed ({status or 'no connection'}; expected 401)")
+    status = _mentra_http_status(f"{base_url}/health")
+    if status not in {401, 404}:
+        return fail("ingress", "Authenticated narrow ingress", f"Unrelated-route blocking check failed ({status or 'no connection'}; expected 401 or 404)")
     rows.append({"label": "Authenticated narrow ingress", "state": "ready", "detail": "Ready"})
     return {
         "enabled": True,
@@ -895,6 +897,8 @@ def _iris_product_status(
         state, label, detail, action = "degraded", "▲ installer failed", "View the Iris log", "stop"
     elif readiness and not readiness.get("enabled"):
         state, label, detail, action = "disabled", "Disabled", "", None
+    elif readiness and readiness.get("step") == "server":
+        state, label, detail, action = "stopped", "○ waiting for memU Server", "Start memU Server in Services", None
     elif setup_required:
         state, label, detail, action = "setup", "▲ setup needed", str(readiness.get("reason") or "Open Iris & Phone Setup"), "settings"
     elif (
@@ -940,7 +944,7 @@ def _iris_product_status(
         "action_kind": action,
         "action_label": action_label,
         "active": active,
-        "setup_issue": str(readiness.get("reason") or "") if setup_required and not active and not runtime.running else "",
+        "setup_issue": str(readiness.get("reason") or "") if setup_required and readiness.get("step") != "server" and not active and not runtime.running else "",
         "installed_package": installed_package or None,
         "installed_version": installed_version or None,
         "available_package": available_package or None,

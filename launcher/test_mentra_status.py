@@ -197,6 +197,14 @@ class MentraStatusTest(TestCase):
             self.assertEqual(http.call_args_list[2].args, ("http://10.77.0.1/health",))
             self.assertEqual(len(first["rows"]), 4)
 
+            with (
+                patch.object(services, "all_services", return_value=[memu]),
+                patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
+                patch.object(services.subprocess, "check_output", side_effect=command_output),
+                patch.object(services, "_mentra_http_status", side_effect=[200, 401, 0]),
+            ):
+                self.assertIn("no connection", services._mentra_readiness_uncached(root)["reason"])
+
             for content in ("MENTRA_PUBLIC_OPENALMA_BASE_URL=http://wrong\nMENTRA_PUBLIC_OPENALMA_BEARER=wrong\n", None):
                 if content is None:
                     env_path.unlink()
@@ -245,6 +253,15 @@ class MentraStatusTest(TestCase):
         )
         self.assertEqual(result["state"], "active")
         self.assertIsNone(result["action_kind"])
+
+    def test_stopped_memu_does_not_direct_user_to_settings(self) -> None:
+        result = services._iris_product_status(
+            services.RuntimeState(), {}, "com.openalma.mentra", "0.1.0",
+            {"enabled": True, "ready": False, "step": "server", "reason": "Start memU Server"},
+        )
+        self.assertEqual(result["setup_issue"], "")
+        self.assertIsNone(result["action_kind"])
+        self.assertEqual(result["detail"], "Start memU Server in Services")
 
     def test_iris_release_status_verifies_wrapper_independently_of_parent_pid(self) -> None:
         root = Path(self._testMethodName)
