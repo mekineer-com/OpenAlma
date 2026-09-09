@@ -20,6 +20,10 @@ Not everything deserves the same kind of storage.
 
 The fifth stored type is **Episodes** — short titled summaries of what happened in each part of a conversation. Episodes are created before the four lenses run, then placed in front of the full transcript to help each lens judge what mattered.
 
+## Photos are memories too
+
+A photo you share becomes a memory like anything else — held as what it shows rather than as pixels. Ask her about something you saw and she searches those separately from what was said, so an image isn't drowned out by conversation that happened to use the same words.
+
 ## Dossiers
 
 On top of those memories sits a second layer. Related memories are filed together into **dossiers**: lore about people, places, projects, and shared history; topics she keeps returning to; and goals she's holding. Each dossier carries a written summary of what she understands about that subject, and the summary gets rewritten as new memories land in it.

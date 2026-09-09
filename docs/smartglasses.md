@@ -14,6 +14,12 @@ That last part is the whole point. What you say out loud goes into the same memo
 
 **Manual** is one take at a time. You record, listen to what came out, and then decide: send it, or redo it. Nothing goes to her until you choose. It's the better mode when the surroundings are loud, or when what you want to say takes a couple of tries to get right.
 
+## Photos
+
+You can take a photo during a sitting. It goes to her the same way your voice does — she reacts to it in the moment, and it becomes a memory you can ask about later.
+
+Photos are remembered through their description, not by re-examining the picture every time. If a photo fails to reach her, it stays pending rather than disappearing, and you decide whether to retry or discard it.
+
 ## Looking things up mid-conversation
 
 While you're speaking she can go search her own memory and come back with what she found, without the conversation stopping to wait. You keep talking; the answer arrives when it arrives.
