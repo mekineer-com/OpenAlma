@@ -869,16 +869,20 @@ def _github_iris_release() -> tuple[tuple[str, str, str] | None, str]:
         )
         with urllib.request.urlopen(request, timeout=2) as response:
             release = json.load(response)
-        version = str(release.get("tag_name") or "").removeprefix("v")
-        expected_name = f"{IRIS_PACKAGE}-{version}.zip"
-        asset = next(item for item in release.get("assets", []) if item.get("name") == expected_name)
-        if release.get("draft") or release.get("prerelease") or not _iris_semver(version):
-            raise ValueError("invalid release")
-        result = (IRIS_PACKAGE, version, str(asset["browser_download_url"])), "available"
     except urllib.error.HTTPError as exc:
         result = None, "none" if exc.code == 404 else "unavailable"
-    except (OSError, ValueError, KeyError, StopIteration, TypeError):
+    except (OSError, ValueError, TypeError):
         result = None, "unavailable"
+    else:
+        try:
+            version = str(release.get("tag_name") or "").removeprefix("v")
+            expected_name = f"{IRIS_PACKAGE}-{version}.zip"
+            asset = next(item for item in release.get("assets", []) if item.get("name") == expected_name)
+            if release.get("draft") or release.get("prerelease") or not _iris_semver(version):
+                raise ValueError("invalid release")
+            result = (IRIS_PACKAGE, version, str(asset["browser_download_url"])), "available"
+        except (ValueError, KeyError, StopIteration, TypeError):
+            result = None, "invalid"
     _IRIS_RELEASE_CACHE = (now, *result)
     return result
 
@@ -1035,6 +1039,7 @@ def _iris_product_status(
         "installed_version": installed_version or None,
         "available_package": available_package or None,
         "available_version": available_version or None,
+        "update_available": mismatch,
     }
 
 

@@ -63,7 +63,7 @@
     <h3>Iris installation</h3>
     <p>
       {% if iris.installed_version %}
-        Installed {{ iris.installed_version }}{% if iris.state == "update" %}; {{ iris.available_version }} available{% endif %}.
+        Installed {{ iris.installed_version }}{% if iris.update_available %}; {{ iris.available_version }} available{% endif %}.
       {% else %}
         Not yet observed on this phone.
       {% endif %}
@@ -72,6 +72,8 @@
       <p class="muted">GitHub releases unavailable; local {{ iris.available_version }} selected.</p>
     {% elif iris.github_status == "none" %}
       <p class="muted">No GitHub release published; local {{ iris.available_version }} selected.</p>
+    {% elif iris.github_status == "invalid" %}
+      <p class="muted">GitHub release is missing the expected Iris asset; local {{ iris.available_version }} selected.</p>
     {% endif %}
     {% if iris.running and iris.release_uri %}
       <p>Scan this QR in Mentra:</p>
