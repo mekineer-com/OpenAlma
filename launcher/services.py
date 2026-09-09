@@ -19,6 +19,7 @@ import shlex
 import shutil
 import signal
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -709,6 +710,51 @@ def _mentra_http_status(url: str, bearer: str = "") -> int:
         return exc.code
     except OSError:
         return 0
+
+
+def host_prerequisites(root: Path | None, os_release_path: Path = Path("/etc/os-release")) -> dict:
+    """Inspect the supported host prerequisites without changing the machine."""
+    rows: list[dict[str, str]] = []
+    try:
+        os_release = dict(
+            line.split("=", 1) for line in os_release_path.read_text(encoding="utf-8").splitlines() if "=" in line
+        )
+    except OSError:
+        os_release = {}
+    os_id = os_release.get("ID", "").strip('"')
+    os_version = os_release.get("VERSION_ID", "").strip('"')
+    supported_os = os_id == "alpine" and os_version.split(".")[:2] == ["3", "23"]
+    rows.append({
+        "label": "Supported host",
+        "state": "ready" if supported_os else "failure",
+        "detail": f"Alpine {os_version}" if supported_os else "Automatic setup requires Alpine 3.23",
+    })
+
+    required_paths = {
+        "OpenAlma launcher": ("openalma/launcher/run.py", "openalma/launcher/.venv"),
+        "memU Server": ("mcp-memu-server/run.py", "mcp-memu-server/.venv"),
+        "memU engine": ("memu/pyproject.toml",),
+        "Iris": ("mentra-os/miniapps/openalma/miniapp.json", "mentra-os/miniapps/openalma/node_modules"),
+    }
+    missing_components = list(required_paths) if root is None else [
+        name for name, paths in required_paths.items() if any(not (root / path).exists() for path in paths)
+    ]
+    rows.append({
+        "label": "OpenAlma components",
+        "state": "failure" if missing_components else "ready",
+        "detail": f"Missing: {', '.join(missing_components)}" if missing_components else "Ready",
+    })
+
+    commands = ("python3", "node", "bun", "wg", "ip", "nginx")
+    missing_tools = [command for command in commands if shutil.which(command) is None]
+    if sys.version_info[:2] != (3, 12) and "python3" not in missing_tools:
+        missing_tools.insert(0, "Python 3.12")
+    rows.append({
+        "label": "Host tools",
+        "state": "failure" if missing_tools else "ready",
+        "detail": f"Missing: {', '.join(missing_tools)}" if missing_tools else "Ready",
+    })
+    return {"ready": all(row["state"] == "ready" for row in rows), "rows": rows}
 
 
 def _mentra_readiness_uncached(root: Path) -> dict:

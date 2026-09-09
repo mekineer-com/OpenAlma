@@ -156,6 +156,7 @@ def settings_page(request: Request) -> HTMLResponse:
             "settings_path": str(settings.SETTINGS_PATH),
             "iris": iris,
             "iris_setup": iris_setup,
+            "host_prerequisites": services.host_prerequisites(apps_root),
         },
     )
 

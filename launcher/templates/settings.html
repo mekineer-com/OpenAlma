@@ -60,6 +60,13 @@
     </ul>
     {% if iris_setup.ready %}<p class="ready">Host ready</p>{% else %}<p class="failure">Next: {{ iris_setup.reason }}</p>{% endif %}
 
+    <h3>Host prerequisites</h3>
+    <ul class="checklist">
+      {% for row in host_prerequisites.rows %}
+        <li><span class="{{ row.state }}">{{ "✓" if row.state == "ready" else "!" }} {{ row.label }}</span> — {{ row.detail }}</li>
+      {% endfor %}
+    </ul>
+
     <h3>Iris installation</h3>
     <p>
       {% if iris.installed_version %}

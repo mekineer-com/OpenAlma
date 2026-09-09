@@ -65,6 +65,33 @@ class MentraStatusTest(TestCase):
                     "https://example.invalid/iris.zip", services.IRIS_PACKAGE, "0.1.12"
                 )
 
+    def test_host_prerequisites_report_missing_tool(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            for path in (
+                "openalma/launcher/run.py",
+                "mcp-memu-server/run.py",
+                "memu/pyproject.toml",
+                "mentra-os/miniapps/openalma/miniapp.json",
+            ):
+                (root / path).parent.mkdir(parents=True, exist_ok=True)
+                (root / path).touch()
+            for path in (
+                "openalma/launcher/.venv",
+                "mcp-memu-server/.venv",
+                "mentra-os/miniapps/openalma/node_modules",
+            ):
+                (root / path).mkdir()
+            os_release = root / "os-release"
+            os_release.write_text('ID=alpine\nVERSION_ID="3.23.2"\n')
+            with patch.object(services.shutil, "which", side_effect=lambda command: None if command == "nginx" else f"/usr/bin/{command}"):
+                result = services.host_prerequisites(root, os_release)
+
+        self.assertFalse(result["ready"])
+        self.assertEqual(result["rows"][0]["state"], "ready")
+        self.assertEqual(result["rows"][1]["state"], "ready")
+        self.assertEqual(result["rows"][2]["detail"], "Missing: nginx")
+
     def test_memu_server_keeps_only_iris_stop_guard(self) -> None:
         spec = services.ServiceSpec(
             name="memu-server",
