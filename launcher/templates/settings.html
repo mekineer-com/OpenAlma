@@ -63,7 +63,7 @@
     <h3>Iris installation</h3>
     <p>
       {% if iris.installed_version %}
-        Installed {{ iris.installed_version }}{% if iris.available_version and iris.installed_version != iris.available_version %}; {{ iris.available_version }} available{% endif %}.
+        Installed {{ iris.installed_version }}{% if iris.state == "update" %}; {{ iris.available_version }} available{% endif %}.
       {% else %}
         Not yet observed on this phone.
       {% endif %}

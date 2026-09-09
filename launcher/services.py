@@ -903,7 +903,7 @@ def _download_iris_release(url: str, package: str, version: str) -> Path:
         try:
             with zipfile.ZipFile(temporary) as bundle:
                 manifest = json.loads(bundle.read("miniapp.json"))
-        except (KeyError, OSError, ValueError) as exc:
+        except (KeyError, OSError, ValueError, zipfile.BadZipFile) as exc:
             raise ValueError("GitHub Iris asset is not a valid MiniApp bundle") from exc
         if manifest.get("packageName") != package or manifest.get("version") != version:
             raise ValueError("GitHub Iris bundle manifest does not match its release")

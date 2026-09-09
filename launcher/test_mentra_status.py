@@ -613,6 +613,8 @@ class MentraStatusTest(TestCase):
                 }),
                 patch.dict(services.os.environ, {"MENTRA_PUBLIC_OPENALMA_BEARER": "stale-ambient-key"}),
                 patch.object(services, "_runtime_state", return_value=services.RuntimeState()),
+                patch.object(services, "_iris_release_candidate", return_value=(services.IRIS_PACKAGE, "0.1.11", "https://example.invalid/iris.zip", "available")),
+                patch.object(services, "_download_iris_release", return_value=root / "iris.zip"),
                 patch.object(services, "_spawn_background") as spawn,
                 patch.object(services, "STATE_DIR", root),
             ):
@@ -622,6 +624,7 @@ class MentraStatusTest(TestCase):
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_BEARER"], "new-key")
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID"], "test-phone")
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_SOUL_ID"], "Fictional%20%22Soul%22")
+                self.assertEqual(built["MENTRA_RELEASE_BUNDLE"], str(root / "iris.zip"))
                 self.assertIn('BEARER="new-key"', env_path.read_text())
                 self.assertIn('SOUL_ID="Fictional%20%22Soul%22"', env_path.read_text())
                 self.assertIn("old-key", (root / ".env.local.orig").read_text())
