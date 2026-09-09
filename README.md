@@ -1,6 +1,6 @@
 # OpenAlma
 
-_Last updated: 2026-08-21 (v0.0.13-buildfix)_
+_Last updated: 2026-09-09 (v0.0.14-buildfix)_
 
 > *Give your AI companion a real memory. One that belongs to it — and stays on your machine.*
 
@@ -169,6 +169,7 @@ Prefer `main` for the latest. If you'd rather pin to a tag, match all repos to t
 | `v0.0.11-buildfix` | Stock SillyTavern — no fork or patches needed; fail-loud error contract across all repos; mental health procedural sidecar; Stack launcher with desktop shortcut |
 | `v0.0.12-buildfix` | Unified chat renderer across all AI-facing paths; force/rebuild split; autonomous activity recap path (soul logs her own actions); APImw cadence global across platforms; ST↔WhatsApp cross-chat awareness; WhatsApp staleness gate + replay dedup; life goals separated from active intentions |
 | `v0.0.13-buildfix` | Atomic Mind Map entity curation (merge, ignore, delete, free-text types); dossier membership you can attach and detach by hand; exact `[M#]` and memory-only search; dossier index replaces the generated holistic summary; two-pass consolidation (dossiers, then reflection); time-aware memory ordering; smartglasses groundwork |
+| `v0.0.14-buildfix` | Photos she can see and remember (smartglasses camera → memory you can ask about later); visual recall as its own lane; WhatsApp guide, mind map guide, smartglasses guide; exact-soul storage identity with launcher soul discovery and creation; smartglasses sittings that survive a dropped connection; manual record-and-review mode; Atomic curation guards; first public prerelease including Iris |
 
 ## AI Models
 
