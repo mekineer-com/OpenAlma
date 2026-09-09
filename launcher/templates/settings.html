@@ -96,7 +96,7 @@
         <p><button class="btn" id="iris-install-button" type="submit" disabled>Install Iris</button></p>
       </form>
       {% else %}
-      <p><button class="btn" type="button" onclick="irisAction('start')">{{ "Reinstall / Repair" if iris.installed_version else "Install Iris" }}</button></p>
+      <p><button class="btn" type="button" onclick="irisAction('start', this)">{{ "Reinstall / Repair" if iris.installed_version else "Install Iris" }}</button></p>
       {% endif %}
     {% endif %}
 
@@ -221,7 +221,8 @@
       } catch (_err) {}
     }, 2000);
     {% endif %}
-    function irisAction(action) {
+    function irisAction(action, button) {
+      if (button) { button.disabled = true; button.textContent = "Starting…"; }
       fetch('/service/iris-server/' + action, {method: 'POST'})
         .then(function(response) { if (!response.ok) throw new Error(); location.reload(); })
         .catch(function() { location.reload(); });
