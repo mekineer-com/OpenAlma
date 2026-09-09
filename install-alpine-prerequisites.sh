@@ -15,7 +15,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 apk add --no-cache \
-    build-base ca-certificates curl git nginx nodejs npm unzip wireguard-tools
+    build-base ca-certificates curl git nginx nodejs npm sqlite-dev unzip wireguard-tools
 
 bun_version=1.3.14
 bun_sha256=14bd9aedeebf1dba67e8def9531c89bc989ecfdf1de42e5bfcaf1b8cd9294719
