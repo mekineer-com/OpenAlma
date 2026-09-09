@@ -23,6 +23,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -37,7 +38,11 @@ STARTUP_GRACE_SECONDS = PORT_PID_CACHE_SECONDS + 1.0
 _PROCESS_SCAN_CACHE: dict[tuple[str, str, str], tuple[float, list[int]]] = {}
 _PORT_PID_CACHE: dict[int, tuple[float, int | None]] = {}
 _MENTRA_READINESS_CACHE: dict[str, tuple[float, dict]] = {}
+_IRIS_RELEASE_CACHE: tuple[float, tuple[str, str, str] | None, str] | None = None
 _CHANNELS_HOME = _resolve_channels_home()
+
+IRIS_PACKAGE = "com.openalma.mentra"
+IRIS_RELEASES_URL = "https://api.github.com/repos/mekineer-com/iris/releases/latest"
 
 
 class StopConfirmationRequired(Exception):
@@ -847,6 +852,67 @@ def _iris_release_identity(spec: ServiceSpec) -> tuple[str, str]:
     return str(manifest.get("packageName") or "").strip(), str(manifest.get("version") or "").strip()
 
 
+def _iris_semver(value: str) -> tuple[int, int, int] | None:
+    match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", value)
+    return tuple(map(int, match.groups())) if match else None
+
+
+def _github_iris_release() -> tuple[tuple[str, str, str] | None, str]:
+    global _IRIS_RELEASE_CACHE
+    now = time.monotonic()
+    if _IRIS_RELEASE_CACHE and now - _IRIS_RELEASE_CACHE[0] < 300:
+        return _IRIS_RELEASE_CACHE[1:]
+    try:
+        request = urllib.request.Request(
+            IRIS_RELEASES_URL,
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "OpenAlma-launcher"},
+        )
+        with urllib.request.urlopen(request, timeout=2) as response:
+            release = json.load(response)
+        version = str(release.get("tag_name") or "").removeprefix("v")
+        expected_name = f"{IRIS_PACKAGE}-{version}.zip"
+        asset = next(item for item in release.get("assets", []) if item.get("name") == expected_name)
+        if release.get("draft") or release.get("prerelease") or not _iris_semver(version):
+            raise ValueError("invalid release")
+        result = (IRIS_PACKAGE, version, str(asset["browser_download_url"])), "available"
+    except urllib.error.HTTPError as exc:
+        result = None, "none" if exc.code == 404 else "unavailable"
+    except (OSError, ValueError, KeyError, StopIteration, TypeError):
+        result = None, "unavailable"
+    _IRIS_RELEASE_CACHE = (now, *result)
+    return result
+
+
+def _iris_release_candidate(spec: ServiceSpec) -> tuple[str, str, str | None, str]:
+    local_package, local_version = _iris_release_identity(spec)
+    local = _iris_semver(local_version) if local_package == IRIS_PACKAGE else None
+    github, github_status = _github_iris_release()
+    github_version = _iris_semver(github[1]) if github else None
+    if github and github_version and (local is None or github_version > local):
+        return *github, github_status
+    return local_package, local_version, None, github_status
+
+
+def _download_iris_release(url: str, package: str, version: str) -> Path:
+    destination = STATE_DIR / f"{package}-{version}.zip"
+    temporary = destination.with_suffix(".tmp")
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        with urllib.request.urlopen(url, timeout=30) as response, temporary.open("wb") as output:
+            shutil.copyfileobj(response, output)
+        try:
+            with zipfile.ZipFile(temporary) as bundle:
+                manifest = json.loads(bundle.read("miniapp.json"))
+        except (KeyError, OSError, ValueError) as exc:
+            raise ValueError("GitHub Iris asset is not a valid MiniApp bundle") from exc
+        if manifest.get("packageName") != package or manifest.get("version") != version:
+            raise ValueError("GitHub Iris bundle manifest does not match its release")
+        temporary.replace(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return destination
+
+
 def _read_iris_release_status(spec: ServiceSpec, runtime: RuntimeState) -> dict:
     if not runtime.running:
         return {}
@@ -885,8 +951,13 @@ def _iris_product_status(
     active = bool(mentra.get("active"))
     installed_package = str(mentra.get("installed_package") or "")
     installed_version = str(mentra.get("installed_version") or "")
+    installed_semver = _iris_semver(installed_version)
+    available_semver = _iris_semver(available_version)
     mismatch = bool(installed_package) and (
-        installed_package != available_package or installed_version != available_version
+        installed_package != available_package
+        or installed_semver is None
+        or available_semver is None
+        or available_semver > installed_semver
     )
     age = _seen_age(mentra.get("installed_seen_at"))
     setup_required = bool(
@@ -993,7 +1064,9 @@ def status(spec: ServiceSpec) -> dict:
         readiness = mentra_readiness()
         runtime = _runtime_state(spec)
         mentra = _read_mentra_status(MEMU_SERVER_PORT)
-        result = _iris_product_status(runtime, mentra, *_iris_release_identity(spec), readiness)
+        package, version, url, github_status = _iris_release_candidate(spec)
+        result = _iris_product_status(runtime, mentra, package, version, readiness)
+        result.update(available_source="github" if url else "local", github_status=github_status)
         result["setup"] = readiness
         release = _read_iris_release_status(spec, runtime)
         if release:
@@ -1099,6 +1172,9 @@ def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None) ->
     env = {**os.environ, **spec.env}
     if spec.name == "iris-server":
         env.update(_iris_build_env(spec, install_target))
+        package, version, url, _ = _iris_release_candidate(spec)
+        if url:
+            env["MENTRA_RELEASE_BUNDLE"] = str(_download_iris_release(url, package, version))
     proc = _spawn_background(spec, env)
     spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
     spec.pid_path.write_text(str(proc.pid))

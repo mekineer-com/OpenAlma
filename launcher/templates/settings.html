@@ -68,6 +68,11 @@
         Not yet observed on this phone.
       {% endif %}
     </p>
+    {% if iris.github_status == "unavailable" %}
+      <p class="muted">GitHub releases unavailable; local {{ iris.available_version }} selected.</p>
+    {% elif iris.github_status == "none" %}
+      <p class="muted">No GitHub release published; local {{ iris.available_version }} selected.</p>
+    {% endif %}
     {% if iris.running and iris.release_uri %}
       <p>Scan this QR in Mentra:</p>
       <canvas id="iris-install-qr" width="220" height="220"></canvas>

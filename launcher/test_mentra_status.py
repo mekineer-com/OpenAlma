@@ -1,17 +1,69 @@
-from pathlib import Path
+from io import BytesIO
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from threading import Thread
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 from unittest.mock import patch
+from zipfile import ZipFile
 
 import services
 
 
 class MentraStatusTest(TestCase):
+    def setUp(self) -> None:
+        services._IRIS_RELEASE_CACHE = (services.time.monotonic(), None, "none")
+
     def tearDown(self) -> None:
         services._MENTRA_READINESS_CACHE.clear()
+        services._IRIS_RELEASE_CACHE = None
+
+    def test_iris_candidate_uses_highest_numeric_version(self) -> None:
+        spec = services.ServiceSpec("iris-server", "Iris", [], Path("."), Path("log"), Path("pid"))
+        with (
+            patch.object(services, "_iris_release_identity", return_value=(services.IRIS_PACKAGE, "0.1.10")),
+            patch.object(
+                services,
+                "_github_iris_release",
+                return_value=((services.IRIS_PACKAGE, "0.1.9", "https://example.invalid/old.zip"), "available"),
+            ),
+        ):
+            self.assertEqual(services._iris_release_candidate(spec)[:3], (services.IRIS_PACKAGE, "0.1.10", None))
+        with patch.object(
+            services,
+            "_github_iris_release",
+            return_value=((services.IRIS_PACKAGE, "0.1.11", "https://example.invalid/new.zip"), "available"),
+        ):
+            self.assertEqual(services._iris_release_candidate(spec)[1:3], ("0.1.11", "https://example.invalid/new.zip"))
+
+        status = services._iris_product_status(
+            services.RuntimeState(),
+            {"state": "ready", "installed_package": services.IRIS_PACKAGE, "installed_version": "0.1.12"},
+            services.IRIS_PACKAGE,
+            "0.1.11",
+        )
+        self.assertEqual(status["state"], "ready")
+
+    def test_github_bundle_manifest_must_match_release(self) -> None:
+        archive = BytesIO()
+        with ZipFile(archive, "w") as bundle:
+            bundle.writestr("miniapp.json", json.dumps({"packageName": services.IRIS_PACKAGE, "version": "0.1.11"}))
+        with (
+            TemporaryDirectory() as directory,
+            patch.object(services, "STATE_DIR", Path(directory)),
+            patch.object(
+                services.urllib.request,
+                "urlopen",
+                side_effect=lambda *_args, **_kwargs: BytesIO(archive.getvalue()),
+            ),
+        ):
+            path = services._download_iris_release("https://example.invalid/iris.zip", services.IRIS_PACKAGE, "0.1.11")
+            self.assertEqual(path.read_bytes(), archive.getvalue())
+            with self.assertRaisesRegex(ValueError, "does not match"):
+                services._download_iris_release(
+                    "https://example.invalid/iris.zip", services.IRIS_PACKAGE, "0.1.12"
+                )
 
     def test_memu_server_keeps_only_iris_stop_guard(self) -> None:
         spec = services.ServiceSpec(
