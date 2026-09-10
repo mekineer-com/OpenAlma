@@ -462,8 +462,8 @@ def _runtime_state(spec: ServiceSpec) -> RuntimeState:
         )
     )
     port_pid = _port_listener_pid(spec.port) if spec.port is not None else None
-    port_blocked = port_pid == UNKNOWN_PORT_PID or (
-        port_pid is not None
+    port_blocked = (port_pid == UNKNOWN_PORT_PID and not verified) or (
+        port_pid not in {None, UNKNOWN_PORT_PID}
         and _is_alive(port_pid)
         and not _matches_managed_process(spec, port_pid)
     )

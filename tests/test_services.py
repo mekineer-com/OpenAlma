@@ -305,6 +305,20 @@ def test_status_reports_blocked_for_nonmatching_port_listener(tmp_path, monkeypa
     assert "port 8099 is held by PID 999" == status["detail"]
 
 
+def test_verified_service_remains_running_when_port_owner_is_unavailable(tmp_path, monkeypatch):
+    spec = services.ServiceSpec(
+        "memu-server", "memU Server", [], tmp_path, tmp_path / "log", tmp_path / "pid", port=8099,
+    )
+    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [123])
+    monkeypatch.setattr(services, "_matches_service_process", lambda _spec, _pid: True)
+    monkeypatch.setattr(services, "_port_listener_pid", lambda _port: services.UNKNOWN_PORT_PID)
+
+    runtime = services._runtime_state(spec)
+
+    assert runtime.running is True
+    assert runtime.port_blocked is False
+
+
 def test_start_does_not_spawn_when_port_is_blocked(tmp_path, monkeypatch):
     spec = services.ServiceSpec(
         name="memu-server",

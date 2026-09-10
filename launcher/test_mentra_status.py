@@ -594,6 +594,10 @@ class MentraStatusTest(TestCase):
                 with patch.object(services, "stop", side_effect=ValueError("unexpected failure")):
                     response = TestClient(app.app, raise_server_exceptions=False).post("/service/memu-server/stop")
                     self.assertEqual(response.status_code, 500)
+                with patch.object(services, "stop", side_effect=RuntimeError("shutdown rejected")):
+                    response = client.post("/service/memu-server/stop")
+                    self.assertEqual(response.status_code, 503)
+                    self.assertEqual(response.json()["detail"], "shutdown rejected")
 
     def test_generated_build_uses_host_and_recorded_phone_not_ambient_env(self) -> None:
         with TemporaryDirectory() as directory:
