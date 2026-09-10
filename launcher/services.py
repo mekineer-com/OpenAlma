@@ -1237,13 +1237,13 @@ def _signal_pid(pid: int, sig: signal.Signals) -> None:
         os.kill(pid, sig)
 
 
-def _request_memu_shutdown(timeout: float) -> bool:
+def _request_memu_shutdown() -> bool:
     request = urllib.request.Request(
         f"http://127.0.0.1:{MEMU_SERVER_PORT}/admin/shutdown",
         data=json.dumps({
             "requested_by": "openalma-launcher",
             "reason": "launcher stop",
-            "max_wait_sec": max(0, int(timeout)),
+            "max_wait_sec": 0,
         }).encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -1269,8 +1269,11 @@ def stop(spec: ServiceSpec, *, timeout: float = 10.0, confirm_unknown: bool = Fa
             raise PermissionError("Stop the Iris conversation on the phone first")
         if mentra.get("busy") is not False and not confirm_unknown:
             raise StopConfirmationRequired("Iris activity cannot be checked. Stopping may interrupt a conversation or lose pending work. Stop anyway?")
-    graceful = spec.name == "memu-server" and _request_memu_shutdown(timeout)
-    if not graceful:
+    if spec.name == "memu-server":
+        if not _request_memu_shutdown():
+            raise RuntimeError("memU Server did not accept the graceful shutdown request")
+        return
+    else:
         for pid in pids:
             try:
                 _signal_pid(pid, signal.SIGTERM)

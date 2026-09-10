@@ -421,13 +421,11 @@ def test_signal_pid_uses_process_group_for_group_leader(monkeypatch):
 
 
 def test_stop_terminates_all_verified_pids_and_clears_dead_pidfiles(tmp_path, monkeypatch):
-    monkeypatch.setattr(services, "_read_mentra_status", lambda *_args: {"busy": False})
-    monkeypatch.setattr(services, "_request_memu_shutdown", lambda _timeout: False)
     adopt_pid = tmp_path / "server-owned.pid"
     adopt_pid.write_text("11", encoding="utf-8")
     spec = services.ServiceSpec(
-        name="memu-server",
-        label="memU Server",
+        name="atomic",
+        label="Atomic",
         cmd=[],
         cwd=tmp_path,
         log_path=tmp_path / "server.log",
@@ -474,11 +472,9 @@ def test_stop_leaves_live_nonmatching_service_pidfile(tmp_path, monkeypatch):
 
 
 def test_stop_escalates_only_verified_matching_pids(tmp_path, monkeypatch):
-    monkeypatch.setattr(services, "_read_mentra_status", lambda *_args: {"busy": False})
-    monkeypatch.setattr(services, "_request_memu_shutdown", lambda _timeout: False)
     spec = services.ServiceSpec(
-        name="memu-server",
-        label="memU Server",
+        name="atomic",
+        label="Atomic",
         cmd=[],
         cwd=tmp_path,
         log_path=tmp_path / "server.log",
@@ -493,18 +489,37 @@ def test_stop_escalates_only_verified_matching_pids(tmp_path, monkeypatch):
     assert killed == [(20, services.signal.SIGTERM), (20, services.signal.SIGKILL)]
 
 
-def test_stop_waits_for_memu_graceful_shutdown(tmp_path, monkeypatch):
+def test_stop_requests_unlimited_memu_drain_without_signaling(tmp_path, monkeypatch):
     spec = services.ServiceSpec(
         "memu-server", "memU Server", [], tmp_path, tmp_path / "log", tmp_path / "pid",
     )
-    candidates = iter(([20], [20], []))
-    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: next(candidates))
+    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [20])
     monkeypatch.setattr(services, "_read_mentra_status", lambda *_args: {"busy": False})
-    monkeypatch.setattr(services, "_request_memu_shutdown", lambda _timeout: True)
+    monkeypatch.setattr(services, "_request_memu_shutdown", lambda: True)
     monkeypatch.setattr(services, "_signal_pid", lambda *_args: pytest.fail("unexpected signal"))
-    monkeypatch.setattr(services.time, "sleep", lambda _seconds: None)
 
     services.stop(spec, timeout=1)
+
+
+def test_memu_shutdown_request_has_no_drain_deadline(monkeypatch):
+    seen = {}
+
+    def urlopen(request, timeout):
+        seen["body"] = json.loads(request.data)
+        seen["timeout"] = timeout
+        return _FakeResponse()
+
+    monkeypatch.setattr(services.urllib.request, "urlopen", urlopen)
+
+    assert services._request_memu_shutdown() is True
+    assert seen == {
+        "body": {
+            "requested_by": "openalma-launcher",
+            "reason": "launcher stop",
+            "max_wait_sec": 0,
+        },
+        "timeout": 2,
+    }
 
 
 def test_channels_daemon_in_all_services(tmp_path, monkeypatch):
