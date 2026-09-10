@@ -18,7 +18,6 @@ import platform
 import re
 import shlex
 import shutil
-import signal
 import socket
 import subprocess
 import sys
@@ -1224,17 +1223,17 @@ def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None) ->
     _clear_port_cache(spec)
 
 
-def _signal_pid(pid: int, sig: signal.Signals) -> None:
-    pgid = None
-    if hasattr(os, "getpgid") and hasattr(os, "killpg"):
+def _signal_pid(pid: int, *, force: bool = False) -> None:
+    try:
+        process = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        return
+    action = "kill" if force else "terminate"
+    for target in [*process.children(recursive=True), process]:
         try:
-            pgid = os.getpgid(pid)
-        except OSError:
-            pgid = None
-    if pgid == pid:
-        os.killpg(pgid, sig)
-    else:
-        os.kill(pid, sig)
+            getattr(target, action)()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
 
 
 def _request_memu_shutdown() -> bool:
@@ -1275,12 +1274,7 @@ def stop(spec: ServiceSpec, *, timeout: float = 10.0, confirm_unknown: bool = Fa
         return
     else:
         for pid in pids:
-            try:
-                _signal_pid(pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            except PermissionError:
-                continue
+            _signal_pid(pid)
     deadline = time.time() + timeout
     while time.time() < deadline:
         if not _verified_pid_candidates(spec):
@@ -1288,12 +1282,7 @@ def stop(spec: ServiceSpec, *, timeout: float = 10.0, confirm_unknown: bool = Fa
         time.sleep(0.1)
     else:
         for pid in _verified_pid_candidates(spec):
-            try:
-                _signal_pid(pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            except PermissionError:
-                continue
+            _signal_pid(pid, force=True)
     _clear_pid(spec)
     if spec.adopt_pid_path is not None:
         _clear_dead_pidfile(spec.adopt_pid_path)

@@ -423,15 +423,26 @@ def test_port_listener_lookup_is_cached(monkeypatch):
     assert len(calls) == 1
 
 
-def test_signal_pid_uses_process_group_for_group_leader(monkeypatch):
+def test_signal_pid_terminates_process_tree(monkeypatch):
     calls = []
-    monkeypatch.setattr(services.os, "getpgid", lambda pid: pid)
-    monkeypatch.setattr(services.os, "killpg", lambda pgid, sig: calls.append(("pg", pgid, sig)))
-    monkeypatch.setattr(services.os, "kill", lambda pid, sig: calls.append(("pid", pid, sig)))
+    child = type("Process", (), {
+        "terminate": lambda self: calls.append(("terminate", 45)),
+        "kill": lambda self: calls.append(("kill", 45)),
+    })()
+    process = type("Process", (), {
+        "children": lambda self, recursive: [child],
+        "terminate": lambda self: calls.append(("terminate", 44)),
+        "kill": lambda self: calls.append(("kill", 44)),
+    })()
+    monkeypatch.setattr(services.psutil, "Process", lambda pid: process)
 
-    services._signal_pid(44, services.signal.SIGTERM)
+    services._signal_pid(44)
+    services._signal_pid(44, force=True)
 
-    assert calls == [("pg", 44, services.signal.SIGTERM)]
+    assert calls == [
+        ("terminate", 45), ("terminate", 44),
+        ("kill", 45), ("kill", 44),
+    ]
 
 
 def test_stop_terminates_all_verified_pids_and_clears_dead_pidfiles(tmp_path, monkeypatch):
@@ -455,12 +466,15 @@ def test_stop_terminates_all_verified_pids_and_clears_dead_pidfiles(tmp_path, mo
 
     killed = []
     monkeypatch.setattr(services, "_verified_pid_candidates", verified)
-    monkeypatch.setattr(services.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    monkeypatch.setattr(
+        services, "_signal_pid",
+        lambda pid, **kwargs: killed.append((pid, kwargs.get("force", False))),
+    )
     monkeypatch.setattr(services, "_is_alive", lambda _pid: False)
 
     services.stop(spec, timeout=1)
 
-    assert killed == [(10, services.signal.SIGTERM), (11, services.signal.SIGTERM)]
+    assert killed == [(10, False), (11, False)]
     assert not spec.pid_path.exists()
     assert not adopt_pid.exists()
 
@@ -496,11 +510,14 @@ def test_stop_escalates_only_verified_matching_pids(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [20])
     killed = []
-    monkeypatch.setattr(services.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    monkeypatch.setattr(
+        services, "_signal_pid",
+        lambda pid, **kwargs: killed.append((pid, kwargs.get("force", False))),
+    )
 
     services.stop(spec, timeout=0)
 
-    assert killed == [(20, services.signal.SIGTERM), (20, services.signal.SIGKILL)]
+    assert killed == [(20, False), (20, True)]
 
 
 def test_stop_requests_unlimited_memu_drain_without_signaling(tmp_path, monkeypatch):
