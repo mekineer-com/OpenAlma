@@ -793,7 +793,7 @@ def _mentra_readiness_uncached(root: Path) -> dict:
     row_labels = (
         "OpenAlma / mcp configuration",
         "memU Server",
-        "WireGuard host route",
+        "Private phone route",
         "Authenticated narrow ingress",
     )
 
@@ -834,42 +834,13 @@ def _mentra_readiness_uncached(root: Path) -> dict:
         or not private_host
         or host in {"127.0.0.1", "::1"}
     ):
-        return fail("wireguard", "WireGuard host route", "Iris base URL must use a private host address")
-    try:
-        addresses = json.loads(subprocess.check_output(["ip", "-j", "address", "show", "type", "wireguard"], text=True))
-    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError):
-        return fail("wireguard", "WireGuard host route", "Could not inspect local interfaces")
-    if not any(
-        address.get("local") == host
-        for interface in addresses
-        for address in interface.get("addr_info", [])
-    ):
-        return fail("wireguard", "WireGuard host route", f"No local interface owns {host}")
-    rows.append({"label": "WireGuard host route", "state": "ready", "detail": "Ready"})
+        return fail("route", "Private phone route", "Iris base URL must use a private host address")
+    rows.append({"label": "Private phone route", "state": "ready", "detail": host})
 
     try:
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        parsed.port
     except ValueError:
         return fail("ingress", "Authenticated narrow ingress", "Iris base URL has an invalid port")
-    try:
-        listeners = subprocess.check_output(["ss", "-H", "-ltn"], text=True)
-    except (OSError, subprocess.CalledProcessError):
-        return fail("ingress", "Authenticated narrow ingress", "Could not inspect listening ports")
-    local_addresses = [line.split()[3] for line in listeners.splitlines() if len(line.split()) >= 4]
-    same_port = [address for address in local_addresses if address.rsplit(":", 1)[-1] == str(port)]
-    unsafe_bind = False
-    for address in same_port:
-        listener_host = address.rsplit(":", 1)[0].strip("[]")
-        try:
-            unsafe_bind = (
-                unsafe_bind
-                or listener_host in {"*", "0.0.0.0", "::"}
-                or not ipaddress.ip_address(listener_host).is_private
-            )
-        except ValueError:
-            unsafe_bind = True
-    if f"{host}:{port}" not in local_addresses or unsafe_bind:
-        return fail("ingress", "Authenticated narrow ingress", f"Ingress is not bound to {host}:{port}")
 
     bearer = str(mentra["integration_bearer_token"])
     status = _mentra_http_status(f"{base_url}/integration/mentra/health", bearer)

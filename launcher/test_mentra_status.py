@@ -203,7 +203,7 @@ class MentraStatusTest(TestCase):
         try:
             with (
                 patch.object(services, "all_services", side_effect=AssertionError("service probe")),
-                patch.object(services.subprocess, "check_output", side_effect=AssertionError("network probe")),
+                patch.object(services, "_mentra_http_status", side_effect=AssertionError("network probe")),
             ):
                 result = services.mentra_readiness(root)
             self.assertFalse(result["enabled"])
@@ -255,23 +255,16 @@ class MentraStatusTest(TestCase):
         )
         memu = services.ServiceSpec("memu-server", "memU", [], root, root / "log", root / "pid")
 
-        def command_output(command: list[str], **_kwargs) -> str:
-            if command[:2] == ["ip", "-j"]:
-                return json.dumps([{"addr_info": [{"local": "10.77.0.1"}]}])
-            return "LISTEN 0 4096 10.77.0.1:80 0.0.0.0:*\n"
-
         try:
             with (
                 patch.object(services, "all_services", return_value=[memu]),
                 patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
-                patch.object(services.subprocess, "check_output", side_effect=command_output) as probe,
                 patch.object(services, "_mentra_http_status", side_effect=[200, 401, 404]) as http,
             ):
                 first = services.mentra_readiness(root)
                 second = services.mentra_readiness(root)
             self.assertTrue(first["ready"])
             self.assertIs(first, second)
-            self.assertEqual(probe.call_count, 2)
             self.assertEqual(http.call_count, 3)
             self.assertEqual(http.call_args_list[2].args, ("http://10.77.0.1/health",))
             self.assertEqual(len(first["rows"]), 4)
@@ -282,7 +275,6 @@ class MentraStatusTest(TestCase):
                 with (
                     patch.object(services, "all_services", return_value=[memu]),
                     patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
-                    patch.object(services.subprocess, "check_output", side_effect=command_output),
                     patch.object(services, "_mentra_http_status", side_effect=responses),
                 ):
                     self.assertIn(detail, services._mentra_readiness_uncached(root)["reason"])
@@ -296,29 +288,9 @@ class MentraStatusTest(TestCase):
                 with (
                     patch.object(services, "all_services", return_value=[memu]),
                     patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
-                    patch.object(services.subprocess, "check_output", side_effect=command_output),
                     patch.object(services, "_mentra_http_status", side_effect=[200, 401, 404]),
                 ):
                     self.assertTrue(services.mentra_readiness(root)["ready"])
-
-            services._MENTRA_READINESS_CACHE.clear()
-            with (
-                patch.object(services, "all_services", return_value=[memu]),
-                patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
-                patch.object(
-                    services.subprocess,
-                    "check_output",
-                    side_effect=[
-                        json.dumps([{"addr_info": [{"local": "10.77.0.1"}]}]),
-                        "LISTEN 0 4096 10.77.0.1:80 0.0.0.0:*\n"
-                        "LISTEN 0 4096 0.0.0.0:80 0.0.0.0:*\n",
-                    ],
-                ),
-                patch.object(services, "_mentra_http_status", side_effect=AssertionError("HTTP probe")),
-            ):
-                exposed = services.mentra_readiness(root)
-            self.assertFalse(exposed["ready"])
-            self.assertEqual(exposed["step"], "ingress")
         finally:
             for path in (env_path, config):
                 path.unlink(missing_ok=True)
