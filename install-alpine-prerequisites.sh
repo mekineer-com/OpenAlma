@@ -4,10 +4,10 @@ set -eu
 # Tested reference recipe; the OpenAlma launcher never runs this automatically.
 
 . /etc/os-release
-[ "$ID" = alpine ] || { echo "OpenAlma automatic setup currently supports Alpine 3.23." >&2; exit 1; }
-case "$VERSION_ID" in 3.23|3.23.*) ;; *) echo "OpenAlma automatic setup currently supports Alpine 3.23." >&2; exit 1 ;; esac
+[ "$ID" = alpine ] || { echo "This reference recipe requires Alpine 3.23." >&2; exit 1; }
+case "$VERSION_ID" in 3.23|3.23.*) ;; *) echo "This reference recipe requires Alpine 3.23." >&2; exit 1 ;; esac
 [ "$(uname -m)" = x86_64 ] || {
-    echo "OpenAlma automatic setup currently supports x86_64 hosts." >&2
+    echo "This reference recipe requires an x86_64 host." >&2
     exit 1
 }
 

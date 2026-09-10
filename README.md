@@ -70,11 +70,30 @@ Memory extraction happens during **sleep gaps** — when you close a conversatio
 
 ---
 
+## Platform compatibility
+
+**Verified** means this OpenAlma fork has been run there. **Expected** means the architecture or upstream project supports it, but OpenAlma has not completed acceptance there yet.
+
+| Component | Verified | Expected / current boundary |
+|---|---|---|
+| memU | Alpine Linux 3.23 x86-64 | Pure Python; pinned sqlite-vec artifacts cover glibc Linux x86-64/ARM64, macOS Intel/Apple Silicon, and Windows x86-64. Those platforms still need acceptance. Alpine uses a source-build fallback because the official Linux artifact requires glibc. |
+| mcp-memu-server | Alpine Linux 3.23 x86-64 | Core Python is broadly portable; the current direct runner has Linux `/proc` process checks. |
+| OpenAlma launcher | Alpine Linux 3.23 x86-64 | Currently Linux-specific (`/proc`, `ss`, `ip`, Unix process groups, and desktop integration). Cross-OS compatibility is a goal, not a present claim. |
+| Iris MiniApp | Mentra on Android | Iris is designed for Mentra on Android and iOS. Stock Mentra is the normal iOS path; iOS acceptance remains. |
+| OpenAlma Mentra fork | Android APK | Shared React Native code may be built for iOS, but OpenAlma currently distributes and verifies only Android. |
+| Hermes Channels | Alpine Linux 3.23 x86-64 | Python/Node/Chromium are portable in principle; browser discovery and process supervision need per-OS acceptance. |
+| SillyTavern integration | Stock SillyTavern on Linux | Plugin and extension are browser/Node code and should follow SillyTavern's platform support. OpenAlma service control remains Linux-specific. |
+| Atomic integration | Alpine Linux x86-64 server/frontend | Atomic upstream releases for Linux, macOS, and Windows. OpenAlma's memU integration has not been accepted on the other platforms. |
+
+Installation prerequisites will be documented per OS as each platform is verified. OpenAlma does not install system packages, alter firewalls, or create VPN services automatically. Shared post-prerequisite setup may be automated where the same code works across platforms.
+
+---
+
 ## Getting started
 
 **You'll need**
 
-- Python 3.12+
+- Python 3.12
 - Node.js — if using SillyTavern or WhatsApp
 - An API key for an LLM provider — OpenAI, NanoGPT, or any compatible endpoint
 
@@ -142,7 +161,7 @@ After setup, open the memU extension panel in SillyTavern and set **Server URL**
    - **Memorize-pressure gauge** (home page) — how many unmemorized tokens are queued across all conversations vs the 8,000-token threshold, and whether a sleep gap has been detected. Useful for knowing if memorize is about to fire or is just waiting.
    - **WhatsApp Channel Policy** — two settings per chat, both independent. **Policy** (`full` / `listen_only` / `excluded`): whether the soul can respond, can only listen, or is dropped entirely. **Mem** checkbox: whether this chat's messages are included in memory extraction, or kept as context-only. Reads and writes `CHANNELS_HOME/channel_directory.json` and `CHANNELS_HOME/memu.json`. This is where you tell the soul which conversations matter.
 
-No Docker. Developed on Alpine Linux but works on anything that can run Python 3.12 and Node.
+No Docker. Alpine Linux is currently verified; cross-OS compatibility is tracked in the table above.
 
 Questions? Open an issue on the relevant repo.
 
