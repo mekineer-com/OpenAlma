@@ -1,7 +1,7 @@
 """FastAPI app for the OpenAlma launcher."""
 from __future__ import annotations
 
-import subprocess
+import webbrowser
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -37,7 +37,7 @@ def _editable_configs(apps_root: Path | None) -> dict[str, Path]:
 
 def _find_service(name: str) -> services.ServiceSpec:
     for s in services.all_services():
-        if s.name == name:
+        if s.name == name and services.is_installed(s):
             return s
     raise HTTPException(status_code=404, detail=f"Unknown service: {name}")
 
@@ -65,7 +65,11 @@ def index(request: Request) -> HTMLResponse:
             "name": s.name,
             "label": s.label,
         } | services.status(s))
-        for s in specs
+        for s in specs if services.is_installed(s)
+    ]
+    not_installed = [
+        {"name": s.name, "label": s.label}
+        for s in specs if not services.is_installed(s)
     ]
     chats = policy.list_whatsapp_chats()
     current = policy.read_channel_settings()
@@ -108,6 +112,7 @@ def index(request: Request) -> HTMLResponse:
         "index.html",
         {
             "services": rows,
+            "not_installed_services": not_installed,
             "memorize": memorize,
             "chats": chat_rows,
             "visible_chats": visible_chats,
@@ -281,5 +286,5 @@ def edit_config(key: str) -> RedirectResponse:
     target = _editable_configs(settings.apps_root()).get(key)
     if target is None:
         raise HTTPException(status_code=404, detail=f"Unknown config: {key}")
-    subprocess.Popen(["xdg-open", str(target)], start_new_session=True)
+    webbrowser.open(target.resolve().as_uri())
     return RedirectResponse("/", status_code=303)

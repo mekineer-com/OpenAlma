@@ -14,6 +14,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import platform
 import re
 import shlex
 import shutil
@@ -70,6 +71,7 @@ class ServiceSpec:
     port: int | None = None
     open_url: str | None = None
     adopt_pid_path: Path | None = None
+    install_marker: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -157,7 +159,7 @@ def all_services() -> list[ServiceSpec]:
             label="memU Server",
             cmd=[str(root / "mcp-memu-server" / ".venv" / "bin" / "python3"), "run.py"],
             cwd=root / "mcp-memu-server",
-            log_path=Path("/tmp/memu-server.out"),
+            log_path=STATE_DIR / "memu-server.log",
             pid_path=STATE_DIR / "memu-server.pid",
             port=MEMU_SERVER_PORT,
             adopt_pid_path=_resolve_memu_server_pid_path(root),
@@ -171,6 +173,7 @@ def all_services() -> list[ServiceSpec]:
             pid_path=STATE_DIR / "iris-server.pid",
             env={"PATH": f"{bun_dir}:{os.environ.get('PATH', '')}"},
             port=6789,
+            install_marker=root / "mentra-os" / "miniapps" / "openalma" / "miniapp.json",
         ),
         ServiceSpec(
             name="atomic",
@@ -181,18 +184,20 @@ def all_services() -> list[ServiceSpec]:
             pid_path=STATE_DIR / "atomic.pid",
             port=1420,
             open_url="http://127.0.0.1:1420",
+            install_marker=root / "atomic" / "package.json",
         ),
         ServiceSpec(
             name="channels-daemon",
             label="Hermes Channels",
             cmd=[shutil.which("python3") or "python3", "-m", "gateway.daemon"],
             cwd=root / "hermes-channels",
-            log_path=Path("/tmp/channels-daemon.log"),
+            log_path=STATE_DIR / "channels-daemon.log",
             pid_path=STATE_DIR / "channels-daemon.pid",
             env={
                 "WHATSAPP_MODE": "bot",
                 "WHATSAPP_ALLOWED_USERS": "*",
             },
+            install_marker=root / "hermes-channels" / "gateway" / "daemon.py",
         ),
         ServiceSpec(
             name="sillytavern",
@@ -203,8 +208,13 @@ def all_services() -> list[ServiceSpec]:
             pid_path=STATE_DIR / "sillytavern.pid",
             port=8001,
             open_url="http://127.0.0.1:8001",
+            install_marker=root / "sillytavern" / "SillyTavern" / "server.js",
         ),
     ]
+
+
+def is_installed(spec: ServiceSpec) -> bool:
+    return spec.install_marker is None or spec.install_marker.exists()
 
 
 def _read_pid(pid_path: Path) -> int | None:
@@ -721,21 +731,29 @@ def host_prerequisites(root: Path | None, os_release_path: Path = Path("/etc/os-
         )
     except OSError:
         os_release = {}
-    os_id = os_release.get("ID", "").strip('"')
-    os_version = os_release.get("VERSION_ID", "").strip('"')
     host_name = os_release.get("PRETTY_NAME", "").strip('"')
+    system = platform.system()
     rows.append({
         "label": "Host system",
-        "state": "ready" if os_id else "failure",
-        "detail": host_name or "Could not identify this host",
+        "state": "ready" if system else "failure",
+        "detail": host_name or f"{system} {platform.release()}".strip() or "Could not identify this host",
     })
 
     required_paths = {
         "OpenAlma launcher": ("openalma/launcher/run.py", "openalma/launcher/.venv"),
         "memU Server": ("mcp-memu-server/run.py", "mcp-memu-server/.venv"),
         "memU engine": ("memu/pyproject.toml",),
-        "Iris": ("mentra-os/miniapps/openalma/miniapp.json", "mentra-os/miniapps/openalma/node_modules"),
     }
+    optional_paths = {
+        "Iris": ("mentra-os/miniapps/openalma/miniapp.json", "mentra-os/miniapps/openalma/node_modules"),
+        "Atomic": ("atomic/package.json", "atomic/target/server/atomic-server"),
+        "Hermes Channels": ("hermes-channels/gateway/daemon.py",),
+        "SillyTavern": ("sillytavern/SillyTavern/server.js",),
+    }
+    if root is not None:
+        required_paths.update({
+            name: paths for name, paths in optional_paths.items() if (root / paths[0]).exists()
+        })
     missing_components = list(required_paths) if root is None else [
         name for name, paths in required_paths.items() if any(not (root / path).exists() for path in paths)
     ]
@@ -745,7 +763,16 @@ def host_prerequisites(root: Path | None, os_release_path: Path = Path("/etc/os-
         "detail": f"Missing: {', '.join(missing_components)}" if missing_components else "Ready",
     })
 
-    commands = ("python3", "node", "bun", "wg", "ip", "nginx")
+    commands = ["python3"]
+    if root is not None and (root / optional_paths["Iris"][0]).exists():
+        commands.extend(("node", "npm", "bun", "wg", "ip", "nginx"))
+    if root is not None and (root / optional_paths["Atomic"][0]).exists():
+        commands.extend(("node", "npm", "sh"))
+    if root is not None and (root / optional_paths["Hermes Channels"][0]).exists():
+        commands.append("node")
+    if root is not None and (root / optional_paths["SillyTavern"][0]).exists():
+        commands.extend(("node", "bash"))
+    commands = list(dict.fromkeys(commands))
     missing_tools = [command for command in commands if shutil.which(command) is None]
     if sys.version_info[:2] != (3, 12) and "python3" not in missing_tools:
         missing_tools.insert(0, "Python 3.12")

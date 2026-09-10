@@ -65,6 +65,35 @@ def test_iris_server_is_managed_by_launcher(tmp_path, monkeypatch):
     assert spec.port == 6789
 
 
+def test_optional_service_install_marker_controls_visibility(tmp_path):
+    marker = tmp_path / "client" / "package.json"
+    spec = services.ServiceSpec("client", "Client", [], tmp_path, tmp_path / "log", tmp_path / "pid", install_marker=marker)
+
+    assert services.is_installed(spec) is False
+    marker.parent.mkdir()
+    marker.touch()
+    assert services.is_installed(spec) is True
+
+
+def test_host_prerequisites_ignore_uninstalled_optional_clients(tmp_path, monkeypatch):
+    for path in (
+        "openalma/launcher/run.py",
+        "mcp-memu-server/run.py",
+        "memu/pyproject.toml",
+    ):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).touch()
+    (tmp_path / "openalma/launcher/.venv").mkdir()
+    (tmp_path / "mcp-memu-server/.venv").mkdir()
+    monkeypatch.setattr(services.shutil, "which", lambda command: f"/usr/bin/{command}")
+
+    result = services.host_prerequisites(tmp_path, tmp_path / "missing-os-release")
+
+    assert result["ready"] is True
+    assert result["rows"][1]["detail"] == "Ready"
+    assert result["rows"][2]["detail"] == "Ready"
+
+
 def test_atomic_service_is_managed_by_launcher(tmp_path, monkeypatch):
     root = tmp_path / "apps"
     for name in ("mcp-memu-server", "atomic", "hermes-channels", "sillytavern"):

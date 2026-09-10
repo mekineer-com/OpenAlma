@@ -6,7 +6,7 @@ import pytest
 jinja2 = pytest.importorskip("jinja2")
 
 
-def _render(memorize: dict) -> str:
+def _render(memorize: dict, not_installed_services: list[dict] | None = None) -> str:
     template_dir = Path(__file__).resolve().parents[1] / "launcher" / "templates"
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(template_dir),
@@ -14,6 +14,7 @@ def _render(memorize: dict) -> str:
     )
     return env.get_template("index.html").render(
         services=[],
+        not_installed_services=not_installed_services or [],
         chats=[],
         visible_chats=[],
         excluded_chats=[],
@@ -69,3 +70,11 @@ def test_memorize_gauge_empty_state():
     html = _render({})
     assert "No pending-memorize data" in html
     assert '<div class="meter">' not in html
+
+
+def test_not_installed_services_are_collapsed_below_services():
+    html = _render({}, [{"name": "atomic", "label": "Atomic Mind Map"}])
+
+    assert '<details class="not-installed">' in html
+    assert "Not installed (1)" in html
+    assert "Atomic Mind Map" in html

@@ -24,6 +24,9 @@
     th { font-weight: 600; background: #222; color: #eee; }
     details.excluded-chats { margin-top: 0.8rem; }
     details.excluded-chats summary { cursor: pointer; color: #aaa; margin-bottom: 0.4rem; }
+    details.not-installed { margin-top: 0.8rem; }
+    details.not-installed summary { cursor: pointer; color: #aaa; }
+    details.not-installed ul { margin: 0.5rem 0 0; padding-left: 1.4rem; color: #aaa; }
     .running, .healthy, .ready, .active { color: #4ade80; font-weight: 600; }
     .starting { color: #fbbf24; font-weight: 600; }
     .degraded, .transcript_gap { color: #fb923c; font-weight: 600; }
@@ -132,6 +135,14 @@
       {% endfor %}
     </tbody>
   </table>
+  {% if not_installed_services %}
+  <details class="not-installed">
+    <summary>Not installed ({{ not_installed_services|length }})</summary>
+    <ul>
+      {% for s in not_installed_services %}<li>{{ s.label }}</li>{% endfor %}
+    </ul>
+  </details>
+  {% endif %}
 
   <h2>Memorize</h2>
   <div id="memorize-meter">
