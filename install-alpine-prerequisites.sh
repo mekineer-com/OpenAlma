@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 
+# Tested reference recipe; the OpenAlma launcher never runs this automatically.
+
 . /etc/os-release
 [ "$ID" = alpine ] || { echo "OpenAlma automatic setup currently supports Alpine 3.23." >&2; exit 1; }
 case "$VERSION_ID" in 3.23|3.23.*) ;; *) echo "OpenAlma automatic setup currently supports Alpine 3.23." >&2; exit 1 ;; esac

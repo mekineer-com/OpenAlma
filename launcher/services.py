@@ -723,11 +723,11 @@ def host_prerequisites(root: Path | None, os_release_path: Path = Path("/etc/os-
         os_release = {}
     os_id = os_release.get("ID", "").strip('"')
     os_version = os_release.get("VERSION_ID", "").strip('"')
-    supported_os = os_id == "alpine" and os_version.split(".")[:2] == ["3", "23"]
+    host_name = os_release.get("PRETTY_NAME", "").strip('"')
     rows.append({
-        "label": "Supported host",
-        "state": "ready" if supported_os else "failure",
-        "detail": f"Alpine {os_version}" if supported_os else "Automatic setup requires Alpine 3.23",
+        "label": "Host system",
+        "state": "ready" if os_id else "failure",
+        "detail": host_name or "Could not identify this host",
     })
 
     required_paths = {
