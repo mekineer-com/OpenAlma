@@ -50,7 +50,9 @@ def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch)
     }
     assert open_urls["atomic"] == "http://127.0.0.1:1420"
     assert open_urls["sillytavern"] == "http://127.0.0.1:8001"
-    assert next(spec for spec in specs if spec.name == "sillytavern").cmd[-1] == "--browserLaunchEnabled=false"
+    assert next(spec for spec in specs if spec.name == "sillytavern").cmd[-2:] == [
+        "server.js", "--browserLaunchEnabled=false",
+    ]
 
 
 def test_iris_server_is_managed_by_launcher(tmp_path, monkeypatch):
@@ -60,7 +62,7 @@ def test_iris_server_is_managed_by_launcher(tmp_path, monkeypatch):
     spec = next(s for s in services.all_services() if s.name == "iris-server")
 
     assert spec.cwd == root / "mentra-os" / "miniapps" / "openalma"
-    assert spec.cmd[-2:] == ["run", "release:private"]
+    assert spec.cmd[-1] == "scripts/release-private.mjs"
     assert spec.env["PATH"].split(":", 1)[0].endswith("/.bun/bin")
     assert spec.port == 6789
 

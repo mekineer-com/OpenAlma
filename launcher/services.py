@@ -153,11 +153,14 @@ def all_services() -> list[ServiceSpec]:
         return []
     channels_config = _read_channels_config()
     bun_dir = Path(shutil.which("bun") or Path.home() / ".bun" / "bin" / "bun").parent
+    node = shutil.which("node") or "node"
+    python = shutil.which("python3") or shutil.which("python") or sys.executable
+    venv_python = root / "mcp-memu-server" / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python3")
     return [
         ServiceSpec(
             name="memu-server",
             label="memU Server",
-            cmd=[str(root / "mcp-memu-server" / ".venv" / "bin" / "python3"), "run.py"],
+            cmd=[str(venv_python), "run.py"],
             cwd=root / "mcp-memu-server",
             log_path=STATE_DIR / "memu-server.log",
             pid_path=STATE_DIR / "memu-server.pid",
@@ -167,11 +170,11 @@ def all_services() -> list[ServiceSpec]:
         ServiceSpec(
             name="iris-server",
             label="Mentra Iris",
-            cmd=[shutil.which("npm") or "npm", "run", "release:private"],
+            cmd=[node, "scripts/release-private.mjs"],
             cwd=root / "mentra-os" / "miniapps" / "openalma",
             log_path=Path.home() / ".local" / "state" / "openalma" / "iris-server.log",
             pid_path=STATE_DIR / "iris-server.pid",
-            env={"PATH": f"{bun_dir}:{os.environ.get('PATH', '')}"},
+            env={"PATH": f"{bun_dir}{os.pathsep}{os.environ.get('PATH', '')}"},
             port=6789,
             install_marker=root / "mentra-os" / "miniapps" / "openalma" / "miniapp.json",
         ),
@@ -189,7 +192,7 @@ def all_services() -> list[ServiceSpec]:
         ServiceSpec(
             name="channels-daemon",
             label="Hermes Channels",
-            cmd=[shutil.which("python3") or "python3", "-m", "gateway.daemon"],
+            cmd=[python, "-m", "gateway.daemon"],
             cwd=root / "hermes-channels",
             log_path=STATE_DIR / "channels-daemon.log",
             pid_path=STATE_DIR / "channels-daemon.pid",
@@ -202,7 +205,7 @@ def all_services() -> list[ServiceSpec]:
         ServiceSpec(
             name="sillytavern",
             label="SillyTavern",
-            cmd=["bash", "start.sh", "--browserLaunchEnabled=false"],
+            cmd=[node, "server.js", "--browserLaunchEnabled=false"],
             cwd=root / "sillytavern" / "SillyTavern",
             log_path=STATE_DIR / "sillytavern.log",
             pid_path=STATE_DIR / "sillytavern.pid",
