@@ -1266,6 +1266,24 @@ def _signal_pid(pid: int, sig: signal.Signals) -> None:
         os.kill(pid, sig)
 
 
+def _request_memu_shutdown(timeout: float) -> bool:
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{MEMU_SERVER_PORT}/admin/shutdown",
+        data=json.dumps({
+            "requested_by": "openalma-launcher",
+            "reason": "launcher stop",
+            "max_wait_sec": max(0, int(timeout)),
+        }).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=2) as response:
+            return response.status == 200
+    except (OSError, urllib.error.URLError):
+        return False
+
+
 def stop(spec: ServiceSpec, *, timeout: float = 10.0, confirm_unknown: bool = False) -> None:
     _clear_port_cache(spec)
     pids = _verified_pid_candidates(spec)
@@ -1280,13 +1298,15 @@ def stop(spec: ServiceSpec, *, timeout: float = 10.0, confirm_unknown: bool = Fa
             raise PermissionError("Stop the Iris conversation on the phone first")
         if mentra.get("busy") is not False and not confirm_unknown:
             raise StopConfirmationRequired("Iris activity cannot be checked. Stopping may interrupt a conversation or lose pending work. Stop anyway?")
-    for pid in pids:
-        try:
-            _signal_pid(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        except PermissionError:
-            continue
+    graceful = spec.name == "memu-server" and _request_memu_shutdown(timeout)
+    if not graceful:
+        for pid in pids:
+            try:
+                _signal_pid(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                continue
     deadline = time.time() + timeout
     while time.time() < deadline:
         if not _verified_pid_candidates(spec):

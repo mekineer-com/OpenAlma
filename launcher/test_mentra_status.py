@@ -608,6 +608,7 @@ class MentraStatusTest(TestCase):
                 patch.object(app, "_find_service", return_value=spec),
                 patch.object(services, "_runtime_state", return_value=services.RuntimeState(stuck=True)),
                 patch.object(services, "_verified_pid_candidates", return_value=[123]),
+                patch.object(services, "_request_memu_shutdown", return_value=False),
                 patch.object(services, "_signal_pid") as signal,
             ):
                 with patch.object(services, "_read_mentra_status", return_value={"busy": True}):

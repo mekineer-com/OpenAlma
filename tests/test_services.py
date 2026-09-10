@@ -422,6 +422,7 @@ def test_signal_pid_uses_process_group_for_group_leader(monkeypatch):
 
 def test_stop_terminates_all_verified_pids_and_clears_dead_pidfiles(tmp_path, monkeypatch):
     monkeypatch.setattr(services, "_read_mentra_status", lambda *_args: {"busy": False})
+    monkeypatch.setattr(services, "_request_memu_shutdown", lambda _timeout: False)
     adopt_pid = tmp_path / "server-owned.pid"
     adopt_pid.write_text("11", encoding="utf-8")
     spec = services.ServiceSpec(
@@ -474,6 +475,7 @@ def test_stop_leaves_live_nonmatching_service_pidfile(tmp_path, monkeypatch):
 
 def test_stop_escalates_only_verified_matching_pids(tmp_path, monkeypatch):
     monkeypatch.setattr(services, "_read_mentra_status", lambda *_args: {"busy": False})
+    monkeypatch.setattr(services, "_request_memu_shutdown", lambda _timeout: False)
     spec = services.ServiceSpec(
         name="memu-server",
         label="memU Server",
@@ -489,6 +491,20 @@ def test_stop_escalates_only_verified_matching_pids(tmp_path, monkeypatch):
     services.stop(spec, timeout=0)
 
     assert killed == [(20, services.signal.SIGTERM), (20, services.signal.SIGKILL)]
+
+
+def test_stop_waits_for_memu_graceful_shutdown(tmp_path, monkeypatch):
+    spec = services.ServiceSpec(
+        "memu-server", "memU Server", [], tmp_path, tmp_path / "log", tmp_path / "pid",
+    )
+    candidates = iter(([20], [20], []))
+    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: next(candidates))
+    monkeypatch.setattr(services, "_read_mentra_status", lambda *_args: {"busy": False})
+    monkeypatch.setattr(services, "_request_memu_shutdown", lambda _timeout: True)
+    monkeypatch.setattr(services, "_signal_pid", lambda *_args: pytest.fail("unexpected signal"))
+    monkeypatch.setattr(services.time, "sleep", lambda _seconds: None)
+
+    services.stop(spec, timeout=1)
 
 
 def test_channels_daemon_in_all_services(tmp_path, monkeypatch):
