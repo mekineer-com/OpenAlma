@@ -392,15 +392,16 @@ def test_verified_pids_scan_when_pidfile_candidate_is_stale(tmp_path, monkeypatc
 def test_port_listener_lookup_is_cached(monkeypatch):
     calls = []
 
-    class Result:
-        stdout = 'users:(("python",pid=123,fd=7))'
-
-    def fake_run(*_args, **_kwargs):
+    def fake_connections(*_args, **_kwargs):
         calls.append(True)
-        return Result()
+        return [type("Connection", (), {
+            "status": services.psutil.CONN_LISTEN,
+            "laddr": ("127.0.0.1", 8099),
+            "pid": 123,
+        })()]
 
     monkeypatch.setattr(services, "_PORT_PID_CACHE", {})
-    monkeypatch.setattr(services.subprocess, "run", fake_run)
+    monkeypatch.setattr(services.psutil, "net_connections", fake_connections)
 
     assert services._port_listener_pid(8099) == 123
     assert services._port_listener_pid(8099) == 123

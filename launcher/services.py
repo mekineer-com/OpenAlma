@@ -19,6 +19,7 @@ import re
 import shlex
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -29,6 +30,8 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import psutil
+
 from settings import apps_root as _resolve_apps_root
 from settings import channels_home as _resolve_channels_home
 
@@ -36,6 +39,7 @@ STATE_DIR = Path.home() / ".cache" / "openalma-launcher"
 MEMU_SERVER_PORT = 8099
 PROCESS_SCAN_CACHE_SECONDS = 10.0
 PORT_PID_CACHE_SECONDS = 5.0
+UNKNOWN_PORT_PID = -1
 STARTUP_GRACE_SECONDS = PORT_PID_CACHE_SECONDS + 1.0
 _PROCESS_SCAN_CACHE: dict[tuple[str, str, str], tuple[float, list[int]]] = {}
 _PORT_PID_CACHE: dict[int, tuple[float, int | None]] = {}
@@ -240,23 +244,26 @@ def _read_adopt_pid(spec: ServiceSpec) -> int | None:
         return None
 
 
-_PORT_PID_RE = re.compile(r"pid=(\d+)")
-
-
 def _port_listener_pid(port: int) -> int | None:
     now = time.monotonic()
     cached = _PORT_PID_CACHE.get(port)
     if cached is not None and now - cached[0] < PORT_PID_CACHE_SECONDS:
         return cached[1]
     try:
-        result = subprocess.run(
-            ["ss", "-tlnpH", f"sport = :{port}"],
-            capture_output=True, text=True, timeout=2,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    m = _PORT_PID_RE.search(result.stdout)
-    pid = int(m.group(1)) if m else None
+        connections = psutil.net_connections(kind="tcp")
+    except (psutil.Error, OSError):
+        with socket.socket() as probe:
+            probe.settimeout(0.2)
+            pid = UNKNOWN_PORT_PID if probe.connect_ex(("127.0.0.1", port)) == 0 else None
+    else:
+        pid = None
+        for connection in connections:
+            if connection.status != psutil.CONN_LISTEN or not connection.laddr:
+                continue
+            listener_port = connection.laddr.port if hasattr(connection.laddr, "port") else connection.laddr[1]
+            if listener_port == port:
+                pid = connection.pid or UNKNOWN_PORT_PID
+                break
     _PORT_PID_CACHE[port] = (now, pid)
     return pid
 
@@ -268,40 +275,26 @@ def _clear_port_cache(spec: ServiceSpec) -> None:
 
 def _proc_cmdline(pid: int) -> str:
     try:
-        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
-    except OSError:
+        return shlex.join(psutil.Process(pid).cmdline())
+    except (psutil.Error, OSError):
         return ""
-    if not raw:
-        return ""
-    return raw.replace(b"\x00", b" ").decode("utf-8", errors="ignore").strip()
 
 
 def _proc_cwd(pid: int) -> Path | None:
     try:
-        return Path(f"/proc/{pid}/cwd").resolve()
-    except OSError:
+        return Path(psutil.Process(pid).cwd()).resolve()
+    except (psutil.Error, OSError):
         return None
-
-
-def _is_zombie(pid: int) -> bool:
-    try:
-        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return False
-    parts = stat.split()
-    return len(parts) > 2 and parts[2] == "Z"
 
 
 def _is_alive(pid: int) -> bool:
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
+        process = psutil.Process(pid)
+        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+    except (psutil.NoSuchProcess, psutil.ZombieProcess):
         return False
-    except PermissionError:
+    except (psutil.AccessDenied, OSError):
         return True
-    if _is_zombie(pid):
-        return False
-    return True
 
 
 def _matches_service_process(spec: ServiceSpec, pid: int) -> bool:
@@ -371,10 +364,8 @@ def _matches_channels_child_process(pid: int) -> bool:
 
 def _scan_service_pids(spec: ServiceSpec) -> list[int]:
     pids: list[int] = []
-    for entry in Path("/proc").iterdir():
-        if not entry.name.isdigit():
-            continue
-        pid = int(entry.name)
+    for process in psutil.process_iter(("pid",)):
+        pid = process.pid
         if _is_alive(pid) and _matches_managed_process(spec, pid):
             pids.append(pid)
     return pids
@@ -398,7 +389,7 @@ def _verified_pid_candidates(spec: ServiceSpec) -> list[int]:
             candidates.append(pid)
     if spec.port is not None:
         listener_pid = _port_listener_pid(spec.port)
-        if listener_pid is not None:
+        if listener_pid is not None and listener_pid > 0:
             candidates.append(listener_pid)
     if spec.name == "channels-daemon":
         for pidfile, _markers in _channels_whatsapp_child_markers():
@@ -471,7 +462,7 @@ def _runtime_state(spec: ServiceSpec) -> RuntimeState:
         )
     )
     port_pid = _port_listener_pid(spec.port) if spec.port is not None else None
-    port_blocked = (
+    port_blocked = port_pid == UNKNOWN_PORT_PID or (
         port_pid is not None
         and _is_alive(port_pid)
         and not _matches_managed_process(spec, port_pid)
