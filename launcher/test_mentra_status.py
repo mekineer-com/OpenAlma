@@ -579,18 +579,18 @@ class MentraStatusTest(TestCase):
             with (
                 patch.object(app, "_find_service", return_value=spec),
                 patch.object(services, "_runtime_state", return_value=services.RuntimeState(stuck=True)),
-                patch.object(services, "_verified_pid_candidates", return_value=[123]),
+                patch.object(services, "_verified_pid_candidates", side_effect=([123], [123], [123], [])),
                 patch.object(services, "_request_memu_shutdown", return_value=True),
-                patch.object(services, "_signal_pid") as signal,
+                patch.object(services, "_kill_process_tree") as force_kill,
             ):
                 with patch.object(services, "_read_mentra_status", return_value={"busy": True}):
                     self.assertEqual(client.post("/service/memu-server/stop?confirm_unknown=true").status_code, 409)
                 with patch.object(services, "_read_mentra_status", return_value={"state": "unavailable"}):
                     self.assertTrue(services.status(spec)["stoppable"])
                     self.assertEqual(client.post("/service/memu-server/stop").status_code, 428)
-                    signal.assert_not_called()
+                    force_kill.assert_not_called()
                     self.assertEqual(client.post("/service/memu-server/stop?confirm_unknown=true").status_code, 200)
-                    signal.assert_not_called()
+                    force_kill.assert_not_called()
                 with patch.object(services, "stop", side_effect=ValueError("unexpected failure")):
                     response = TestClient(app.app, raise_server_exceptions=False).post("/service/memu-server/stop")
                     self.assertEqual(response.status_code, 500)
@@ -598,6 +598,13 @@ class MentraStatusTest(TestCase):
                     response = client.post("/service/memu-server/stop")
                     self.assertEqual(response.status_code, 503)
                     self.assertEqual(response.json()["detail"], "shutdown rejected")
+            with (
+                patch.object(app, "_find_service", return_value=spec),
+                patch.object(services, "force_stop") as force_stop,
+            ):
+                self.assertEqual(client.post("/service/memu-server/force-stop").status_code, 428)
+                self.assertEqual(client.post("/service/memu-server/force-stop?confirmed=true").status_code, 200)
+                force_stop.assert_called_once_with(spec)
 
     def test_generated_build_uses_host_and_recorded_phone_not_ambient_env(self) -> None:
         with TemporaryDirectory() as directory:

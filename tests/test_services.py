@@ -175,10 +175,10 @@ const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const text = fs.readFileSync(process.argv[1], 'utf8');
 const script = text.slice(text.indexOf('var pendingStarts = {}'), text.indexOf('function actionHtml('));
 (async () => {
-  for (const scenario of ['start', 'start-failed', 'decline', 'confirm']) {
+  for (const scenario of ['start', 'start-failed', 'decline', 'confirm', 'force']) {
     const urls = [], alerts = []; let polls = 0;
     const context = {
-      Date, confirm: () => scenario === 'confirm', alert: x => alerts.push(x), pollStatus: () => polls++,
+      Date, confirm: () => ['confirm', 'force'].includes(scenario), alert: x => alerts.push(x), pollStatus: () => polls++,
       fetch: async url => {
         urls.push(url);
         const status = scenario === 'start' ? 200 : scenario === 'start-failed' || urls.length === 2 ? 409 : 428;
@@ -186,14 +186,16 @@ const script = text.slice(text.indexOf('var pendingStarts = {}'), text.indexOf('
       },
     };
     vm.createContext(context); vm.runInContext(script, context);
-    await context.svcAction('test', scenario.startsWith('start') ? 'start' : 'stop', {
+    const action = scenario.startsWith('start') ? 'start' : scenario === 'force' ? 'force-stop' : 'stop';
+    await context.svcAction('test', action, {
       closest: () => ({querySelector: () => ({innerHTML: ''})}),
     });
     assert.equal(polls, 1);
     assert.equal(Boolean(context.pendingStarts.test), scenario === 'start');
-    assert.equal(urls.length, scenario === 'confirm' ? 2 : 1);
-    assert.equal(alerts.length, ['confirm', 'start-failed'].includes(scenario) ? 1 : 0);
+    assert.equal(urls.length, ['confirm', 'force'].includes(scenario) ? 2 : 1);
+    assert.equal(alerts.length, ['confirm', 'force', 'start-failed'].includes(scenario) ? 1 : 0);
     if (scenario === 'confirm') assert(urls[1].endsWith('?confirm_unknown=true'));
+    if (scenario === 'force') assert(urls[1].endsWith('?confirmed=true'));
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });
 ''', str(template)], check=True, capture_output=True, text=True)
@@ -423,29 +425,40 @@ def test_port_listener_lookup_is_cached(monkeypatch):
     assert len(calls) == 1
 
 
-def test_signal_pid_terminates_process_tree(monkeypatch):
+def test_force_kill_process_tree_starts_with_supervisor(monkeypatch):
     calls = []
     child = type("Process", (), {
-        "terminate": lambda self: calls.append(("terminate", 45)),
+        "pid": 45,
         "kill": lambda self: calls.append(("kill", 45)),
     })()
     process = type("Process", (), {
+        "pid": 44,
         "children": lambda self, recursive: [child],
-        "terminate": lambda self: calls.append(("terminate", 44)),
         "kill": lambda self: calls.append(("kill", 44)),
     })()
     monkeypatch.setattr(services.psutil, "Process", lambda pid: process)
 
-    services._signal_pid(44)
-    services._signal_pid(44, force=True)
+    services._kill_process_tree(44)
 
-    assert calls == [
-        ("terminate", 45), ("terminate", 44),
-        ("kill", 45), ("kill", 44),
-    ]
+    assert calls == [("kill", 44), ("kill", 45)]
 
 
-def test_stop_terminates_all_verified_pids_and_clears_dead_pidfiles(tmp_path, monkeypatch):
+def test_force_kill_reports_permission_denied(monkeypatch):
+    def deny(_self):
+        raise services.psutil.AccessDenied(44)
+
+    process = type("Process", (), {
+        "pid": 44,
+        "children": lambda self, recursive: [],
+        "kill": deny,
+    })()
+    monkeypatch.setattr(services.psutil, "Process", lambda pid: process)
+
+    with pytest.raises(PermissionError, match=r"PID\(s\): 44"):
+        services._kill_process_tree(44)
+
+
+def test_stop_signals_only_supervisor_and_waits_for_exit(tmp_path, monkeypatch):
     adopt_pid = tmp_path / "server-owned.pid"
     adopt_pid.write_text("11", encoding="utf-8")
     spec = services.ServiceSpec(
@@ -464,17 +477,14 @@ def test_stop_terminates_all_verified_pids_and_clears_dead_pidfiles(tmp_path, mo
         calls["count"] += 1
         return [10, 11] if calls["count"] == 1 else []
 
-    killed = []
+    signaled = []
     monkeypatch.setattr(services, "_verified_pid_candidates", verified)
-    monkeypatch.setattr(
-        services, "_signal_pid",
-        lambda pid, **kwargs: killed.append((pid, kwargs.get("force", False))),
-    )
+    monkeypatch.setattr(services.os, "kill", lambda pid, sig: signaled.append((pid, sig)))
     monkeypatch.setattr(services, "_is_alive", lambda _pid: False)
 
-    services.stop(spec, timeout=1)
+    services.stop(spec)
 
-    assert killed == [(10, False), (11, False)]
+    assert signaled == [(10, services.signal.SIGTERM)]
     assert not spec.pid_path.exists()
     assert not adopt_pid.exists()
 
@@ -494,12 +504,12 @@ def test_stop_leaves_live_nonmatching_service_pidfile(tmp_path, monkeypatch):
     monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [])
     monkeypatch.setattr(services, "_is_alive", lambda pid: pid == 99)
 
-    services.stop(spec, timeout=0)
+    services.stop(spec)
 
     assert adopt_pid.exists()
 
 
-def test_stop_escalates_only_verified_matching_pids(tmp_path, monkeypatch):
+def test_force_stop_kills_only_verified_matching_pids(tmp_path, monkeypatch):
     spec = services.ServiceSpec(
         name="atomic",
         label="Atomic",
@@ -508,28 +518,46 @@ def test_stop_escalates_only_verified_matching_pids(tmp_path, monkeypatch):
         log_path=tmp_path / "server.log",
         pid_path=tmp_path / "launcher.pid",
     )
-    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [20])
+    calls = {"count": 0}
+
+    def verified(_spec):
+        calls["count"] += 1
+        return [20] if calls["count"] == 1 else []
+
+    monkeypatch.setattr(services, "_verified_pid_candidates", verified)
     killed = []
-    monkeypatch.setattr(
-        services, "_signal_pid",
-        lambda pid, **kwargs: killed.append((pid, kwargs.get("force", False))),
-    )
+    monkeypatch.setattr(services, "_kill_process_tree", killed.append)
 
-    services.stop(spec, timeout=0)
+    services.force_stop(spec)
 
-    assert killed == [(20, False), (20, True)]
+    assert killed == [20]
+
+
+def test_stop_refuses_fake_graceful_shutdown_on_windows(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [20])
+    monkeypatch.setattr(services.os, "name", "nt")
+
+    with pytest.raises(RuntimeError, match="no graceful Windows shutdown"):
+        services.stop(spec)
 
 
 def test_stop_requests_unlimited_memu_drain_without_signaling(tmp_path, monkeypatch):
     spec = services.ServiceSpec(
         "memu-server", "memU Server", [], tmp_path, tmp_path / "log", tmp_path / "pid",
     )
-    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [20])
+    calls = {"count": 0}
+
+    def verified(_spec):
+        calls["count"] += 1
+        return [20] if calls["count"] == 1 else []
+
+    monkeypatch.setattr(services, "_verified_pid_candidates", verified)
     monkeypatch.setattr(services, "_read_mentra_status", lambda *_args: {"busy": False})
     monkeypatch.setattr(services, "_request_memu_shutdown", lambda: True)
-    monkeypatch.setattr(services, "_signal_pid", lambda *_args: pytest.fail("unexpected signal"))
+    monkeypatch.setattr(services, "_kill_process_tree", lambda *_args: pytest.fail("unexpected force"))
 
-    services.stop(spec, timeout=1)
+    services.stop(spec)
 
 
 def test_memu_shutdown_request_has_no_drain_deadline(monkeypatch):

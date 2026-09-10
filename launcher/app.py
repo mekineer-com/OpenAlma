@@ -248,6 +248,23 @@ def service_stop(service_name: str, confirm_unknown: bool = False) -> dict:
     return {"ok": True, **services.status(spec)}
 
 
+@app.post("/service/{service_name}/force-stop")
+def service_force_stop(service_name: str, confirmed: bool = False) -> dict:
+    spec = _find_service(service_name)
+    if not confirmed:
+        raise HTTPException(
+            status_code=428,
+            detail="Force Stop may interrupt an active conversation or lose unfinished work. Continue?",
+        )
+    try:
+        services.force_stop(spec)
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"ok": True, **services.status(spec)}
+
+
 @app.get("/service/{service_name}/status")
 def service_status(service_name: str) -> dict:
     spec = _find_service(service_name)

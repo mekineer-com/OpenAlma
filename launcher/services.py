@@ -18,6 +18,7 @@ import platform
 import re
 import shlex
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -1223,17 +1224,24 @@ def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None) ->
     _clear_port_cache(spec)
 
 
-def _signal_pid(pid: int, *, force: bool = False) -> None:
+def _kill_process_tree(pid: int) -> None:
     try:
         process = psutil.Process(pid)
+        targets = [process, *process.children(recursive=True)]
     except psutil.NoSuchProcess:
         return
-    action = "kill" if force else "terminate"
-    for target in [*process.children(recursive=True), process]:
+    except psutil.AccessDenied as exc:
+        raise PermissionError(f"Could not inspect PID {pid} for Force Stop") from exc
+    denied: list[int] = []
+    for target in targets:
         try:
-            getattr(target, action)()
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            target.kill()
+        except psutil.NoSuchProcess:
             pass
+        except psutil.AccessDenied:
+            denied.append(target.pid)
+    if denied:
+        raise PermissionError(f"Could not force stop PID(s): {', '.join(map(str, denied))}")
 
 
 def _request_memu_shutdown() -> bool:
@@ -1254,7 +1262,7 @@ def _request_memu_shutdown() -> bool:
         return False
 
 
-def stop(spec: ServiceSpec, *, timeout: float = 10.0, confirm_unknown: bool = False) -> None:
+def stop(spec: ServiceSpec, *, confirm_unknown: bool = False) -> None:
     _clear_port_cache(spec)
     pids = _verified_pid_candidates(spec)
     if not pids:
@@ -1271,18 +1279,31 @@ def stop(spec: ServiceSpec, *, timeout: float = 10.0, confirm_unknown: bool = Fa
     if spec.name == "memu-server":
         if not _request_memu_shutdown():
             raise RuntimeError("memU Server did not accept the graceful shutdown request")
-        return
     else:
-        for pid in pids:
-            _signal_pid(pid)
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if not _verified_pid_candidates(spec):
-            break
+        if os.name == "nt":
+            raise RuntimeError(f"{spec.label} has no graceful Windows shutdown; use Force Stop")
+        try:
+            os.kill(pids[0], signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    while _verified_pid_candidates(spec):
         time.sleep(0.1)
-    else:
-        for pid in _verified_pid_candidates(spec):
-            _signal_pid(pid, force=True)
+    _clear_pid(spec)
+    if spec.adopt_pid_path is not None:
+        _clear_dead_pidfile(spec.adopt_pid_path)
+    _clear_port_cache(spec)
+
+
+def force_stop(spec: ServiceSpec, *, timeout: float = 10.0) -> None:
+    _clear_port_cache(spec)
+    for pid in _verified_pid_candidates(spec):
+        _kill_process_tree(pid)
+    deadline = time.time() + timeout
+    while _verified_pid_candidates(spec) and time.time() < deadline:
+        time.sleep(0.1)
+    survivors = _verified_pid_candidates(spec)
+    if survivors:
+        raise RuntimeError(f"Could not force stop PID(s): {', '.join(map(str, survivors))}")
     _clear_pid(spec)
     if spec.adopt_pid_path is not None:
         _clear_dead_pidfile(spec.adopt_pid_path)
