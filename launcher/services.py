@@ -1217,7 +1217,7 @@ def _stop_status(spec: ServiceSpec, result: dict) -> dict:
         result.update(
             state="stopping",
             status_label="◐ waiting for graceful shutdown",
-            detail="Unfinished work is being allowed to finish",
+            detail="Unfinished work is being allowed to finish; use Force Stop only if needed",
             startable=False,
             stoppable=True,
         )
@@ -1229,6 +1229,8 @@ def _stop_status(spec: ServiceSpec, result: dict) -> dict:
 def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None) -> None:
     _clear_port_cache(spec)
     with _STOP_LOCK:
+        if spec.name in _STOP_THREADS:
+            return
         _STOP_ERRORS.pop(spec.name, None)
     runtime = _runtime_state(spec)
     if runtime.running or runtime.stuck or runtime.orphaned or runtime.port_blocked:

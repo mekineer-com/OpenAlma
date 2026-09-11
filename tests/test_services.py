@@ -501,6 +501,32 @@ def test_stop_signals_service_owners_and_waits_in_background(tmp_path, monkeypat
     assert not adopt_pid.exists()
 
 
+def test_start_waits_for_stop_cleanup(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    with services._STOP_LOCK:
+        services._STOP_THREADS[spec.name] = services.threading.current_thread()
+    monkeypatch.setattr(services, "_runtime_state", lambda _spec: pytest.fail("start raced stop cleanup"))
+    try:
+        services.start(spec)
+    finally:
+        with services._STOP_LOCK:
+            services._STOP_THREADS.pop(spec.name, None)
+
+
+def test_stop_status_keeps_force_recovery_visible(tmp_path):
+    spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    with services._STOP_LOCK:
+        services._STOP_THREADS[spec.name] = services.threading.current_thread()
+    try:
+        result = services._stop_status(spec, {"state": "running"})
+    finally:
+        with services._STOP_LOCK:
+            services._STOP_THREADS.pop(spec.name, None)
+
+    assert result["state"] == "stopping"
+    assert "Force Stop" in result["detail"]
+
+
 def test_stop_leaves_live_nonmatching_service_pidfile(tmp_path, monkeypatch):
     adopt_pid = tmp_path / "server-owned.pid"
     adopt_pid.write_text("99", encoding="utf-8")

@@ -112,7 +112,10 @@
           {% endif %}
         </td>
         <td class="svc-actions">
-          {% if s.action_kind == "settings" %}
+          {% if s.state == "stopping" %}
+            <span class="spinner" role="status" aria-label="Stopping"></span>
+            <button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>
+          {% elif s.action_kind == "settings" %}
             <a class="btn" href="/settings">Settings</a>
           {% elif s.action_kind == "start" %}
             <button class="btn" onclick="svcAction('{{ s.name }}','start',this)">{{ s.action_label }}</button>
@@ -121,6 +124,8 @@
           {% elif s.action_kind is defined %}
           {% elif s.stop_blocked %}
             <button class="btn" disabled title="Stop the Iris conversation on the phone first">Stop</button>
+            <button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>
+          {% elif s.orphaned %}
             <button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>
           {% elif s.stoppable %}
             <button class="btn" onclick="svcAction('{{ s.name }}','stop',this)">Stop</button>
