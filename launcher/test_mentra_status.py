@@ -601,12 +601,13 @@ class MentraStatusTest(TestCase):
                 patch.object(services, "_runtime_state", return_value=services.RuntimeState()),
                 patch.object(services, "_iris_release_identity", return_value=("com.openalma.mentra", "0.1.0")),
                 patch.object(services, "resolve_soul", return_value="Fictional Soul"),
+                patch.object(services, "read_owner", return_value="Fictional User"),
                 patch.object(services, "iris_install_env", return_value={}),
                 patch.object(services, "start") as start,
             ):
                 self.assertIn('data-service="iris-server"', client.get("/").text)
                 self.assertIn('action="/iris/install"', client.get("/settings").text)
-                target = {"user_id": "Fictional User", "soul_id": "Fictional Soul", "device_session_id": "test-phone"}
+                target = {"soul_id": "Fictional Soul", "device_session_id": "test-phone"}
                 self.assertEqual(client.post("/iris/install", data=target, follow_redirects=False).status_code, 303)
                 start.assert_called_once_with(iris, install_target=target)
                 with (
@@ -666,8 +667,9 @@ class MentraStatusTest(TestCase):
             with (
                 patch.object(services, "_resolve_apps_root", return_value=root),
                 patch.object(services, "_read_mentra_status", return_value={
-                    "installed_user": "Fictional User", "installed_soul": 'Fictional "Soul"', "installed_device": "test-phone",
+                    "installed_user": "Wrong User", "installed_soul": 'Fictional "Soul"', "installed_device": "test-phone",
                 }),
+                patch.object(services, "read_owner", return_value="Fictional User"),
                 patch.dict(services.os.environ, {"MENTRA_PUBLIC_OPENALMA_BEARER": "stale-ambient-key"}),
                 patch.object(services, "_runtime_state", return_value=services.RuntimeState()),
                 patch.object(services, "_iris_release_candidate", return_value=(services.IRIS_PACKAGE, "0.1.11", "https://example.invalid/iris.zip", "available")),
@@ -679,6 +681,7 @@ class MentraStatusTest(TestCase):
                 services.start(spec)
                 built = spawn.call_args.args[1]
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_BEARER"], "new-key")
+                self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_USER_ID"], "Fictional%20User")
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID"], "test-phone")
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_SOUL_ID"], "Fictional%20%22Soul%22")
                 self.assertEqual(built["MENTRA_RELEASE_BUNDLE"], str(root / "iris.zip"))

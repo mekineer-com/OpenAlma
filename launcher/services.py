@@ -715,11 +715,15 @@ def iris_install_env(target: dict[str, str] | None) -> dict[str, str]:
     mentra = json.loads((root / "mcp-memu-server" / "config.json").read_text()).get("mentra") or {}
     if not mentra.get("enabled"):
         raise ValueError("Enable Mentra before installing Iris")
+    owner_id = read_owner()
+    if owner_id is None:
+        raise ValueError("Establish the OpenAlma owner before installing Iris")
     if target is None:
         installed = _read_mentra_status(MEMU_SERVER_PORT)
         target = {key: installed.get(f"installed_{field}") or "" for key, field in (
-            ("user_id", "user"), ("soul_id", "soul"), ("device_session_id", "device")
+            ("soul_id", "soul"), ("device_session_id", "device")
         )}
+    target = {**target, "user_id": owner_id}
     values = {
         "BASE_URL": str(mentra.get("public_base_url") or ""),
         "BEARER": str(mentra.get("integration_bearer_token") or ""),

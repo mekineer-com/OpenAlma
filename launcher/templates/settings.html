@@ -93,7 +93,6 @@
     {% elif iris_setup.ready and not iris.active %}
       {% if not iris.installed_version %}
       <form method="post" action="/iris/install" id="iris-install-form">
-        <label for="iris-user">Your name</label><input type="text" id="iris-user" name="user_id" required>
         <label for="iris-soul">Soul name</label><input type="text" id="iris-soul" name="soul_id" required>
         <input id="iris-use-existing" type="hidden" name="use_existing" value="false">
         <label for="iris-soul-existing">Existing soul</label>
