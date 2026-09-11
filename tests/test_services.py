@@ -536,18 +536,27 @@ def test_start_waits_for_stop_cleanup(tmp_path, monkeypatch):
             services._STOP_THREADS.pop(spec.name, None)
 
 
-def test_stop_status_keeps_force_recovery_visible(tmp_path):
+def test_stop_status_shows_force_only_with_failure_evidence(tmp_path):
     spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
     with services._STOP_LOCK:
         services._STOP_THREADS[spec.name] = services.threading.current_thread()
     try:
-        result = services._stop_status(spec, {"state": "running"})
+        result = services._stop_status(spec, {"state": "running", "stuck": False})
     finally:
         with services._STOP_LOCK:
             services._STOP_THREADS.pop(spec.name, None)
 
     assert result["state"] == "stopping"
-    assert "Force Stop" in result["detail"]
+    assert result["force_stoppable"] is False
+
+    with services._STOP_LOCK:
+        services._STOP_THREADS[spec.name] = services.threading.current_thread()
+    try:
+        stuck = services._stop_status(spec, {"state": "stuck", "stuck": True})
+    finally:
+        with services._STOP_LOCK:
+            services._STOP_THREADS.pop(spec.name, None)
+    assert stuck["force_stoppable"] is True
 
 
 def test_stop_leaves_live_nonmatching_service_pidfile(tmp_path, monkeypatch):

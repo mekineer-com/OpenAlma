@@ -127,6 +127,7 @@
         <td class="svc-actions">
           {% if s.state == "stopping" %}
             <span class="spinner" role="status" aria-label="Stopping"></span>
+            {% if s.force_stoppable %}<button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>{% endif %}
             <button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>
           {% elif s.action_kind == "settings" %}
             <a class="btn" href="/settings">Settings</a>
@@ -137,12 +138,10 @@
           {% elif s.action_kind is defined %}
           {% elif s.stop_blocked %}
             <button class="btn" disabled title="Stop the Iris conversation on the phone first">Stop</button>
-            <button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>
-          {% elif s.orphaned %}
+          {% elif s.force_stoppable %}
             <button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>
           {% elif s.stoppable %}
             <button class="btn" onclick="svcAction('{{ s.name }}','stop',this)">Stop</button>
-            <button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>
           {% elif s.startable %}
             <button class="btn" onclick="svcAction('{{ s.name }}','start',this)">Start</button>
           {% else %}
@@ -309,8 +308,7 @@ async function svcAction(name, action, btn) {
   if (action === 'start') pendingStarts[name] = Date.now() + 10000;
   if (action === 'stop') pendingStops[name] = true;
   if (action === 'force-stop') delete pendingStops[name];
-  actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Working"></span>' +
-    (action === 'stop' ? ' <button class="btn" onclick="svcAction(\'' + name + '\',\'force-stop\',this)">Force Stop</button>' : '');
+  actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Working"></span>';
   statusCell.innerHTML = '<span class="muted">…</span>';
 
   try {
@@ -338,8 +336,8 @@ async function svcAction(name, action, btn) {
 function actionHtml(name, data) {
   var open = data.running && data.open_url ? ' <a class="btn" href="' + esc(data.open_url) + '" target="_blank" rel="noopener">Open</a>' : '';
   if (data.state === 'stopping') {
-    return '<span class="spinner" role="status" aria-label="Stopping"></span> ' +
-      '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'force-stop\',this)">Force Stop</button>';
+    return '<span class="spinner" role="status" aria-label="Stopping"></span>' +
+      (data.force_stoppable ? ' <button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'force-stop\',this)">Force Stop</button>' : '');
   }
   if (data.action_kind === 'settings') return '<a class="btn" href="/settings">Settings</a>';
   if (data.action_kind === 'start' || data.action_kind === 'stop') {
@@ -351,12 +349,13 @@ function actionHtml(name, data) {
       '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button>';
   }
   if (data.stop_blocked) {
-    return '<button class="btn" disabled title="Stop the Iris conversation on the phone first">Stop</button> ' +
-      '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'force-stop\',this)">Force Stop</button>' + open;
+    return '<button class="btn" disabled title="Stop the Iris conversation on the phone first">Stop</button>' + open;
+  }
+  if (data.force_stoppable) {
+    return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'force-stop\',this)">Force Stop</button>' + open;
   }
   if (data.stoppable || data.running) {
-    return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button> ' +
-      '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'force-stop\',this)">Force Stop</button>' + open;
+    return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button>' + open;
   }
   if (data.startable !== false) {
     return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'start\',this)">Start</button>' + open;
@@ -396,8 +395,7 @@ function pollStatus(name) {
       var starting = pendingStarts[name] > Date.now() && !data.stoppable && data.startable !== false;
       if (pendingStops[name]) {
         statusCell.innerHTML = '<span class="starting">◐ waiting for graceful shutdown</span>';
-        actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Stopping"></span> ' +
-          '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'force-stop\',this)">Force Stop</button>';
+        actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Stopping"></span>';
       } else if (starting) {
         actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Starting"></span>';
       } else {

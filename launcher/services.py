@@ -1258,12 +1258,13 @@ def _stop_status(spec: ServiceSpec, result: dict) -> dict:
         result.update(
             state="stopping",
             status_label="◐ waiting for graceful shutdown",
-            detail="Unfinished work is being allowed to finish; use Force Stop only if needed",
+            detail="Unfinished work is being allowed to finish",
             startable=False,
             stoppable=True,
         )
     elif error:
         result["detail"] = f"Graceful shutdown failed: {error}"
+    result["force_stoppable"] = bool(error or result.get("stuck") or result.get("orphaned"))
     return result
 
 
