@@ -22,6 +22,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -45,6 +46,9 @@ _PROCESS_SCAN_CACHE: dict[tuple[str, str, str], tuple[float, list[int]]] = {}
 _PORT_PID_CACHE: dict[int, tuple[float, int | None]] = {}
 _MENTRA_READINESS_CACHE: dict[str, tuple[float, dict]] = {}
 _IRIS_RELEASE_CACHE: tuple[float, tuple[str, str, str] | None, str] | None = None
+_STOP_LOCK = threading.Lock()
+_STOP_THREADS: dict[str, threading.Thread] = {}
+_STOP_ERRORS: dict[str, str] = {}
 _CHANNELS_HOME = _resolve_channels_home()
 
 IRIS_PACKAGE = "com.openalma.mentra"
@@ -1114,7 +1118,7 @@ def status(spec: ServiceSpec) -> dict:
         release = _read_iris_release_status(spec, runtime)
         if release:
             result["release_uri"] = release.get("release_uri")
-        return result
+        return _stop_status(spec, result)
     runtime = _runtime_state(spec)
     running = runtime.running
     stuck = runtime.stuck
@@ -1188,7 +1192,7 @@ def status(spec: ServiceSpec) -> dict:
         elif mentra.get("busy") is not False:
             detail = str(mentra.get("detail") or "Iris status unknown") + "; Stop requires confirmation"
 
-    return {
+    return _stop_status(spec, {
         "running": running,
         "stuck": stuck,
         "orphaned": orphaned,
@@ -1202,11 +1206,30 @@ def status(spec: ServiceSpec) -> dict:
         "children": children,
         "pairing_required": pairing_required,
         "open_url": spec.open_url,
-    }
+    })
+
+
+def _stop_status(spec: ServiceSpec, result: dict) -> dict:
+    with _STOP_LOCK:
+        stopping = spec.name in _STOP_THREADS
+        error = _STOP_ERRORS.get(spec.name)
+    if stopping:
+        result.update(
+            state="stopping",
+            status_label="◐ waiting for graceful shutdown",
+            detail="Unfinished work is being allowed to finish",
+            startable=False,
+            stoppable=True,
+        )
+    elif error:
+        result["detail"] = f"Graceful shutdown failed: {error}"
+    return result
 
 
 def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None) -> None:
     _clear_port_cache(spec)
+    with _STOP_LOCK:
+        _STOP_ERRORS.pop(spec.name, None)
     runtime = _runtime_state(spec)
     if runtime.running or runtime.stuck or runtime.orphaned or runtime.port_blocked:
         return
@@ -1262,9 +1285,40 @@ def _request_memu_shutdown() -> bool:
         return False
 
 
+def _finish_graceful_stop(spec: ServiceSpec) -> None:
+    try:
+        while _verified_pid_candidates(spec):
+            time.sleep(0.1)
+        _clear_pid(spec)
+        if spec.adopt_pid_path is not None:
+            _clear_dead_pidfile(spec.adopt_pid_path)
+        _clear_port_cache(spec)
+    except Exception as exc:
+        with _STOP_LOCK:
+            _STOP_ERRORS[spec.name] = str(exc)
+    finally:
+        with _STOP_LOCK:
+            if _STOP_THREADS.get(spec.name) is threading.current_thread():
+                _STOP_THREADS.pop(spec.name, None)
+
+
+def _start_stop_waiter(spec: ServiceSpec) -> None:
+    with _STOP_LOCK:
+        if spec.name in _STOP_THREADS:
+            return
+        thread = threading.Thread(target=_finish_graceful_stop, args=(spec,), daemon=True)
+        _STOP_THREADS[spec.name] = thread
+        thread.start()
+
+
 def stop(spec: ServiceSpec, *, confirm_unknown: bool = False) -> None:
     _clear_port_cache(spec)
-    pids = _verified_pid_candidates(spec)
+    with _STOP_LOCK:
+        if spec.name in _STOP_THREADS:
+            return
+        _STOP_ERRORS.pop(spec.name, None)
+    runtime = _runtime_state(spec)
+    pids = list(runtime.verified_pids)
     if not pids:
         _clear_pid(spec)
         if spec.adopt_pid_path is not None:
@@ -1282,20 +1336,20 @@ def stop(spec: ServiceSpec, *, confirm_unknown: bool = False) -> None:
     else:
         if os.name == "nt":
             raise RuntimeError(f"{spec.label} has no graceful Windows shutdown; use Force Stop")
-        try:
-            os.kill(pids[0], signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-    while _verified_pid_candidates(spec):
-        time.sleep(0.1)
-    _clear_pid(spec)
-    if spec.adopt_pid_path is not None:
-        _clear_dead_pidfile(spec.adopt_pid_path)
-    _clear_port_cache(spec)
+        if not runtime.service_pids:
+            raise RuntimeError(f"{spec.label} supervisor is not running; use Force Stop")
+        for pid in runtime.service_pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+    _start_stop_waiter(spec)
 
 
 def force_stop(spec: ServiceSpec, *, timeout: float = 10.0) -> None:
     _clear_port_cache(spec)
+    with _STOP_LOCK:
+        _STOP_ERRORS.pop(spec.name, None)
     for pid in _verified_pid_candidates(spec):
         _kill_process_tree(pid)
     deadline = time.time() + timeout

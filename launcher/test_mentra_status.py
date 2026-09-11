@@ -578,7 +578,13 @@ class MentraStatusTest(TestCase):
             spec = services.ServiceSpec("memu-server", "memU", [], Path(directory), Path("log"), Path(directory) / "pid")
             with (
                 patch.object(app, "_find_service", return_value=spec),
-                patch.object(services, "_runtime_state", return_value=services.RuntimeState(stuck=True)),
+                patch.object(
+                    services,
+                    "_runtime_state",
+                    return_value=services.RuntimeState(
+                        verified_pids=(123,), service_pids=(123,), stuck=True,
+                    ),
+                ),
                 patch.object(services, "_verified_pid_candidates", side_effect=([123], [123], [123], [])),
                 patch.object(services, "_request_memu_shutdown", return_value=True),
                 patch.object(services, "_kill_process_tree") as force_kill,

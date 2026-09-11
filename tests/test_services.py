@@ -458,7 +458,7 @@ def test_force_kill_reports_permission_denied(monkeypatch):
         services._kill_process_tree(44)
 
 
-def test_stop_signals_only_supervisor_and_waits_for_exit(tmp_path, monkeypatch):
+def test_stop_signals_service_owners_and_waits_in_background(tmp_path, monkeypatch):
     adopt_pid = tmp_path / "server-owned.pid"
     adopt_pid.write_text("11", encoding="utf-8")
     spec = services.ServiceSpec(
@@ -471,20 +471,32 @@ def test_stop_signals_only_supervisor_and_waits_for_exit(tmp_path, monkeypatch):
         adopt_pid_path=adopt_pid,
     )
     spec.pid_path.write_text("10", encoding="utf-8")
-    calls = {"count": 0}
+    stopped = False
 
     def verified(_spec):
-        calls["count"] += 1
-        return [10, 11] if calls["count"] == 1 else []
+        return [] if stopped else [10, 11]
 
     signaled = []
+    monkeypatch.setattr(
+        services,
+        "_runtime_state",
+        lambda _spec: services.RuntimeState(
+            verified_pids=(10, 11), service_pids=(10, 11), running=True,
+        ),
+    )
     monkeypatch.setattr(services, "_verified_pid_candidates", verified)
     monkeypatch.setattr(services.os, "kill", lambda pid, sig: signaled.append((pid, sig)))
     monkeypatch.setattr(services, "_is_alive", lambda _pid: False)
 
     services.stop(spec)
 
-    assert signaled == [(10, services.signal.SIGTERM)]
+    assert signaled == [(10, services.signal.SIGTERM), (11, services.signal.SIGTERM)]
+    with services._STOP_LOCK:
+        thread = services._STOP_THREADS[spec.name]
+    assert thread.is_alive()
+
+    stopped = True
+    thread.join(timeout=1)
     assert not spec.pid_path.exists()
     assert not adopt_pid.exists()
 
@@ -535,7 +547,11 @@ def test_force_stop_kills_only_verified_matching_pids(tmp_path, monkeypatch):
 
 def test_stop_refuses_fake_graceful_shutdown_on_windows(tmp_path, monkeypatch):
     spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
-    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [20])
+    monkeypatch.setattr(
+        services,
+        "_runtime_state",
+        lambda _spec: services.RuntimeState(verified_pids=(20,), service_pids=(20,), running=True),
+    )
     monkeypatch.setattr(services.os, "name", "nt")
 
     with pytest.raises(RuntimeError, match="no graceful Windows shutdown"):
@@ -546,18 +562,21 @@ def test_stop_requests_unlimited_memu_drain_without_signaling(tmp_path, monkeypa
     spec = services.ServiceSpec(
         "memu-server", "memU Server", [], tmp_path, tmp_path / "log", tmp_path / "pid",
     )
-    calls = {"count": 0}
-
-    def verified(_spec):
-        calls["count"] += 1
-        return [20] if calls["count"] == 1 else []
-
-    monkeypatch.setattr(services, "_verified_pid_candidates", verified)
+    monkeypatch.setattr(
+        services,
+        "_runtime_state",
+        lambda _spec: services.RuntimeState(verified_pids=(20,), service_pids=(20,), running=True),
+    )
+    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [])
     monkeypatch.setattr(services, "_read_mentra_status", lambda *_args: {"busy": False})
     monkeypatch.setattr(services, "_request_memu_shutdown", lambda: True)
     monkeypatch.setattr(services, "_kill_process_tree", lambda *_args: pytest.fail("unexpected force"))
 
     services.stop(spec)
+    with services._STOP_LOCK:
+        thread = services._STOP_THREADS.get(spec.name)
+    if thread is not None:
+        thread.join(timeout=1)
 
 
 def test_memu_shutdown_request_has_no_drain_deadline(monkeypatch):

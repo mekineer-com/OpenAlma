@@ -319,6 +319,10 @@ async function svcAction(name, action, btn) {
 
 function actionHtml(name, data) {
   var open = data.running && data.open_url ? ' <a class="btn" href="' + esc(data.open_url) + '" target="_blank" rel="noopener">Open</a>' : '';
+  if (data.state === 'stopping') {
+    return '<span class="spinner" role="status" aria-label="Stopping"></span> ' +
+      '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'force-stop\',this)">Force Stop</button>';
+  }
   if (data.action_kind === 'settings') return '<a class="btn" href="/settings">Settings</a>';
   if (data.action_kind === 'start' || data.action_kind === 'stop') {
     return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'' + data.action_kind + '\',this)">' + esc(data.action_label) + '</button>';
