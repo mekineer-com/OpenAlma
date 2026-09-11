@@ -6,14 +6,18 @@ import pytest
 jinja2 = pytest.importorskip("jinja2")
 
 
-def _render(memorize: dict, not_installed_services: list[dict] | None = None) -> str:
+def _render(
+    memorize: dict,
+    not_installed_services: list[dict] | None = None,
+    services: list[dict] | None = None,
+) -> str:
     template_dir = Path(__file__).resolve().parents[1] / "launcher" / "templates"
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(template_dir),
         autoescape=True,
     )
     return env.get_template("index.html").render(
-        services=[],
+        services=services or [],
         not_installed_services=not_installed_services or [],
         chats=[],
         visible_chats=[],
@@ -80,3 +84,10 @@ def test_not_installed_services_are_collapsed_below_services():
     assert '<details class="not-installed">' in html
     assert "Not installed (1)" in html
     assert "Atomic Mind Map" in html
+
+
+def test_force_stop_only_renders_with_failure_evidence():
+    service = {"name": "memu-server", "label": "memU", "state": "stopping"}
+
+    assert "Force Stop" not in _render({}, services=[{**service, "force_stoppable": False}])
+    assert _render({}, services=[{**service, "force_stoppable": True}]).count("Force Stop") == 1

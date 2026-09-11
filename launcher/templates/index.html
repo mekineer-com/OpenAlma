@@ -128,7 +128,6 @@
           {% if s.state == "stopping" %}
             <span class="spinner" role="status" aria-label="Stopping"></span>
             {% if s.force_stoppable %}<button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>{% endif %}
-            <button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>
           {% elif s.action_kind == "settings" %}
             <a class="btn" href="/settings">Settings</a>
           {% elif s.action_kind == "start" %}
