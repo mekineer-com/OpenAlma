@@ -150,6 +150,29 @@ def test_memorize_pending_sends_user_id(monkeypatch):
     assert seen["timeout"] == 2
 
 
+def test_owner_request_uses_shared_mcp_transport(monkeypatch):
+    seen = {}
+
+    class Response(_FakeResponse):
+        def read(self):
+            return b'{"user_id":"Fictional User","created":true}'
+
+    def fake_urlopen(request, timeout):
+        seen["url"] = request.full_url
+        seen["body"] = json.loads(request.data)
+        seen["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr(services.urllib.request, "urlopen", fake_urlopen)
+
+    assert services.create_owner(" Fictional User ") == "Fictional User"
+    assert seen == {
+        "url": "http://127.0.0.1:8099/owner",
+        "body": {"user_id": "Fictional User"},
+        "timeout": 2,
+    }
+
+
 def test_memorize_status_uses_active_soul_and_user(tmp_path, monkeypatch):
     pytest.importorskip("fastapi")
     import app as launcher_app  # noqa: PLC0415

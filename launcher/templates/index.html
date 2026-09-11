@@ -80,6 +80,19 @@
   </div>
   <p class="muted">Start, stop, and configure the local stack.</p>
 
+  {% if owner_id %}
+  <p>Welcome back, <strong>{{ owner_id }}</strong>.</p>
+  {% elif owner_error %}
+  <div class="banner">Start memU Server to establish your OpenAlma identity.</div>
+  {% else %}
+  <form method="post" action="/owner" class="banner">
+    <p><strong>Welcome to OpenAlma.</strong> What is your name?</p>
+    <input name="user_id" required autocomplete="name">
+    <label><input type="checkbox" name="confirmed" required> I confirm this spelling. It cannot be changed yet.</label>
+    <button class="btn" type="submit">Continue</button>
+  </form>
+  {% endif %}
+
   {% if needs_setup %}
   <div class="banner">
     <strong>Setup needed:</strong> the apps-root directory wasn't auto-discovered.

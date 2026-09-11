@@ -107,6 +107,12 @@ def index(request: Request) -> HTMLResponse:
         ),
         "",
     )
+    owner_id: str | None = None
+    owner_error = ""
+    try:
+        owner_id = services.read_owner()
+    except services.OwnerServiceUnavailable as exc:
+        owner_error = str(exc)
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -126,6 +132,8 @@ def index(request: Request) -> HTMLResponse:
             "apps_root": str(apps_root) if apps_root else "",
             "needs_setup": apps_root is None,
             "setup_issue": setup_issue,
+            "owner_id": owner_id,
+            "owner_error": owner_error,
         },
     )
 
@@ -297,6 +305,19 @@ async def policy_save(request: Request) -> RedirectResponse:
 @app.post("/soul")
 def soul_save(soul_id: str = Form(default=""), use_existing: bool = Form(default=False)) -> RedirectResponse:
     soul.set_active_soul_id(_resolve_soul(soul_id, use_existing))
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/owner")
+def owner_save(user_id: str = Form(), confirmed: bool = Form(default=False)) -> RedirectResponse:
+    if not confirmed:
+        raise HTTPException(status_code=400, detail="Confirm the spelling of your name")
+    try:
+        services.create_owner(user_id)
+    except services.OwnerServiceUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return RedirectResponse("/", status_code=303)
 
 

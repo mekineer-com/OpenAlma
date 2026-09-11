@@ -25,6 +25,8 @@ def _render(memorize: dict, not_installed_services: list[dict] | None = None) ->
         apps_root="",
         needs_setup=False,
         memorize=memorize,
+        owner_id="Fictional User",
+        owner_error="",
     ).split('<script>', 1)[0]
 
 

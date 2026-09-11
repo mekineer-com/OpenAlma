@@ -514,6 +514,7 @@ class MentraStatusTest(TestCase):
                 patch.object(services, "all_services", return_value=[]),
                 patch.object(services, "memorize_pending", return_value={}),
                 patch.object(services, "list_souls", return_value=["Codexia"]),
+                patch.object(services, "read_owner", return_value="Fictional User"),
             ):
                 client = TestClient(app.app)
                 page = client.get("/").text
@@ -548,9 +549,23 @@ class MentraStatusTest(TestCase):
             patch.object(app.settings, "apps_root", return_value=None),
             patch.object(app.settings, "read_paths", return_value={}),
             patch.object(services, "all_services", return_value=[]),
+            patch.object(services, "read_owner", return_value="Fictional User"),
         ):
             client = TestClient(app.app)
-            self.assertEqual(client.get("/").status_code, 200)
+            self.assertIn("Welcome back, <strong>Fictional User</strong>", client.get("/").text)
+            with (
+                patch.object(services, "read_owner", return_value=None),
+                patch.object(services, "create_owner", return_value="Fictional User") as create_owner,
+            ):
+                self.assertIn('action="/owner"', client.get("/").text)
+                self.assertEqual(client.post("/owner", data={"user_id": "Fictional User"}).status_code, 400)
+                response = client.post(
+                    "/owner",
+                    data={"user_id": "Fictional User", "confirmed": "true"},
+                    follow_redirects=False,
+                )
+                self.assertEqual(response.status_code, 303)
+                create_owner.assert_called_once_with("Fictional User")
             self.assertEqual(client.get("/memorize/status").json(), {})
             iris = services.ServiceSpec("iris-server", "Iris", [], Path(directory), Path("log"), Path("pid"))
             with (

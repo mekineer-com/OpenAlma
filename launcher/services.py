@@ -63,6 +63,10 @@ class SoulServiceUnavailable(Exception):
     pass
 
 
+class OwnerServiceUnavailable(Exception):
+    pass
+
+
 class SoulAlreadyExists(ValueError):
     pass
 
@@ -592,21 +596,32 @@ def memorize_pending(soul_id: str, user_id: str = "") -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _soul_request(**selection: object) -> dict:
+def _mcp_request(path: str, payload: dict | None = None) -> dict:
     request = urllib.request.Request(
-        f"http://127.0.0.1:{MEMU_SERVER_PORT}/souls",
-        data=json.dumps(selection).encode() if selection else None,
+        f"http://127.0.0.1:{MEMU_SERVER_PORT}{path}",
+        data=json.dumps(payload).encode() if payload is not None else None,
         headers={"Content-Type": "application/json"},
     )
+    with urllib.request.urlopen(request, timeout=2) as response:
+        data = json.loads(response.read().decode("utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("Server returned an invalid response")
+    return data
+
+
+def _http_error_detail(exc: urllib.error.HTTPError) -> object:
     try:
-        with urllib.request.urlopen(request, timeout=2) as response:
-            data = json.loads(response.read().decode("utf-8"))
+        return json.load(exc).get("detail")
+    except (OSError, ValueError):
+        return None
+
+
+def _soul_request(**selection: object) -> dict:
+    try:
+        return _mcp_request("/souls", selection or None)
     except urllib.error.HTTPError as exc:
         if exc.code in {409, 422}:
-            try:
-                detail = json.load(exc).get("detail")
-            except (OSError, ValueError):
-                detail = None
+            detail = _http_error_detail(exc)
             message = detail.get("message") if isinstance(detail, dict) else detail
             if exc.code == 409 and isinstance(detail, dict) and detail.get("reason") == "existing_exact":
                 raise SoulAlreadyExists(message or "Soul already exists") from exc
@@ -614,9 +629,35 @@ def _soul_request(**selection: object) -> dict:
         raise SoulServiceUnavailable(f"Soul service unavailable (HTTP {exc.code})") from exc
     except (OSError, ValueError) as exc:
         raise SoulServiceUnavailable("Soul service unavailable") from exc
-    if not isinstance(data, dict):
-        raise SoulServiceUnavailable("Soul service returned an invalid response")
-    return data
+
+
+def _owner_request(user_id: str | None = None) -> dict:
+    try:
+        return _mcp_request("/owner", {"user_id": user_id} if user_id is not None else None)
+    except urllib.error.HTTPError as exc:
+        detail = _http_error_detail(exc)
+        if exc.code in {409, 422}:
+            raise ValueError(detail if isinstance(detail, str) else "Invalid owner name") from exc
+        raise OwnerServiceUnavailable(f"Owner service unavailable (HTTP {exc.code})") from exc
+    except (OSError, ValueError) as exc:
+        raise OwnerServiceUnavailable("Owner service unavailable") from exc
+
+
+def read_owner() -> str | None:
+    user_id = _owner_request().get("user_id")
+    if user_id is None:
+        return None
+    if not isinstance(user_id, str) or not user_id.strip():
+        raise OwnerServiceUnavailable("Owner service returned an invalid user")
+    return user_id
+
+
+def create_owner(user_id: str) -> str:
+    data = _owner_request(user_id.strip())
+    returned = data.get("user_id")
+    if not isinstance(returned, str) or not returned.strip():
+        raise OwnerServiceUnavailable("Owner service returned an invalid user")
+    return returned
 
 
 def list_souls() -> list[str]:
