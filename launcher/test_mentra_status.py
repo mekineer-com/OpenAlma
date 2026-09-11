@@ -627,8 +627,9 @@ class MentraStatusTest(TestCase):
                         verified_pids=(123,), service_pids=(123,), stuck=True,
                     ),
                 ),
-                patch.object(services, "_verified_pid_candidates", side_effect=([123], [123], [123], [])),
+                patch.object(services, "_verified_pid_candidates", side_effect=([123], [])),
                 patch.object(services, "_request_memu_shutdown", return_value=True),
+                patch.object(services, "_read_memu_shutdown_progress", return_value=(1, 0)),
                 patch.object(services, "_kill_process_tree") as force_kill,
             ):
                 with patch.object(services, "_read_mentra_status", return_value={"busy": True}):
@@ -639,6 +640,9 @@ class MentraStatusTest(TestCase):
                     force_kill.assert_not_called()
                     self.assertEqual(client.post("/service/memu-server/stop?confirm_unknown=true").status_code, 200)
                     force_kill.assert_not_called()
+                    with services._STOP_LOCK:
+                        stop_thread = services._STOP_THREADS[spec.name]
+                    stop_thread.join(timeout=2)
                 with patch.object(services, "stop", side_effect=ValueError("unexpected failure")):
                     response = TestClient(app.app, raise_server_exceptions=False).post("/service/memu-server/stop")
                     self.assertEqual(response.status_code, 500)

@@ -42,6 +42,7 @@ PROCESS_SCAN_CACHE_SECONDS = 10.0
 PORT_PID_CACHE_SECONDS = 5.0
 UNKNOWN_PORT_PID = -1
 STARTUP_GRACE_SECONDS = PORT_PID_CACHE_SECONDS + 1.0
+SHUTDOWN_STALL_SECONDS = 30.0
 _PROCESS_SCAN_CACHE: dict[tuple[str, str, str], tuple[float, list[int]]] = {}
 _PORT_PID_CACHE: dict[int, tuple[float, int | None]] = {}
 _MENTRA_READINESS_CACHE: dict[str, tuple[float, dict]] = {}
@@ -1262,7 +1263,7 @@ def _stop_status(spec: ServiceSpec, result: dict) -> dict:
         result.update(
             state="stopping",
             status_label="◐ waiting for graceful shutdown",
-            detail="Unfinished work is being allowed to finish",
+            detail=f"Graceful shutdown stalled: {error}" if error else "Unfinished work is being allowed to finish",
             startable=False,
             stoppable=True,
         )
@@ -1333,14 +1334,42 @@ def _request_memu_shutdown() -> bool:
         return False
 
 
+def _read_memu_shutdown_progress() -> tuple[int, int] | None:
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{MEMU_SERVER_PORT}/admin/shutdown/status",
+            timeout=2,
+        ) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        shutdown = data.get("shutdown") if isinstance(data, dict) else None
+        if not isinstance(shutdown, dict):
+            return None
+        return int(shutdown["activeWorkRequests"]), int(shutdown["activeBackgroundTasks"])
+    except (KeyError, OSError, TypeError, ValueError, urllib.error.URLError):
+        return None
+
+
 def _finish_graceful_stop(spec: ServiceSpec) -> None:
     try:
+        last_progress = time.monotonic()
+        previous_progress: tuple[int, int] | None = None
         while _verified_pid_candidates(spec):
-            time.sleep(0.1)
+            if spec.name == "memu-server":
+                progress = _read_memu_shutdown_progress()
+                now = time.monotonic()
+                if progress is not None and progress != previous_progress:
+                    previous_progress = progress
+                    last_progress = now
+                if now - last_progress >= SHUTDOWN_STALL_SECONDS:
+                    with _STOP_LOCK:
+                        _STOP_ERRORS[spec.name] = "no work completed for 30 seconds"
+            time.sleep(1 if spec.name == "memu-server" else 0.1)
         _clear_pid(spec)
         if spec.adopt_pid_path is not None:
             _clear_dead_pidfile(spec.adopt_pid_path)
         _clear_port_cache(spec)
+        with _STOP_LOCK:
+            _STOP_ERRORS.pop(spec.name, None)
     except Exception as exc:
         with _STOP_LOCK:
             _STOP_ERRORS[spec.name] = str(exc)
@@ -1378,19 +1407,24 @@ def stop(spec: ServiceSpec, *, confirm_unknown: bool = False) -> None:
             raise PermissionError("Stop the Iris conversation on the phone first")
         if mentra.get("busy") is not False and not confirm_unknown:
             raise StopConfirmationRequired("Iris activity cannot be checked. Stopping may interrupt a conversation or lose pending work. Stop anyway?")
-    if spec.name == "memu-server":
-        if not _request_memu_shutdown():
-            raise RuntimeError("memU Server did not accept the graceful shutdown request")
-    else:
-        if os.name == "nt":
-            raise RuntimeError(f"{spec.label} has no graceful Windows shutdown; use Force Stop")
-        if not runtime.service_pids:
-            raise RuntimeError(f"{spec.label} supervisor is not running; use Force Stop")
-        for pid in runtime.service_pids:
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
+    try:
+        if spec.name == "memu-server":
+            if not _request_memu_shutdown():
+                raise RuntimeError("memU Server did not accept the graceful shutdown request")
+        else:
+            if os.name == "nt":
+                raise RuntimeError(f"{spec.label} has no graceful Windows shutdown; use Force Stop")
+            if not runtime.service_pids:
+                raise RuntimeError(f"{spec.label} supervisor is not running; use Force Stop")
+            for pid in runtime.service_pids:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+    except Exception as exc:
+        with _STOP_LOCK:
+            _STOP_ERRORS[spec.name] = str(exc)
+        raise
     _start_stop_waiter(spec)
 
 

@@ -614,6 +614,7 @@ def test_stop_refuses_fake_graceful_shutdown_on_windows(tmp_path, monkeypatch):
 
     with pytest.raises(RuntimeError, match="no graceful Windows shutdown"):
         services.stop(spec)
+    assert services._stop_status(spec, {"stuck": False})["force_stoppable"] is True
 
 
 def test_stop_requests_unlimited_memu_drain_without_signaling(tmp_path, monkeypatch):
@@ -656,6 +657,38 @@ def test_memu_shutdown_request_has_no_drain_deadline(monkeypatch):
         },
         "timeout": 2,
     }
+
+
+def test_memu_shutdown_progress_reads_work_counts(monkeypatch):
+    class Response(_FakeResponse):
+        def read(self):
+            return b'{"shutdown":{"activeWorkRequests":2,"activeBackgroundTasks":3}}'
+
+    monkeypatch.setattr(services.urllib.request, "urlopen", lambda *_args, **_kwargs: Response())
+
+    assert services._read_memu_shutdown_progress() == (2, 3)
+
+
+def test_memu_stalled_drain_exposes_force_stop(tmp_path, monkeypatch):
+    spec = services.ServiceSpec(
+        "memu-server", "memU Server", [], tmp_path, tmp_path / "log", tmp_path / "pid",
+    )
+    verified = iter(([20], []))
+    monkeypatch.setattr(services, "SHUTDOWN_STALL_SECONDS", 0)
+    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: next(verified))
+    monkeypatch.setattr(services, "_read_memu_shutdown_progress", lambda: (1, 0))
+    monkeypatch.setattr(services.time, "sleep", lambda _seconds: None)
+    statuses = []
+    monkeypatch.setattr(
+        services,
+        "_clear_pid",
+        lambda _spec: statuses.append(services._stop_status(spec, {"stuck": False})),
+    )
+
+    services._finish_graceful_stop(spec)
+
+    assert statuses[0]["force_stoppable"] is True
+    assert "no work completed" in statuses[0]["detail"]
 
 
 def test_channels_daemon_in_all_services(tmp_path, monkeypatch):

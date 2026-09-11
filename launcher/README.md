@@ -50,6 +50,7 @@ update-desktop-database ~/.local/share/applications/ 2>/dev/null || true
 - Install takes a soul and phone ID in Settings and discovers the shared owner from mcp. Repair preserves the recorded soul and phone but also refreshes the shared owner. Install/Update/Repair generates Iris `.env.local` from these inputs before building; editing that artifact does not affect host readiness. An existing artifact gets a one-time `.orig` backup.
 - Hermes and first Iris install offer one editable soul name with an adjacent native existing-soul dropdown. Selecting a soul grants reuse consent; editing the name clears it, and typing an existing name asks for confirmation. Both use the local MCP `/souls` API with user context. Lookup failure displays unavailable and preserves the current Channels configuration. Install config/target validation precedes soul creation; later build failures can still leave the created soul available for retry.
 - Deploy the status endpoint, launcher, and Iris release wrapper together: status now requires the existing bearer. No phone bundle update is needed for this host-side change.
+- Stop remains graceful and unbounded. If mcp reports no completed work for 30 seconds, the launcher reveals the separately confirmed Force Stop recovery action but never triggers it automatically.
 
 - The launcher tracks PIDs in `~/.cache/openalma-launcher/`. Stopping the
   launcher does not stop the services it started — they keep running.
