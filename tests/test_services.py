@@ -184,14 +184,15 @@ def test_owner_request_uses_shared_mcp_transport(monkeypatch):
     }
 
 
-def test_memorize_status_uses_active_soul_and_user(tmp_path, monkeypatch):
+def test_memorize_status_uses_active_soul_and_shared_owner(tmp_path, monkeypatch):
     pytest.importorskip("fastapi")
     import app as launcher_app  # noqa: PLC0415
 
     seen = {}
     config = tmp_path / "channels.json"
-    config.write_text(json.dumps({"soul_id": "Fictional Soul", "user_id": "Fictional User"}))
+    config.write_text(json.dumps({"soul_id": "Fictional Soul", "user_id": "Wrong User"}))
     monkeypatch.setattr(launcher_app.soul, "CHANNELS_CONFIG_PATH", config)
+    monkeypatch.setattr(launcher_app.services, "read_owner", lambda: "Fictional Owner")
     monkeypatch.setattr(
         launcher_app.services,
         "memorize_pending",
@@ -199,7 +200,7 @@ def test_memorize_status_uses_active_soul_and_user(tmp_path, monkeypatch):
     )
 
     assert launcher_app.memorize_status() == {"threshold": 6000}
-    assert ("Fictional Soul", "Fictional User") in seen
+    assert ("Fictional Soul", "Fictional Owner") in seen
 
 
 def test_service_action_spinner_confirmation_and_error_display():

@@ -88,16 +88,21 @@ def index(request: Request) -> HTMLResponse:
         )
     visible_chats = [c for c in chat_rows if c["policy"] != "excluded"]
     excluded_chats = [c for c in chat_rows if c["policy"] == "excluded"]
+    owner_id: str | None = None
+    owner_error = ""
+    try:
+        owner_id = services.read_owner()
+    except services.OwnerServiceUnavailable as exc:
+        owner_error = str(exc)
     channels_configured = soul.CHANNELS_CONFIG_PATH.exists()
     active_soul = soul.read_active_soul_id() if channels_configured else ""
-    active_user = soul.read_active_user_id() if channels_configured else ""
     soul_ids: list[str] = []
     soul_error = ""
     try:
         soul_ids = services.list_souls()
     except (services.SoulServiceUnavailable, ValueError) as exc:
         soul_error = str(exc)
-    memorize = services.memorize_pending(active_soul, active_user) if active_soul else {}
+    memorize = services.memorize_pending(active_soul, owner_id) if active_soul and owner_id else {}
     setup_issue = next(
         (
             str(row.get("setup_issue") or "")
@@ -106,12 +111,6 @@ def index(request: Request) -> HTMLResponse:
         ),
         "",
     )
-    owner_id: str | None = None
-    owner_error = ""
-    try:
-        owner_id = services.read_owner()
-    except services.OwnerServiceUnavailable as exc:
-        owner_error = str(exc)
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -144,7 +143,8 @@ def memorize_status() -> dict:
     active_soul = soul.read_active_soul_id()
     if not active_soul:
         return {}
-    return services.memorize_pending(active_soul, soul.read_active_user_id())
+    owner_id = services.read_owner()
+    return services.memorize_pending(active_soul, owner_id) if owner_id else {}
 
 
 @app.get("/settings", response_class=HTMLResponse)

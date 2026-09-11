@@ -40,14 +40,6 @@ def test_read_active_soul_id(tmp_path, monkeypatch):
     assert soul.read_active_soul_id() == "Echo"
 
 
-def test_read_active_user_id(tmp_path, monkeypatch):
-    cfg = tmp_path / "config.json"
-    _write_cfg(cfg, {"soul_id": "Echo", "user_id": "Marcos"})
-    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", cfg)
-
-    assert soul.read_active_user_id() == "Marcos"
-
-
 def test_set_active_soul_id_updates_soul_id_and_souls(tmp_path, monkeypatch):
     cfg = tmp_path / "config.json"
     state_db = tmp_path / "state.db"

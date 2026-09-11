@@ -64,11 +64,6 @@ def read_active_soul_id() -> str:
     return str(config.get("soul_id") or "").strip()
 
 
-def read_active_user_id() -> str:
-    config = _load_channels_config()
-    return str(config.get("user_id") or "").strip()
-
-
 def set_active_soul_id(soul_id: str) -> None:
     selected = str(soul_id or "").strip()
     if not selected:
