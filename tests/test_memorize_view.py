@@ -78,6 +78,10 @@ def test_memorize_gauge_empty_state():
     assert '<div class="meter">' not in html
 
 
+def test_memorize_owner_error_is_visible():
+    assert "OpenAlma owner mismatch" in _render({"error": "OpenAlma owner mismatch"})
+
+
 def test_not_installed_services_are_collapsed_below_services():
     html = _render({}, [{"name": "atomic", "label": "Atomic Mind Map"}])
 

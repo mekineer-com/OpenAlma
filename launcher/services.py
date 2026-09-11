@@ -592,6 +592,9 @@ def memorize_pending(soul_id: str, user_id: str = "") -> dict:
     try:
         with urllib.request.urlopen(url, timeout=2) as resp:
             data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = _http_error_detail(exc)
+        return {"error": detail if isinstance(detail, str) else f"memU returned HTTP {exc.code}"}
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}

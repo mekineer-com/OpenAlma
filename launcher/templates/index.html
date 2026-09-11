@@ -173,7 +173,9 @@
 
   <h2>Memorize</h2>
   <div id="memorize-meter">
-    {% if memorize and memorize.threshold %}
+    {% if memorize and memorize.error %}
+      <p class="error" role="alert">{{ memorize.error }}</p>
+    {% elif memorize and memorize.threshold %}
       <p>
         Memorize: {{ "{:,}".format(memorize.summed_unmemorized_tokens) }} / {{ "{:,}".format(memorize.threshold) }} ({{ memorize.pct }}%)
         {% if memorize.summed_unmemorized_tokens >= memorize.threshold %}
@@ -421,6 +423,10 @@ function fmt(n) {
 function renderMemorize(data) {
   var box = document.getElementById('memorize-meter');
   if (!box) return;
+  if (data && data.error) {
+    box.innerHTML = '<p class="error" role="alert">' + esc(data.error) + '</p>';
+    return;
+  }
   if (!data || !data.threshold) {
     box.innerHTML = '<p class="muted">No pending-memorize data — is mcp-memu-server running?</p>';
     return;

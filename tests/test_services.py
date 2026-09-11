@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import time
+from io import BytesIO
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -148,6 +149,16 @@ def test_memorize_pending_sends_user_id(monkeypatch):
     assert out == {"threshold": 5000}
     assert query == {"soul_id": ["Fictional Soul"], "user_id": ["Fictional User"]}
     assert seen["timeout"] == 2
+
+
+def test_memorize_pending_surfaces_owner_conflict(monkeypatch):
+    error = services.urllib.error.HTTPError(
+        "http://localhost", 409, "Conflict", {}, BytesIO(b'{"detail":"OpenAlma owner mismatch"}'),
+    )
+    monkeypatch.setattr(services, "all_services", lambda: [])
+    monkeypatch.setattr(services.urllib.request, "urlopen", lambda *_args, **_kwargs: (_ for _ in ()).throw(error))
+
+    assert services.memorize_pending("Fictional Soul") == {"error": "OpenAlma owner mismatch"}
 
 
 def test_owner_request_uses_shared_mcp_transport(monkeypatch):
