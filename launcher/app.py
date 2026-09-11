@@ -93,11 +93,10 @@ def index(request: Request) -> HTMLResponse:
     active_user = soul.read_active_user_id() if channels_configured else ""
     soul_ids: list[str] = []
     soul_error = ""
-    if channels_configured:
-        try:
-            soul_ids = services.list_souls()
-        except (services.SoulServiceUnavailable, ValueError) as exc:
-            soul_error = str(exc)
+    try:
+        soul_ids = services.list_souls()
+    except (services.SoulServiceUnavailable, ValueError) as exc:
+        soul_error = str(exc)
     memorize = services.memorize_pending(active_soul, active_user) if active_soul else {}
     setup_issue = next(
         (
@@ -309,15 +308,29 @@ def soul_save(soul_id: str = Form(default=""), use_existing: bool = Form(default
 
 
 @app.post("/owner")
-def owner_save(user_id: str = Form(), confirmed: bool = Form(default=False)) -> RedirectResponse:
+def owner_save(
+    user_id: str = Form(),
+    soul_id: str = Form(default=""),
+    confirmed: bool = Form(default=False),
+) -> RedirectResponse:
     if not confirmed:
         raise HTTPException(status_code=400, detail="Confirm the spelling of your name")
     try:
         services.create_owner(user_id)
+        if soul_id.strip():
+            _resolve_soul(soul_id, False)
     except services.OwnerServiceUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/first-soul")
+def first_soul_save(soul_id: str = Form(), confirmed: bool = Form(default=False)) -> RedirectResponse:
+    if not confirmed:
+        raise HTTPException(status_code=400, detail="Confirm the spelling of the Soul's name")
+    _resolve_soul(soul_id, False)
     return RedirectResponse("/", status_code=303)
 
 

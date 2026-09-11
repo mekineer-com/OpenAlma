@@ -550,22 +550,48 @@ class MentraStatusTest(TestCase):
             patch.object(app.settings, "read_paths", return_value={}),
             patch.object(services, "all_services", return_value=[]),
             patch.object(services, "read_owner", return_value="Fictional User"),
+            patch.object(services, "list_souls", return_value=[]),
         ):
             client = TestClient(app.app)
             self.assertIn("Welcome back, <strong>Fictional User</strong>", client.get("/").text)
             with (
                 patch.object(services, "read_owner", return_value=None),
                 patch.object(services, "create_owner", return_value="Fictional User") as create_owner,
+                patch.object(
+                    services,
+                    "resolve_soul",
+                    side_effect=services.SoulServiceUnavailable("Soul service unavailable"),
+                ) as resolve_soul,
             ):
-                self.assertIn('action="/owner"', client.get("/").text)
+                page = client.get("/").text
+                self.assertIn('name="user_id"', page)
+                self.assertIn('name="soul_id"', page)
                 self.assertEqual(client.post("/owner", data={"user_id": "Fictional User"}).status_code, 400)
                 response = client.post(
                     "/owner",
-                    data={"user_id": "Fictional User", "confirmed": "true"},
+                    data={"user_id": "Fictional User", "soul_id": "Codexia", "confirmed": "true"},
+                    follow_redirects=False,
+                )
+                self.assertEqual(response.status_code, 503)
+                create_owner.assert_called_once_with("Fictional User")
+                resolve_soul.assert_called_once_with("Codexia", False)
+            recovery_page = client.get("/").text
+            self.assertIn("Your identity is saved", recovery_page)
+            self.assertIn('action="/first-soul"', recovery_page)
+            with (
+                patch.object(services, "create_owner") as create_owner,
+                patch.object(services, "resolve_soul", return_value="Codexia") as resolve_soul,
+            ):
+                response = client.post(
+                    "/first-soul",
+                    data={"soul_id": "Codexia", "confirmed": "true"},
                     follow_redirects=False,
                 )
                 self.assertEqual(response.status_code, 303)
-                create_owner.assert_called_once_with("Fictional User")
+                create_owner.assert_not_called()
+                resolve_soul.assert_called_once_with("Codexia", False)
+            with patch.object(services, "list_souls", return_value=["Codexia"]):
+                self.assertNotIn("Your identity is saved", client.get("/").text)
             self.assertEqual(client.get("/memorize/status").json(), {})
             iris = services.ServiceSpec("iris-server", "Iris", [], Path(directory), Path("log"), Path("pid"))
             with (
