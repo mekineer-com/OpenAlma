@@ -59,13 +59,17 @@ def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch)
 def test_iris_server_is_managed_by_launcher(tmp_path, monkeypatch):
     root = tmp_path / "apps"
     monkeypatch.setattr(services, "_resolve_apps_root", lambda: root)
+    monkeypatch.setattr(services, "_CHANNELS_HOME", tmp_path / "channels_data")
 
-    spec = next(s for s in services.all_services() if s.name == "iris-server")
+    specs = services.all_services()
+    spec = next(s for s in specs if s.name == "iris-server")
+    channels = next(s for s in specs if s.name == "channels-daemon")
 
     assert spec.cwd == root / "mentra-os" / "miniapps" / "openalma"
     assert spec.cmd[-1] == "scripts/release-private.mjs"
     assert spec.env["PATH"].split(":", 1)[0].endswith("/.bun/bin")
     assert spec.port == 6789
+    assert channels.env["CHANNELS_HOME"] == str(tmp_path / "channels_data")
 
 
 def test_optional_service_install_marker_controls_visibility(tmp_path):
@@ -86,8 +90,9 @@ def test_host_prerequisites_ignore_uninstalled_optional_clients(tmp_path, monkey
     ):
         (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / path).touch()
-    (tmp_path / "openalma/launcher/.venv").mkdir()
-    (tmp_path / "mcp-memu-server/.venv").mkdir()
+    venv_python = tmp_path / "mcp-memu-server/.venv/bin/python3"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.symlink_to(sys.executable)
     monkeypatch.setattr(services.shutil, "which", lambda command: f"/usr/bin/{command}")
 
     result = services.host_prerequisites(tmp_path, tmp_path / "missing-os-release")

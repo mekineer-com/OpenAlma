@@ -65,7 +65,7 @@ class MentraStatusTest(TestCase):
                     "https://example.invalid/iris.zip", services.IRIS_PACKAGE, "0.1.12"
                 )
 
-    def test_host_prerequisites_report_missing_tool(self) -> None:
+    def test_host_prerequisites_report_only_runtime_tools(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
             for path in (
@@ -77,20 +77,27 @@ class MentraStatusTest(TestCase):
                 (root / path).parent.mkdir(parents=True, exist_ok=True)
                 (root / path).touch()
             for path in (
-                "openalma/launcher/.venv",
-                "mcp-memu-server/.venv",
                 "mentra-os/miniapps/openalma/node_modules",
             ):
                 (root / path).mkdir()
+            python = root / "mcp-memu-server/.venv/bin/python3"
+            python.parent.mkdir(parents=True)
+            python.symlink_to(services.sys.executable)
             os_release = root / "os-release"
             os_release.write_text('ID=alpine\nVERSION_ID="3.23.2"\n')
-            with patch.object(services.shutil, "which", side_effect=lambda command: None if command == "nginx" else f"/usr/bin/{command}"):
+            checked = []
+            def which(command):
+                checked.append(command)
+                return None if command == "ip" else str(command)
+            with patch.object(services.shutil, "which", side_effect=which):
                 result = services.host_prerequisites(root, os_release)
 
         self.assertFalse(result["ready"])
         self.assertEqual(result["rows"][0]["state"], "ready")
         self.assertEqual(result["rows"][1]["state"], "ready")
-        self.assertEqual(result["rows"][2]["detail"], "Missing: nginx")
+        self.assertEqual(result["rows"][2]["detail"], "Missing: ip")
+        self.assertTrue({"node", "bun", "ip"}.issubset(checked))
+        self.assertTrue({"npm", "sh", "bash", "wg", "nginx"}.isdisjoint(checked))
 
     def test_memu_server_keeps_only_iris_stop_guard(self) -> None:
         spec = services.ServiceSpec(
@@ -224,11 +231,36 @@ class MentraStatusTest(TestCase):
             self.assertEqual(product["action_label"], "Cancel")
             from app import templates
             template = templates.get_template("settings.html")
-            self.assertIn("irisAction('stop')", template.render(iris_setup=result, iris=product))
+            page = template.render(
+                iris_setup=result,
+                iris=product,
+                host_prerequisites={"rows": [{"label": "Fictional host check", "state": "ready", "detail": "Ready"}]},
+            )
+            self.assertIn("irisAction('stop')", page)
+            self.assertLess(page.index("Fictional host check"), page.index("Iris &amp; Phone Setup"))
         finally:
             config.unlink()
             config.parent.rmdir()
             root.rmdir()
+
+    def test_missing_private_release_tool_blocks_iris_install(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "mcp-memu-server" / "config.json"
+            config.parent.mkdir()
+            config.write_text(json.dumps({"mentra": {
+                "enabled": True,
+                "public_base_url": "http://10.77.0.1",
+                "integration_bearer_token": "fictional",
+                "gemini_api_key": "fictional",
+                "model": "fictional-model",
+                "voice": "fictional-voice",
+            }}))
+            with patch.object(services.shutil, "which", side_effect=lambda command: None if command == "ip" else command):
+                result = services._mentra_readiness_uncached(root)
+
+        self.assertEqual(result["step"], "release")
+        self.assertEqual(result["reason"], "Private release unavailable; install: ip")
 
     def test_readiness_checks_private_ingress_once_per_cache_window(self) -> None:
         root = Path(self._testMethodName)
@@ -254,6 +286,8 @@ class MentraStatusTest(TestCase):
             "MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID=fictional-phone\n"
         )
         memu = services.ServiceSpec("memu-server", "memU", [], root, root / "log", root / "pid")
+        runtime_tools = patch.object(services.shutil, "which", return_value="/fictional/tool")
+        runtime_tools.start()
 
         try:
             with (
@@ -267,7 +301,7 @@ class MentraStatusTest(TestCase):
             self.assertIs(first, second)
             self.assertEqual(http.call_count, 3)
             self.assertEqual(http.call_args_list[2].args, ("http://10.77.0.1/health",))
-            self.assertEqual(len(first["rows"]), 4)
+            self.assertEqual(len(first["rows"]), 5)
 
             for responses, detail in (([0], "Cannot reach"), ([401], "rejected the bearer"), ([502], "HTTP 502"),
                                       ([200, 200], "accepts missing credentials"), ([200, 401, 200], "exposes an unrelated path"),
@@ -292,6 +326,7 @@ class MentraStatusTest(TestCase):
                 ):
                     self.assertTrue(services.mentra_readiness(root)["ready"])
         finally:
+            runtime_tools.stop()
             for path in (env_path, config):
                 path.unlink(missing_ok=True)
             for path in (env_path.parent, env_path.parent.parent, env_path.parent.parent.parent, config.parent, root):

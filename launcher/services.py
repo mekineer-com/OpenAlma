@@ -173,6 +173,7 @@ def all_services() -> list[ServiceSpec]:
             log_path=STATE_DIR / "channels-daemon.log",
             pid_path=STATE_DIR / "channels-daemon.pid",
             env={
+                "CHANNELS_HOME": str(_CHANNELS_HOME),
                 "WHATSAPP_MODE": "bot",
                 "WHATSAPP_ALLOWED_USERS": "*",
             },
@@ -749,14 +750,15 @@ def host_prerequisites(root: Path | None, os_release_path: Path = Path("/etc/os-
         "detail": host_name or f"{system} {platform.release()}".strip() or "Could not identify this host",
     })
 
+    venv_python = Path("mcp-memu-server/.venv") / ("Scripts/python.exe" if os.name == "nt" else "bin/python3")
     required_paths = {
-        "OpenAlma launcher": ("openalma/launcher/run.py", "openalma/launcher/.venv"),
-        "memU Server": ("mcp-memu-server/run.py", "mcp-memu-server/.venv"),
+        "OpenAlma launcher": ("openalma/launcher/run.py",),
+        "memU Server": ("mcp-memu-server/run.py", str(venv_python)),
         "memU engine": ("memu/pyproject.toml",),
     }
     optional_paths = {
         "Iris": ("mentra-os/miniapps/openalma/miniapp.json", "mentra-os/miniapps/openalma/node_modules"),
-        "Atomic": ("atomic/package.json", "atomic/target/server/atomic-server"),
+        "Atomic": ("atomic/package.json", f"atomic/target/server/{'atomic-server.exe' if os.name == 'nt' else 'atomic-server'}"),
         "Hermes Channels": ("hermes-channels/gateway/daemon.py",),
         "SillyTavern": ("sillytavern/SillyTavern/server.js",),
     }
@@ -768,26 +770,37 @@ def host_prerequisites(root: Path | None, os_release_path: Path = Path("/etc/os-
         name for name, paths in required_paths.items() if any(not (root / path).exists() for path in paths)
     ]
     rows.append({
-        "label": "OpenAlma components",
+        "label": "Application setup",
         "state": "failure" if missing_components else "ready",
-        "detail": f"Missing: {', '.join(missing_components)}" if missing_components else "Ready",
+        "detail": f"Needs setup: {', '.join(missing_components)}" if missing_components else "Ready",
     })
 
-    commands = ["python3"]
+    commands: list[tuple[str, str]] = []
+    if root is not None and (root / "mcp-memu-server/run.py").exists():
+        commands.append(("memU Server Python 3.12", str(root / venv_python)))
     if root is not None and (root / optional_paths["Iris"][0]).exists():
-        commands.extend(("node", "npm", "bun", "wg", "ip", "nginx"))
+        commands.extend((command, command) for command in ("node", "bun", "ip"))
     if root is not None and (root / optional_paths["Atomic"][0]).exists():
-        commands.extend(("node", "npm", "sh"))
+        commands.append(("node", "node"))
     if root is not None and (root / optional_paths["Hermes Channels"][0]).exists():
-        commands.append("node")
+        python = shutil.which("python3") or shutil.which("python") or sys.executable
+        commands.extend((("Hermes Channels Python", python), ("node", "node")))
     if root is not None and (root / optional_paths["SillyTavern"][0]).exists():
-        commands.extend(("node", "bash"))
+        commands.append(("node", "node"))
     commands = list(dict.fromkeys(commands))
-    missing_tools = [command for command in commands if shutil.which(command) is None]
-    if sys.version_info[:2] != (3, 12) and "python3" not in missing_tools:
-        missing_tools.insert(0, "Python 3.12")
+    missing_tools = [label for label, command in commands if shutil.which(command) is None]
+    if root is not None and (root / venv_python).exists():
+        try:
+            version = subprocess.run(
+                [str(root / venv_python), "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+                capture_output=True, text=True, timeout=2, check=False,
+            ).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            version = ""
+        if version != "3.12" and "memU Server Python 3.12" not in missing_tools:
+            missing_tools.insert(0, "memU Server Python 3.12")
     rows.append({
-        "label": "Host tools",
+        "label": "Runtime tools",
         "state": "failure" if missing_tools else "ready",
         "detail": f"Missing: {', '.join(missing_tools)}" if missing_tools else "Ready",
     })
@@ -808,6 +821,7 @@ def _mentra_readiness_uncached(root: Path) -> dict:
     rows: list[dict[str, str]] = []
     row_labels = (
         "OpenAlma / mcp configuration",
+        "Iris private release runtime",
         "memU Server",
         "Private phone route",
         "Authenticated narrow ingress",
@@ -832,6 +846,15 @@ def _mentra_readiness_uncached(root: Path) -> dict:
     if missing:
         return fail("config", "OpenAlma / mcp configuration", f"Configure Mentra: {', '.join(missing)}")
     rows.append({"label": "OpenAlma / mcp configuration", "state": "ready", "detail": "Ready"})
+
+    missing_tools = [command for command in ("node", "bun", "ip") if shutil.which(command) is None]
+    if missing_tools:
+        return fail(
+            "release",
+            "Iris private release runtime",
+            f"Private release unavailable; install: {', '.join(missing_tools)}",
+        )
+    rows.append({"label": "Iris private release runtime", "state": "ready", "detail": "Ready"})
 
     memu_spec = next((spec for spec in all_services() if spec.name == "memu-server"), None)
     if memu_spec is None or not _runtime_state(memu_spec).running:
