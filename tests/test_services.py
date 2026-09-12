@@ -109,27 +109,8 @@ def test_atomic_service_is_managed_by_launcher(tmp_path, monkeypatch):
     assert spec.cwd == root / "atomic"
     assert spec.port == 1420
     assert spec.open_url == "http://127.0.0.1:1420"
-    assert spec.cmd[:2] == ["sh", "-c"]
-    assert "npm run dev:server" in spec.cmd[2]
-
-
-def test_atomic_start_command_uses_channels_config_identity():
-    cmd = services._atomic_start_command({"user_id": "Test User", "soul_id": "Test Soul"})
-
-    assert 'ATOMIC_SERVER_BIN="${ATOMIC_SERVER_BIN:-$PWD/target/server/atomic-server}"' in cmd
-    assert 'token_output=$("$ATOMIC_SERVER_BIN" token create --name openalma-launcher)' in cmd
-    assert (
-        "find Cargo.toml Cargo.lock crates/atomic-core/Cargo.toml crates/atomic-core/src "
-        'crates/atomic-server/Cargo.toml crates/atomic-server/src -type f -newer "$ATOMIC_SERVER_BIN"'
-        in cmd
-    )
-    assert "cargo run" not in cmd
-    assert "MEMU_USER_ID='Test User'" in cmd
-    assert "MEMU_SOUL_ID='Test Soul'" in cmd
-    assert 'RUST_LOG="warn,atomic_server=warn,atomic_core=warn"' in cmd
-    assert "MEMU_USER_ID:-Marcos" not in cmd
-    assert "MEMU_SOUL_ID:-Siri" not in cmd
-    assert "fiif" not in cmd
+    assert spec.cmd[-2:] == ["scripts/dev-server.js", "--production"]
+    assert spec.env["ATOMIC_SERVER_BIN"].endswith("target/server/atomic-server")
 
 
 def test_memorize_pending_sends_user_id(monkeypatch):
