@@ -634,19 +634,20 @@ class MentraStatusTest(TestCase):
                     self.assertEqual(client.post("/iris/install", data=target).status_code, 400)
                     resolve.assert_not_called()
                     self.assertEqual(start.call_count, 1)
-                with (
-                    patch.object(
-                        services,
-                        "raise_if_stopping",
-                        side_effect=services.ServiceStoppingError("Iris is still stopping"),
-                    ),
-                    patch.object(services, "iris_install_env") as install_env,
-                    patch.object(services, "resolve_soul") as resolve,
-                ):
-                    self.assertEqual(client.post("/iris/install", data=target).status_code, 409)
-                    install_env.assert_not_called()
-                    resolve.assert_not_called()
-                    self.assertEqual(start.call_count, 1)
+                with services._STOP_LOCK:
+                    services._STOP_THREADS[iris.name] = services.threading.current_thread()
+                try:
+                    with (
+                        patch.object(services, "iris_install_env") as install_env,
+                        patch.object(services, "resolve_soul") as resolve,
+                    ):
+                        self.assertEqual(client.post("/iris/install", data=target).status_code, 409)
+                        install_env.assert_not_called()
+                        resolve.assert_not_called()
+                        self.assertEqual(start.call_count, 1)
+                finally:
+                    with services._STOP_LOCK:
+                        services._STOP_THREADS.pop(iris.name, None)
             spec = services.ServiceSpec("memu-server", "memU", [], Path(directory), Path("log"), Path(directory) / "pid")
             with (
                 patch.object(app, "_find_service", return_value=spec),
