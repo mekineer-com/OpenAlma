@@ -1253,11 +1253,16 @@ def _stop_status(spec: ServiceSpec, result: dict) -> dict:
     return result
 
 
-def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None) -> None:
-    _clear_port_cache(spec)
+def raise_if_stopping(spec: ServiceSpec) -> None:
     with _STOP_LOCK:
         if spec.name in _STOP_THREADS:
             raise ServiceStoppingError(f"{spec.label} is still stopping")
+
+
+def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None) -> None:
+    _clear_port_cache(spec)
+    raise_if_stopping(spec)
+    with _STOP_LOCK:
         _STOP_ERRORS.pop(spec.name, None)
     runtime = _runtime_state(spec)
     if runtime.running or runtime.stuck or runtime.orphaned or runtime.port_blocked:

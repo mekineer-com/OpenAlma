@@ -538,11 +538,17 @@ class MentraStatusTest(TestCase):
                     self.assertEqual(client.post("/soul", data={"soul_id": "Codexia", "use_existing": "true"}, follow_redirects=False).status_code, 303)
                 resolve.assert_called_once_with("Codexia", True)
                 with (
-                    patch.object(services, "status", return_value={"state": "running"}),
+                    patch.object(services, "status", return_value={"state": "healthy", "running": True}),
                     patch.object(services, "resolve_soul") as blocked_resolve,
                 ):
                     response = client.post("/soul", data={"soul_id": "New Soul"})
                     self.assertEqual(response.status_code, 409)
+                    blocked_resolve.assert_not_called()
+                with (
+                    patch.object(services, "status", return_value={"state": "stopping", "running": False}),
+                    patch.object(services, "resolve_soul") as blocked_resolve,
+                ):
+                    self.assertEqual(client.post("/soul", data={"soul_id": "New Soul"}).status_code, 409)
                     blocked_resolve.assert_not_called()
             saved = json.loads(config.read_text())
             self.assertEqual(saved["soul_id"], "Codexia")
@@ -626,6 +632,19 @@ class MentraStatusTest(TestCase):
                     patch.object(services, "resolve_soul") as resolve,
                 ):
                     self.assertEqual(client.post("/iris/install", data=target).status_code, 400)
+                    resolve.assert_not_called()
+                    self.assertEqual(start.call_count, 1)
+                with (
+                    patch.object(
+                        services,
+                        "raise_if_stopping",
+                        side_effect=services.ServiceStoppingError("Iris is still stopping"),
+                    ),
+                    patch.object(services, "iris_install_env") as install_env,
+                    patch.object(services, "resolve_soul") as resolve,
+                ):
+                    self.assertEqual(client.post("/iris/install", data=target).status_code, 409)
+                    install_env.assert_not_called()
                     resolve.assert_not_called()
                     self.assertEqual(start.call_count, 1)
             spec = services.ServiceSpec("memu-server", "memU", [], Path(directory), Path("log"), Path(directory) / "pid")

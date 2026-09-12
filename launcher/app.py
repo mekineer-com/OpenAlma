@@ -225,9 +225,12 @@ def iris_install(
     spec = _find_service("iris-server")
     target = {"soul_id": soul_id, "device_session_id": device_session_id}
     try:
+        services.raise_if_stopping(spec)
         services.iris_install_env(target)
         target["soul_id"] = _resolve_soul(soul_id, use_existing)
         services.start(spec, install_target=target)
+    except services.ServiceStoppingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except services.OwnerServiceUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (OSError, ValueError) as exc:
@@ -308,7 +311,12 @@ async def policy_save(request: Request) -> RedirectResponse:
 @app.post("/soul")
 def soul_save(soul_id: str = Form(default=""), use_existing: bool = Form(default=False)) -> RedirectResponse:
     channels = services.status(_find_service("channels-daemon"))
-    if channels.get("state") in {"running", "starting", "stopping", "stuck", "orphaned"}:
+    if (
+        channels.get("running")
+        or channels.get("stuck")
+        or channels.get("orphaned")
+        or channels.get("state") == "stopping"
+    ):
         raise HTTPException(status_code=409, detail="Stop Hermes Channels before changing its Soul")
     soul.set_active_soul_id(_resolve_soul(soul_id, use_existing))
     return RedirectResponse("/", status_code=303)
