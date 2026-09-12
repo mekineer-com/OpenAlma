@@ -5,6 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "launcher"))
 
 import services  # noqa: E402
 import settings  # noqa: E402
+import app  # noqa: E402
 
 
 def _apps_root(path: Path) -> Path:
@@ -29,3 +30,10 @@ def test_saved_apps_root_waits_for_restart(tmp_path, monkeypatch):
     assert settings.resolve_apps_root(settings.read_paths()["apps_root"]) == pending
     assert services.all_services()[0].cwd == active / "mcp-memu-server"
     assert settings.read_paths()["apps_root"] == str(alias)
+
+
+def test_channels_editor_uses_active_channels_home(tmp_path, monkeypatch):
+    channels_home = tmp_path / "custom-channels"
+    monkeypatch.setattr(settings, "channels_home", lambda: channels_home)
+
+    assert app._editable_configs(tmp_path)["channels-config"] == channels_home / "config.json"
