@@ -46,6 +46,8 @@ update-desktop-database ~/.local/share/applications/ 2>/dev/null || true
 ## Notes
 
 - On first use, confirm your name and, when no Souls exist, the first Soul's name together. If only the owner is saved, the launcher resumes at the unfinished Soul step.
+- Stop Hermes Channels before selecting another Soul; restart it to load the new exact selection.
+- Graceful Stop never force-kills. If a service is still stopping after 30 seconds, the separately confirmed Force Stop action becomes available as manual recovery.
 - Iris connection settings belong to `mcp-memu-server/config.json`: `mentra.public_base_url` and `mentra.integration_bearer_token`. Settings checks host health and private ingress; static earcons are intentionally public. "Host ready" is not proof that the phone is connected.
 - Install takes a soul and phone ID in Settings and discovers the shared owner from mcp. Repair preserves the recorded soul and phone but also refreshes the shared owner. Install/Update/Repair generates Iris `.env.local` from these inputs before building; editing that artifact does not affect host readiness. An existing artifact gets a one-time `.orig` backup.
 - Hermes and first Iris install offer one editable soul name with an adjacent native existing-soul dropdown. Selecting a soul grants reuse consent; editing the name clears it, and typing an existing name asks for confirmation. Both use the local MCP `/souls` API with user context. Lookup failure displays unavailable and preserves the current Channels configuration. Install config/target validation precedes soul creation; later build failures can still leave the created soul available for retry.

@@ -211,6 +211,8 @@ def service_start(service_name: str) -> dict:
     spec = _find_service(service_name)
     try:
         services.start(spec)
+    except services.ServiceStoppingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, **services.status(spec)}
@@ -305,6 +307,9 @@ async def policy_save(request: Request) -> RedirectResponse:
 
 @app.post("/soul")
 def soul_save(soul_id: str = Form(default=""), use_existing: bool = Form(default=False)) -> RedirectResponse:
+    channels = services.status(_find_service("channels-daemon"))
+    if channels.get("state") in {"running", "starting", "stopping", "stuck", "orphaned"}:
+        raise HTTPException(status_code=409, detail="Stop Hermes Channels before changing its Soul")
     soul.set_active_soul_id(_resolve_soul(soul_id, use_existing))
     return RedirectResponse("/", status_code=303)
 

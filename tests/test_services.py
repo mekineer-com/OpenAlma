@@ -517,13 +517,14 @@ def test_stop_signals_service_owners_and_waits_in_background(tmp_path, monkeypat
     assert not adopt_pid.exists()
 
 
-def test_start_waits_for_stop_cleanup(tmp_path, monkeypatch):
+def test_start_reports_active_stop_cleanup(tmp_path, monkeypatch):
     spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
     with services._STOP_LOCK:
         services._STOP_THREADS[spec.name] = services.threading.current_thread()
     monkeypatch.setattr(services, "_runtime_state", lambda _spec: pytest.fail("start raced stop cleanup"))
     try:
-        services.start(spec)
+        with pytest.raises(services.ServiceStoppingError, match="still stopping"):
+            services.start(spec)
     finally:
         with services._STOP_LOCK:
             services._STOP_THREADS.pop(spec.name, None)
@@ -533,22 +534,26 @@ def test_stop_status_shows_force_only_with_failure_evidence(tmp_path):
     spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
     with services._STOP_LOCK:
         services._STOP_THREADS[spec.name] = services.threading.current_thread()
+        services._STOP_STARTED[spec.name] = services.time.monotonic()
     try:
         result = services._stop_status(spec, {"state": "running", "stuck": False})
     finally:
         with services._STOP_LOCK:
             services._STOP_THREADS.pop(spec.name, None)
+            services._STOP_STARTED.pop(spec.name, None)
 
     assert result["state"] == "stopping"
     assert result["force_stoppable"] is False
 
     with services._STOP_LOCK:
         services._STOP_THREADS[spec.name] = services.threading.current_thread()
+        services._STOP_STARTED[spec.name] = services.time.monotonic()
     try:
         stuck = services._stop_status(spec, {"state": "stuck", "stuck": True})
     finally:
         with services._STOP_LOCK:
             services._STOP_THREADS.pop(spec.name, None)
+            services._STOP_STARTED.pop(spec.name, None)
     assert stuck["force_stoppable"] is True
 
 
@@ -596,6 +601,39 @@ def test_force_stop_kills_only_verified_matching_pids(tmp_path, monkeypatch):
     assert killed == [20]
 
 
+def test_failed_force_stop_keeps_retry_evidence(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [20])
+    monkeypatch.setattr(
+        services, "_kill_process_tree",
+        lambda _pid: (_ for _ in ()).throw(PermissionError("Fictional permission failure")),
+    )
+
+    with pytest.raises(PermissionError, match="Fictional permission failure"):
+        services.force_stop(spec)
+
+    status = services._stop_status(spec, {"running": True, "stuck": False})
+    assert status["force_stoppable"] is True
+    assert "Fictional permission failure" in status["detail"]
+    with services._STOP_LOCK:
+        services._STOP_ERRORS.pop(spec.name, None)
+
+
+def test_force_stop_survivors_keep_retry_evidence_but_stale_error_does_not(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [20])
+    monkeypatch.setattr(services, "_kill_process_tree", lambda _pid: None)
+
+    with pytest.raises(RuntimeError, match="Could not force stop PID"):
+        services.force_stop(spec, timeout=0)
+
+    assert services._stop_status(spec, {"running": True, "stuck": False})["force_stoppable"] is True
+    stopped = services._stop_status(spec, {"running": False, "stuck": False, "orphaned": False})
+    assert stopped["force_stoppable"] is False
+    with services._STOP_LOCK:
+        services._STOP_ERRORS.pop(spec.name, None)
+
+
 def test_stop_refuses_fake_graceful_shutdown_on_windows(tmp_path, monkeypatch):
     spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
     monkeypatch.setattr(
@@ -607,7 +645,7 @@ def test_stop_refuses_fake_graceful_shutdown_on_windows(tmp_path, monkeypatch):
 
     with pytest.raises(RuntimeError, match="no graceful Windows shutdown"):
         services.stop(spec)
-    assert services._stop_status(spec, {"stuck": False})["force_stoppable"] is True
+    assert services._stop_status(spec, {"running": True, "stuck": False})["force_stoppable"] is True
 
 
 def test_stop_requests_unlimited_memu_drain_without_signaling(tmp_path, monkeypatch):
@@ -652,36 +690,21 @@ def test_memu_shutdown_request_has_no_drain_deadline(monkeypatch):
     }
 
 
-def test_memu_shutdown_progress_reads_work_counts(monkeypatch):
-    class Response(_FakeResponse):
-        def read(self):
-            return b'{"shutdown":{"activeWorkRequests":2,"activeBackgroundTasks":3}}'
-
-    monkeypatch.setattr(services.urllib.request, "urlopen", lambda *_args, **_kwargs: Response())
-
-    assert services._read_memu_shutdown_progress() == (2, 3)
-
-
-def test_memu_stalled_drain_exposes_force_stop(tmp_path, monkeypatch):
-    spec = services.ServiceSpec(
-        "memu-server", "memU Server", [], tmp_path, tmp_path / "log", tmp_path / "pid",
-    )
-    verified = iter(([20], []))
-    monkeypatch.setattr(services, "SHUTDOWN_STALL_SECONDS", 0)
-    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: next(verified))
-    monkeypatch.setattr(services, "_read_memu_shutdown_progress", lambda: (1, 0))
-    monkeypatch.setattr(services.time, "sleep", lambda _seconds: None)
-    statuses = []
-    monkeypatch.setattr(
-        services,
-        "_clear_pid",
-        lambda _spec: statuses.append(services._stop_status(spec, {"stuck": False})),
-    )
-
-    services._finish_graceful_stop(spec)
-
-    assert statuses[0]["force_stoppable"] is True
-    assert "no work completed" in statuses[0]["detail"]
+def test_elapsed_graceful_stop_exposes_manual_force_for_any_service(tmp_path, monkeypatch):
+    monkeypatch.setattr(services, "FORCE_STOP_RECOVERY_SECONDS", 30)
+    for name in ("memu-server", "channels-daemon", "iris-server"):
+        spec = services.ServiceSpec(name, name, [], tmp_path, tmp_path / "log", tmp_path / "pid")
+        with services._STOP_LOCK:
+            services._STOP_THREADS[name] = services.threading.current_thread()
+            services._STOP_STARTED[name] = services.time.monotonic() - 31
+        try:
+            status = services._stop_status(spec, {"running": True, "stuck": False})
+            assert status["force_stoppable"] is True
+            assert "still running" in status["detail"]
+        finally:
+            with services._STOP_LOCK:
+                services._STOP_THREADS.pop(name, None)
+                services._STOP_STARTED.pop(name, None)
 
 
 def test_channels_daemon_in_all_services(tmp_path, monkeypatch):

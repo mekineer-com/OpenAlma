@@ -512,6 +512,10 @@ class MentraStatusTest(TestCase):
                 patch.object(app.policy, "read_channel_settings", return_value={}),
                 patch.object(app.settings, "apps_root", return_value=None),
                 patch.object(services, "all_services", return_value=[]),
+                patch.object(app, "_find_service", return_value=services.ServiceSpec(
+                    "channels-daemon", "Hermes Channels", [], root, root / "log", root / "pid",
+                )),
+                patch.object(services, "status", return_value={"state": "stopped"}),
                 patch.object(services, "memorize_pending", return_value={}),
                 patch.object(services, "list_souls", return_value=["Codexia"]),
                 patch.object(services, "read_owner", return_value="Fictional User"),
@@ -533,6 +537,13 @@ class MentraStatusTest(TestCase):
                 with patch.object(services, "resolve_soul", return_value="Codexia") as resolve:
                     self.assertEqual(client.post("/soul", data={"soul_id": "Codexia", "use_existing": "true"}, follow_redirects=False).status_code, 303)
                 resolve.assert_called_once_with("Codexia", True)
+                with (
+                    patch.object(services, "status", return_value={"state": "running"}),
+                    patch.object(services, "resolve_soul") as blocked_resolve,
+                ):
+                    response = client.post("/soul", data={"soul_id": "New Soul"})
+                    self.assertEqual(response.status_code, 409)
+                    blocked_resolve.assert_not_called()
             saved = json.loads(config.read_text())
             self.assertEqual(saved["soul_id"], "Codexia")
             self.assertEqual(saved["reply_prefix"], "*Codexia*: ")
@@ -629,7 +640,6 @@ class MentraStatusTest(TestCase):
                 ),
                 patch.object(services, "_verified_pid_candidates", side_effect=([123], [])),
                 patch.object(services, "_request_memu_shutdown", return_value=True),
-                patch.object(services, "_read_memu_shutdown_progress", return_value=(1, 0)),
                 patch.object(services, "_kill_process_tree") as force_kill,
             ):
                 with patch.object(services, "_read_mentra_status", return_value={"busy": True}):

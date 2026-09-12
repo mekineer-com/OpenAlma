@@ -42,7 +42,7 @@ PROCESS_SCAN_CACHE_SECONDS = 10.0
 PORT_PID_CACHE_SECONDS = 5.0
 UNKNOWN_PORT_PID = -1
 STARTUP_GRACE_SECONDS = PORT_PID_CACHE_SECONDS + 1.0
-SHUTDOWN_STALL_SECONDS = 30.0
+FORCE_STOP_RECOVERY_SECONDS = 30.0
 _PROCESS_SCAN_CACHE: dict[tuple[str, str, str], tuple[float, list[int]]] = {}
 _PORT_PID_CACHE: dict[int, tuple[float, int | None]] = {}
 _MENTRA_READINESS_CACHE: dict[str, tuple[float, dict]] = {}
@@ -50,6 +50,7 @@ _IRIS_RELEASE_CACHE: tuple[float, tuple[str, str, str] | None, str] | None = Non
 _STOP_LOCK = threading.Lock()
 _STOP_THREADS: dict[str, threading.Thread] = {}
 _STOP_ERRORS: dict[str, str] = {}
+_STOP_STARTED: dict[str, float] = {}
 _CHANNELS_HOME = _resolve_channels_home()
 
 IRIS_PACKAGE = "com.openalma.mentra"
@@ -57,6 +58,10 @@ IRIS_RELEASES_URL = "https://api.github.com/repos/mekineer-com/iris/releases/lat
 
 
 class StopConfirmationRequired(Exception):
+    pass
+
+
+class ServiceStoppingError(Exception):
     pass
 
 
@@ -1220,17 +1225,31 @@ def _stop_status(spec: ServiceSpec, result: dict) -> dict:
     with _STOP_LOCK:
         stopping = spec.name in _STOP_THREADS
         error = _STOP_ERRORS.get(spec.name)
+        started = _STOP_STARTED.get(spec.name)
+    elapsed = bool(
+        stopping and started is not None
+        and time.monotonic() - started >= FORCE_STOP_RECOVERY_SECONDS
+    )
+    has_target = bool(stopping or result.get("running") or result.get("stuck") or result.get("orphaned"))
     if stopping:
         result.update(
             state="stopping",
             status_label="◐ waiting for graceful shutdown",
-            detail=f"Graceful shutdown stalled: {error}" if error else "Unfinished work is being allowed to finish",
+            detail=(
+                f"Force Stop failed: {error}"
+                if error else
+                "Graceful shutdown is still running; Force Stop is available"
+                if elapsed else
+                "Unfinished work is being allowed to finish"
+            ),
             startable=False,
             stoppable=True,
         )
-    elif error:
+    elif error and has_target:
         result["detail"] = f"Graceful shutdown failed: {error}"
-    result["force_stoppable"] = bool(error or result.get("stuck") or result.get("orphaned"))
+    result["force_stoppable"] = has_target and bool(
+        error or elapsed or result.get("stuck") or result.get("orphaned")
+    )
     return result
 
 
@@ -1238,7 +1257,7 @@ def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None) ->
     _clear_port_cache(spec)
     with _STOP_LOCK:
         if spec.name in _STOP_THREADS:
-            return
+            raise ServiceStoppingError(f"{spec.label} is still stopping")
         _STOP_ERRORS.pop(spec.name, None)
     runtime = _runtime_state(spec)
     if runtime.running or runtime.stuck or runtime.orphaned or runtime.port_blocked:
@@ -1295,36 +1314,10 @@ def _request_memu_shutdown() -> bool:
         return False
 
 
-def _read_memu_shutdown_progress() -> tuple[int, int] | None:
-    try:
-        with urllib.request.urlopen(
-            f"http://127.0.0.1:{MEMU_SERVER_PORT}/admin/shutdown/status",
-            timeout=2,
-        ) as response:
-            data = json.loads(response.read().decode("utf-8"))
-        shutdown = data.get("shutdown") if isinstance(data, dict) else None
-        if not isinstance(shutdown, dict):
-            return None
-        return int(shutdown["activeWorkRequests"]), int(shutdown["activeBackgroundTasks"])
-    except (KeyError, OSError, TypeError, ValueError, urllib.error.URLError):
-        return None
-
-
 def _finish_graceful_stop(spec: ServiceSpec) -> None:
     try:
-        last_progress = time.monotonic()
-        previous_progress: tuple[int, int] | None = None
         while _verified_pid_candidates(spec):
-            if spec.name == "memu-server":
-                progress = _read_memu_shutdown_progress()
-                now = time.monotonic()
-                if progress is not None and progress != previous_progress:
-                    previous_progress = progress
-                    last_progress = now
-                if now - last_progress >= SHUTDOWN_STALL_SECONDS:
-                    with _STOP_LOCK:
-                        _STOP_ERRORS[spec.name] = "no work completed for 30 seconds"
-            time.sleep(1 if spec.name == "memu-server" else 0.1)
+            time.sleep(0.1)
         _clear_pid(spec)
         if spec.adopt_pid_path is not None:
             _clear_dead_pidfile(spec.adopt_pid_path)
@@ -1336,6 +1329,7 @@ def _finish_graceful_stop(spec: ServiceSpec) -> None:
             _STOP_ERRORS[spec.name] = str(exc)
     finally:
         with _STOP_LOCK:
+            _STOP_STARTED.pop(spec.name, None)
             if _STOP_THREADS.get(spec.name) is threading.current_thread():
                 _STOP_THREADS.pop(spec.name, None)
 
@@ -1344,6 +1338,7 @@ def _start_stop_waiter(spec: ServiceSpec) -> None:
     with _STOP_LOCK:
         if spec.name in _STOP_THREADS:
             return
+        _STOP_STARTED[spec.name] = time.monotonic()
         thread = threading.Thread(target=_finish_graceful_stop, args=(spec,), daemon=True)
         _STOP_THREADS[spec.name] = thread
         thread.start()
@@ -1391,16 +1386,21 @@ def stop(spec: ServiceSpec, *, confirm_unknown: bool = False) -> None:
 
 def force_stop(spec: ServiceSpec, *, timeout: float = 10.0) -> None:
     _clear_port_cache(spec)
+    try:
+        for pid in _verified_pid_candidates(spec):
+            _kill_process_tree(pid)
+        deadline = time.monotonic() + timeout
+        while _verified_pid_candidates(spec) and time.monotonic() < deadline:
+            time.sleep(0.1)
+        survivors = _verified_pid_candidates(spec)
+        if survivors:
+            raise RuntimeError(f"Could not force stop PID(s): {', '.join(map(str, survivors))}")
+    except Exception as exc:
+        with _STOP_LOCK:
+            _STOP_ERRORS[spec.name] = str(exc)
+        raise
     with _STOP_LOCK:
         _STOP_ERRORS.pop(spec.name, None)
-    for pid in _verified_pid_candidates(spec):
-        _kill_process_tree(pid)
-    deadline = time.time() + timeout
-    while _verified_pid_candidates(spec) and time.time() < deadline:
-        time.sleep(0.1)
-    survivors = _verified_pid_candidates(spec)
-    if survivors:
-        raise RuntimeError(f"Could not force stop PID(s): {', '.join(map(str, survivors))}")
     _clear_pid(spec)
     if spec.adopt_pid_path is not None:
         _clear_dead_pidfile(spec.adopt_pid_path)
