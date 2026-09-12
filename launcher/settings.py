@@ -1,7 +1,7 @@
 """User-overridable path settings for the launcher.
 
-Stored in ``~/.config/openalma-launcher/paths.json``. The launcher's
-service definitions read ``apps_root()`` here to locate the four
+Stored in ``~/.config/openalma-launcher/paths.json``. The launcher captures
+``apps_root()`` once at startup to locate the four
 sibling repos (mcp-memu-server, hermes-channels, sillytavern, memu) on
 disk. Resolution order:
 
@@ -50,20 +50,39 @@ def _autodiscover_apps_root() -> Path | None:
     return None
 
 
-def apps_root() -> Path | None:
-    raw = read_paths().get("apps_root")
+def resolve_apps_root(raw: object) -> Path | None:
     if isinstance(raw, str) and raw.strip():
         candidate = Path(raw.strip()).expanduser()
         if (candidate / _AUTODISCOVER_MARKER).exists():
-            return candidate
-    return _autodiscover_apps_root()
+            return candidate.resolve()
+    return None
 
 
-def channels_home() -> Path:
+def next_apps_root(raw: object) -> Path | None:
+    return resolve_apps_root(raw) if isinstance(raw, str) and raw.strip() else _autodiscover_apps_root()
+
+
+_ACTIVE_APPS_ROOT = resolve_apps_root(read_paths().get("apps_root")) or _autodiscover_apps_root()
+if _ACTIVE_APPS_ROOT is not None:
+    _ACTIVE_APPS_ROOT = _ACTIVE_APPS_ROOT.resolve()
+
+
+def apps_root() -> Path | None:
+    return _ACTIVE_APPS_ROOT
+
+
+def _active_channels_home() -> Path:
     raw = os.environ.get("CHANNELS_HOME")
     if raw and raw.strip():
-        return Path(raw.strip()).expanduser()
+        return Path(raw.strip()).expanduser().resolve()
     root = apps_root()
     if root is not None:
         return root / "hermes-channels" / "data"
-    return LAUNCHER_DIR.parents[1] / "hermes-channels" / "data"
+    return (LAUNCHER_DIR.parents[1] / "hermes-channels" / "data").resolve()
+
+
+_ACTIVE_CHANNELS_HOME = _active_channels_home()
+
+
+def channels_home() -> Path:
+    return _ACTIVE_CHANNELS_HOME

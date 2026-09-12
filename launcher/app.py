@@ -95,7 +95,13 @@ def index(request: Request) -> HTMLResponse:
     except services.OwnerServiceUnavailable as exc:
         owner_error = str(exc)
     channels_configured = soul.CHANNELS_CONFIG_PATH.exists()
-    active_soul = soul.read_active_soul_id() if channels_configured else ""
+    active_soul = ""
+    channels_error = ""
+    if channels_configured:
+        try:
+            active_soul = soul.read_active_soul_id()
+        except RuntimeError as exc:
+            channels_error = str(exc)
     soul_ids: list[str] = []
     soul_error = ""
     try:
@@ -125,6 +131,7 @@ def index(request: Request) -> HTMLResponse:
             "policies": policy.ALL_POLICIES,
             "active_soul": active_soul,
             "channels_configured": channels_configured,
+            "channels_error": channels_error,
             "soul_ids": soul_ids,
             "soul_error": soul_error,
             "apps_root": str(apps_root) if apps_root else "",
@@ -151,6 +158,7 @@ def memorize_status() -> dict:
 def settings_page(request: Request) -> HTMLResponse:
     apps_root = settings.apps_root()
     stored = settings.read_paths().get("apps_root") or ""
+    candidate = settings.next_apps_root(stored)
     editable = [
         {"key": key, "label": CONFIG_LABELS.get(key, key)}
         for key in _editable_configs(apps_root)
@@ -164,6 +172,8 @@ def settings_page(request: Request) -> HTMLResponse:
         {
             "apps_root_active": str(apps_root) if apps_root else "",
             "apps_root_stored": str(stored),
+            "apps_root_invalid": bool(stored and candidate is None),
+            "apps_root_restart_required": candidate is not None and candidate != apps_root,
             "editable_configs": editable,
             "settings_path": str(settings.SETTINGS_PATH),
             "iris": iris,
@@ -182,7 +192,7 @@ def settings_save(apps_root: str = Form(default="")) -> RedirectResponse:
     else:
         current.pop("apps_root", None)
     settings.write_paths(current)
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("/settings", status_code=303)
 
 
 @app.get("/logs/{service_name}", response_class=HTMLResponse)

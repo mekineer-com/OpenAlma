@@ -46,6 +46,7 @@ update-desktop-database ~/.local/share/applications/ 2>/dev/null || true
 ## Notes
 
 - On first use, confirm your name and, when no Souls exist, the first Soul's name together. If only the owner is saved, the launcher resumes at the unfinished Soul step.
+- Changing Apps root is saved for the next launcher start; active service and Channels paths do not switch mid-run.
 - Stop Hermes Channels before selecting another Soul; restart it to load the new exact selection.
 - Graceful Stop never force-kills. If a service is still stopping after 30 seconds, the separately confirmed Force Stop action becomes available as manual recovery.
 - Iris connection settings belong to `mcp-memu-server/config.json`: `mentra.public_base_url` and `mentra.integration_bearer_token`. Settings checks host health and private ingress; static earcons are intentionally public. "Host ready" is not proof that the phone is connected.

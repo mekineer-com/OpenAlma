@@ -192,7 +192,9 @@
   {% if channels_configured %}
   <h2>Hermes Channels Soul selector</h2>
   <p class="muted">One active Hermes Channels soul at a time. This updates <code>hermes-channels/data/config.json</code>.</p>
-  {% if soul_error %}
+  {% if channels_error %}
+  <p class="failure">Channels configuration needs repair: {{ channels_error }}</p>
+  {% elif soul_error %}
   <p>Active soul: <strong>{{ active_soul }}</strong></p>
   <p class="failure">Souls unavailable: {{ soul_error }}. Start mcp-memu-server before changing the active soul.</p>
   {% else %}

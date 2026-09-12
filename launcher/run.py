@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 
@@ -25,7 +26,11 @@ def _wait_for_port(host: str, port: int, timeout: float = 5.0) -> bool:
     return False
 
 
-def _watch_browser_and_stop(chrome: subprocess.Popen, server: uvicorn.Server) -> None:
+def _watch_browser_and_stop(
+    chrome: subprocess.Popen,
+    server: uvicorn.Server,
+    profile: tempfile.TemporaryDirectory,
+) -> None:
     """Quit the launcher when the chromium app window closes.
 
     With --user-data-dir, the chromium process is the launcher's own;
@@ -33,8 +38,32 @@ def _watch_browser_and_stop(chrome: subprocess.Popen, server: uvicorn.Server) ->
     follows it down so the Python process doesn't outlive the UI and
     silently hold the port for next launch.
     """
-    chrome.wait()
-    server.should_exit = True
+    try:
+        chrome.wait()
+    finally:
+        profile.cleanup()
+        server.should_exit = True
+
+
+def _open_browser_when_ready(host: str, port: int, url: str, server: uvicorn.Server) -> None:
+    if not _wait_for_port(host, port):
+        return
+    chromium = browser.find_chromium()
+    if chromium is None:
+        browser.open_app(url)
+        return
+    profile = tempfile.TemporaryDirectory(prefix="openalma-browser-")
+    try:
+        chrome = browser.open_app(url, chromium, profile.name)
+    except Exception:
+        profile.cleanup()
+        raise
+    if chrome is not None:
+        threading.Thread(
+            target=_watch_browser_and_stop,
+            args=(chrome, server, profile),
+            daemon=True,
+        ).start()
 
 
 def main() -> None:
@@ -50,18 +79,11 @@ def main() -> None:
     server = uvicorn.Server(config)
 
     if not args.no_browser:
-        def _open() -> None:
-            if not _wait_for_port(args.host, args.port):
-                return
-            chrome = browser.open_app(url)
-            if chrome is not None:
-                threading.Thread(
-                    target=_watch_browser_and_stop,
-                    args=(chrome, server),
-                    daemon=True,
-                ).start()
-
-        threading.Thread(target=_open, daemon=True).start()
+        threading.Thread(
+            target=_open_browser_when_ready,
+            args=(args.host, args.port, url, server),
+            daemon=True,
+        ).start()
 
     server.run()
 

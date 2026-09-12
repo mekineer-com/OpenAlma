@@ -1,6 +1,7 @@
 """Browser detection for chromeless app windows."""
 from __future__ import annotations
 
+from pathlib import Path
 import shutil
 import subprocess
 import webbrowser
@@ -39,19 +40,28 @@ def find_chromium() -> str | None:
     return None
 
 
-def open_app(url: str, *, width: int = 600, height: int = 740) -> subprocess.Popen | None:
+def open_app(
+    url: str,
+    chromium: str | None = None,
+    user_data_dir: str | Path | None = None,
+    *,
+    width: int = 600,
+    height: int = 740,
+) -> subprocess.Popen | None:
     """Open the launcher UI in a chromeless app window sized to the column.
 
     Returns the chromium ``Popen`` object so the caller can watch it
     and quit the launcher when the window is closed. Returns ``None``
     for the default-browser fallback (no separate process to watch).
     """
-    chromium = find_chromium()
     if chromium:
+        if user_data_dir is None:
+            raise ValueError("Chromium requires an isolated user-data directory")
         return subprocess.Popen(
             [
                 chromium,
                 f"--app={url}",
+                f"--user-data-dir={user_data_dir}",
                 f"--window-size={int(width)},{int(height)}",
                 f"--force-device-scale-factor={_DEFAULT_DEVICE_SCALE_FACTOR}",
                 "--no-default-browser-check",
