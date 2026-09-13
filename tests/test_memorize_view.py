@@ -31,6 +31,9 @@ def _render(
         memorize=memorize,
         owner_id="Fictional User",
         owner_error="",
+        channels_configured=True,
+        channels_error="",
+        soul_error="",
     ).split('<script>', 1)[0]
 
 
@@ -80,6 +83,15 @@ def test_memorize_gauge_empty_state():
 
 def test_memorize_owner_error_is_visible():
     assert "OpenAlma owner mismatch" in _render({"error": "OpenAlma owner mismatch"})
+
+
+def test_channels_soul_selector_is_one_combobox():
+    html = _render({})
+
+    assert 'id="channels-soul-form"' in html
+    assert 'id="channels-soul-options"' in html
+    assert 'id="soul-existing"' not in html
+    assert "New soul will be created" in html
 
 
 def test_not_installed_services_are_collapsed_below_services():

@@ -557,8 +557,8 @@ class MentraStatusTest(TestCase):
             ):
                 client = TestClient(app.app)
                 page = client.get("/").text
-                self.assertIn('value="Codexia"', page)
-                self.assertNotIn('value="Wrong Source"', page)
+                self.assertIn('const knownSouls = new Set(["Codexia"])', page)
+                self.assertNotIn('const knownSouls = new Set(["Wrong Source"])', page)
                 with patch.object(services, "list_souls", side_effect=services.SoulServiceUnavailable("Soul service unavailable")):
                     unavailable = client.get("/")
                     self.assertEqual(unavailable.status_code, 200)

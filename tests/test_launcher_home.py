@@ -183,3 +183,11 @@ def test_runtime_to_install_poll_reloads_the_page():
 
     assert "data.install_setup && row.dataset.runtime === 'true'" in text
     assert "location.reload();" in text
+
+
+def test_memu_start_poll_refreshes_dependent_sections():
+    template = Path(__file__).resolve().parents[1] / "launcher/templates/index.html"
+    text = template.read_text(encoding="utf-8")
+
+    assert "name === 'memu-server' && state === 'running' && row.dataset.state !== 'running'" in text
+    assert "setInterval(pollMemorize, 10000)" in text
