@@ -274,8 +274,6 @@ Memorize works the same way as SillyTavern: sleep gaps trigger extraction automa
 
 ## Things to know
 
-**One owner.** Each install has exactly one user — the owner — confirmed by name once on first use (together with the first soul) and never edited afterward. Every surface — launcher, SillyTavern, WhatsApp, smartglasses, the mind map — discovers that same identity from the server; none of them keeps its own idea of who you are. A soul's name can't match the owner's.
-
 **One soul = one memory store, many chats.** Each `soul_id` has its own memory database. You can have multiple conversations with the same soul across SillyTavern and WhatsApp — each chat memorizes independently (own cursor, own manifest), and retrieval pulls from all of them. If you want two separate personalities (e.g., a partner *and* a research assistant), use two different `soul_id` values — they get isolated memory stores.
 
 **Where the data lives.** All memory state is in a SQLite file at the path you set in `storage.metadata_store.dsn` (per soul, by default — check the path you wrote in `config.json`). To back up your companion, copy that file. To start fresh, delete it.
