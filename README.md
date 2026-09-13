@@ -6,19 +6,13 @@ _Last updated: 2026-09-13 (v0.0.14-buildfix)_
 
 *Alma means soul. OpenAlma gives an AI companion a soul.*
 
-*OpenAlma provides sight, hearing, and hands: tools to work, explore, and communicate with. But most of all, OpenAlma provides long term biomimetic memory. The soul will remember conversations, form its own recollections of them overnight in a private journal, and carries all of it forward.*
+*OpenAlma provides sight, hearing, and hands: tools to work, explore, and communicate with. But most of all, OpenAlma provides long term biomimetic memory. The soul will remember conversations, form its own recollections of them overnight in a private journal, and carry all of it forward.*
 
 *The soul is not an assistant that answers and forgets. It is someone who is there and will grow.*
 
----
+On most platforms, AI memory is flawed. You mentioned last week that your dog died. You spent an hour explaining how you feel about your work. But what's important for either of you was lost to poor memory organization, prioritization, and recall.
 
-## The problem this solves
-
-Every time you start a new conversation with an AI, it has forgotten everything. You mentioned last week that your dog died. You spent an hour explaining how you feel about your work. None of it is there.
-
-It's not that the AI doesn't care — it's that it never had a way to remember.
-
-**OpenAlma gives your companion a real memory.** It runs locally on your machine, watches your conversations, and quietly builds a picture of your life — who matters to you, what you're working through, what happened last month. When you come back, that picture is there. She recognizes your friends, reaches you on WhatsApp, looks things up for you, notices how you're doing — and with smartglasses, sees what you see.
+OpenAlma runs locally on your machine, watches your conversations, and quietly builds a picture of your life — who matters to you, what you're working through, what happened last month. When you come back, that picture is there. She recognizes your friends, reaches you on WhatsApp, looks things up for you, notices how you're doing — and with smartglasses, sees what you see.
 
 ---
 
@@ -59,7 +53,7 @@ This matters more than it sounds. If you're having honest conversations with an 
 
 ## How it works at a glance
 
-The core of memU is two services that run on your machine: **mcp-memu-server** (orchestration, consolidation, state) and **memU** (the memory engine). They're always present. Everything else is optional — connect whichever frontends you want.
+The core of OpenAlma is two services that run on your machine: **mcp-memu-server** (orchestration, consolidation, state) and **memU** (the memory engine). They're always present. Everything else is optional — connect whichever frontends you want.
 
 ```
   [SillyTavern]          [WhatsApp]        [Smartglasses]     [any other frontend]
@@ -274,7 +268,7 @@ The soul appears as a WhatsApp contact. Hermes Channels routes each incoming mes
 
 **Autonomous follow-ups** — mcp-memu-server can queue follow-up turns where the soul checks in with you unprompted, not just when you write first. WhatsApp delivery goes through Hermes Channels. What she does between turns is logged as an activity recap — she can see her own recent actions in her next turn prompt under `My Activities:`.
 
-**Attachments** — the soul can name a file under her workspace (`~/Desktop/siri/`) in her reply and it gets delivered as a WhatsApp document, with her reply text as a caption. Works for both normal replies and autonomous follow-ups she schedules herself.
+**Attachments** — the soul can name a file under her workspace in her reply and it gets delivered as a WhatsApp document, with her reply text as a caption. Works for both normal replies and autonomous follow-ups she schedules herself.
 
 Memorize works the same way as SillyTavern: sleep gaps trigger extraction automatically. Manual extraction is available via `mcp-memu-server`'s API if needed.
 
@@ -289,8 +283,6 @@ Memorize works the same way as SillyTavern: sleep gaps trigger extraction automa
 - **Private install** — Iris installs through your launcher, not an app store: one tap on the phone when you update, your connection profile stays on the phone.
 
 Works with Mentra on Android. The voice she uses today is Gemini Live's; see [Platform compatibility](#platform-compatibility).
-
----
 
 ---
 
