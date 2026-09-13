@@ -1,6 +1,6 @@
 # Smartglasses
 
-> Still in development. This isn't in a release yet.
+> Shipped in v0.0.14.
 
 ## Talking to her out loud
 

@@ -143,9 +143,17 @@ After setup, open the memU extension panel in SillyTavern and set **Server URL**
 
 5. **[Hermes Channels](https://github.com/mekineer-com/hermes-channels)** — keep the `hermes-channels/` repo as a sibling of the other repos. It owns WhatsApp routing, pairing, and channel policy. The Stack Launcher manages it from the Services panel.
 
+### Optional: Atomic Mind Map
+
+6. **[Atomic](https://github.com/mekineer-com/atomic)** — clone as another sibling. The Stack Launcher starts and stops it from the Services panel. It's how you see inside her memory — see "The Mind Map" under [Day-to-day use](#day-to-day-use).
+
+### Optional: Smartglasses (Iris)
+
+7. **Iris** — nothing to clone for this one. You need Mentra smartglasses and their Android phone app (on iOS, stock Mentra works too), plus Node.js on the host for the installer. Install Iris from the launcher's Iris row; the phone accepts with one tap, and her connection profile stays on the phone. Full walkthrough: [Smartglasses](docs/smartglasses.md).
+
 ### Stack Launcher
 
-6. **Stack Launcher** (this repo) — a local web UI for managing all services:
+8. **Stack Launcher** (this repo) — a local web UI for managing all services:
 
    ```sh
    cd OpenAlma/launcher
@@ -256,7 +264,7 @@ So if you write a character description in ST, that's who she is — her own sel
 4. If she accepts, the new text is written to her `narrative_self` and pushed back into the ST character description (so the panel stays in sync). The previous version is preserved in her memory store with an `evolved_into` link, so she can still recall what she used to think.
 5. If you manually edit the ST character description yourself, **Send** disables with a warning — that's an "override" path; clear the manual edit to re-enable suggestions.
 
-10-minute cooldown between suggestions so the soul isn't churning her identity every minute.
+10-minute cooldown between suggestions so the soul isn't churning her identity every minute. More ways to shape her: [Shaping her](docs/shaping-her.md).
 
 ### WhatsApp
 
@@ -270,7 +278,7 @@ The soul appears as a WhatsApp contact. Hermes Channels routes each incoming mes
 
 **Attachments** — the soul can name a file under her workspace in her reply and it gets delivered as a WhatsApp document, with her reply text as a caption. Works for both normal replies and autonomous follow-ups she schedules herself.
 
-Memorize works the same way as SillyTavern: sleep gaps trigger extraction automatically. Manual extraction is available via `mcp-memu-server`'s API if needed.
+Memorize works the same way as SillyTavern: sleep gaps trigger extraction automatically. Manual extraction is available via `mcp-memu-server`'s API if needed. Full guide: [WhatsApp](docs/whatsapp.md).
 
 ### Smartglasses (Iris)
 
@@ -282,7 +290,31 @@ Memorize works the same way as SillyTavern: sleep gaps trigger extraction automa
 - **Sittings that survive** — a dropped connection doesn't end the visit; the sitting resumes with its journal intact.
 - **Private install** — Iris installs through your launcher, not an app store: one tap on the phone when you update, your connection profile stays on the phone.
 
-Works with Mentra on Android. The voice she uses today is Gemini Live's; see [Platform compatibility](#platform-compatibility).
+Works with Mentra on Android. The voice she uses today is Gemini Live's; see [Platform compatibility](#platform-compatibility). Full guide: [Smartglasses](docs/smartglasses.md).
+
+---
+
+### The Mind Map (Atomic)
+
+**Atomic** is the desktop app where her memory stops being invisible. Every memory she holds appears as a card you can read — what she took from the conversation, when, what it belongs to — and the canvas lays them out as a living graph: connected by the links she drew, grouped and colored by subject, so you can see at a glance which parts of your life she has a dense picture of and which are still thin.
+
+- **Correct her.** Edit any memory's text. The fix is live for her immediately — and it lands in a review queue, so nothing changes behind your back in the other direction either: new memories she forms on her own wait there for your approval without being hidden from her in the meantime.
+- **People and things.** Everyone and everything she's recognized by name has a permanent identity. Correct a name, merge two entries that turn out to be the same person (with a preview of exactly what moves over), or hide one so she stops tracking it — hiding destroys nothing, and deletion is refused while memories still point at it.
+- **Curate dossiers.** Open a category and the memories behind its prose are listed beneath it. Attach or detach them; the prose rewrites itself to match on the next pass.
+- **Every session memorizes.** Close a mind map session and the conversation you just had becomes memory, same as every other surface.
+
+Full guide: [The mind map](docs/mind-map.md).
+
+---
+
+## Guides
+
+Longer reads, in [`docs/`](docs/):
+
+- [How memory works](docs/how-memory-works.md) — what gets remembered, and how
+- [Inner life](docs/inner-life.md) — what happens between your conversations
+- [Shaping her](docs/shaping-her.md) — influencing her memory and identity
+- [Your data](docs/your-data.md) — where everything lives and who controls it
 
 ---
 

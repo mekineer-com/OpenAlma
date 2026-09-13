@@ -13,4 +13,4 @@ Short guides for people who want to understand the system, not just install it.
 
 - [WhatsApp](whatsapp.md) — talking to her where you already talk to everyone else
 - [The mind map](mind-map.md) — seeing and correcting what she knows
-- [Smartglasses](smartglasses.md) — talking to her out loud (in development)
+- [Smartglasses](smartglasses.md) — talking to her out loud
