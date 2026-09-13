@@ -92,6 +92,7 @@ def test_channels_soul_selector_is_one_combobox():
     assert 'id="channels-soul-options"' in html
     assert 'id="soul-existing"' not in html
     assert "New soul will be created" in html
+    assert ".soul-options[hidden] { display: none; }" in html
 
 
 def test_not_installed_services_are_collapsed_below_services():
