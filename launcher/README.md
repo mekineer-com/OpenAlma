@@ -55,6 +55,7 @@ update-desktop-database ~/.local/share/applications/ 2>/dev/null || true
 - Hermes uses one Iris-style editable soul field with attached existing-soul suggestions and an explicit arrow action. First Iris install retains its editable field and existing-soul dropdown. Both use the local MCP `/souls` API with user context. Lookup failure displays unavailable and preserves the current Channels configuration. Install config/target validation precedes soul creation; later build failures can still leave the created soul available for retry.
 - Deploy the status endpoint, launcher, and Iris release wrapper together: status now requires the existing bearer. No phone bundle update is needed for this host-side change.
 - Stop remains graceful and unbounded. If mcp reports no completed work for 30 seconds, the launcher reveals the separately confirmed Force Stop recovery action but never triggers it automatically.
+- Atomic Start prefers the production binary (`atomic/target/server/atomic-server`) and falls back to an existing `atomic/target/debug/atomic-server` for readiness, Settings, and Start.
 
 - The launcher tracks PIDs in `~/.cache/openalma-launcher/`. Stopping the
   launcher does not stop the services it started — they keep running.
