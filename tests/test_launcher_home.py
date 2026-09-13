@@ -160,3 +160,26 @@ def test_install_route_rejects_live_service(tmp_path, monkeypatch):
 
     assert response.status_code == 409
     assert begun == []
+
+
+def test_install_conflict_returns_http_409(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "services_for_root", lambda _root: [spec])
+    monkeypatch.setattr(app.services, "status", lambda _spec: {"running": False})
+    monkeypatch.setattr(
+        app.setup_install, "begin_optional_install",
+        lambda *_args: (_ for _ in ()).throw(app.setup_install.SetupConflict("already running")),
+    )
+
+    response = TestClient(app.app).post("/install/atomic")
+
+    assert response.status_code == 409
+
+
+def test_runtime_to_install_poll_reloads_the_page():
+    template = Path(__file__).resolve().parents[1] / "launcher/templates/index.html"
+    text = template.read_text(encoding="utf-8")
+
+    assert "data.install_setup && row.dataset.runtime === 'true'" in text
+    assert "location.reload();" in text

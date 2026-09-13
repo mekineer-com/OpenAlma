@@ -266,6 +266,8 @@ def install_service(service_name: str) -> RedirectResponse:
             setup_install.begin_core_install(root)
         else:
             setup_install.begin_optional_install(service_name, root)
+    except setup_install.SetupConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except setup_install.SetupError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RedirectResponse("/", status_code=303)

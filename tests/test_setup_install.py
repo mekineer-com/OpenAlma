@@ -59,6 +59,17 @@ def test_manifest_requires_safe_exact_core_entries(tmp_path):
     with pytest.raises(setup_install.SetupError, match="unexpected destinations for atomic"):
         setup_install.validate_manifest(unexpected, tmp_path)
 
+    unexpected = _manifest()
+    unexpected["services"]["iris-server"] = {
+        "repositories": [{
+            "repository": "https://github.com/mekineer-com/iris.git",
+            "ref": "v1.0.0",
+            "destination": "iris-somewhere-else",
+        }],
+    }
+    with pytest.raises(setup_install.SetupError, match="unexpected destinations for iris-server"):
+        setup_install.validate_manifest(unexpected, tmp_path)
+
 
 def test_discover_release_rejects_prerelease(tmp_path, monkeypatch):
     monkeypatch.setattr(
@@ -213,6 +224,7 @@ def test_core_retry_reuses_recorded_release(tmp_path, monkeypatch):
     writes = []
     monkeypatch.setattr(setup_install, "_OPERATION", operation)
     monkeypatch.setattr(setup_install, "install_log_path", lambda _name: tmp_path / "install.log")
+    (tmp_path / ".openalma-release").write_text("v1.0.0\n", encoding="utf-8")
     monkeypatch.setattr(setup_install.settings, "read_paths", lambda: {
         "apps_root": str(tmp_path), "openalma_release_tag": "v1.0.0", "other": True,
     })
@@ -227,9 +239,31 @@ def test_core_retry_reuses_recorded_release(tmp_path, monkeypatch):
     setup_install._install_core(operation)
 
     assert writes == [{
-        "apps_root": str(tmp_path), "openalma_release_tag": "v1.0.0", "other": True,
+        "apps_root": str(tmp_path), "other": True,
     }]
     assert operation.state == "ready"
+
+
+def test_release_selection_belongs_to_each_apps_root(tmp_path):
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+
+    setup_install._write_recorded_release(first, "v1.0.0")
+
+    assert setup_install.read_recorded_release(first) == "v1.0.0"
+    assert setup_install.read_recorded_release(second) is None
+
+
+def test_windows_package_shim_uses_comspec(monkeypatch):
+    monkeypatch.setattr(setup_install.shutil, "which", lambda _tool: r"C:\Tools\bun.cmd")
+    monkeypatch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")
+
+    command = setup_install._package_command("bun", "install", "--frozen-lockfile", windows=True)
+
+    assert command[:4] == [r"C:\Windows\System32\cmd.exe", "/d", "/s", "/c"]
+    assert "bun.cmd" in command[4]
 
 
 def test_optional_status_stops_at_real_manual_prerequisite(tmp_path, monkeypatch):

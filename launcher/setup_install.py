@@ -21,7 +21,7 @@ import settings
 OPENALMA_RELEASE_URL = "https://api.github.com/repos/mekineer-com/OpenAlma/releases/latest"
 OPENALMA_RAW_URL = "https://raw.githubusercontent.com/mekineer-com/OpenAlma/{tag}/release-components.json"
 IRIS_RELEASE_URL = "https://api.github.com/repos/mekineer-com/iris/releases/latest"
-RELEASE_TAG_KEY = "openalma_release_tag"
+RELEASE_TAG_FILE = ".openalma-release"
 KNOWN_SERVICES = {"memu-server", "iris-server", "atomic", "channels-daemon", "sillytavern"}
 OPTIONAL_SERVICES = KNOWN_SERVICES - {"memu-server"}
 CORE_DESTINATIONS = {"mcp-memu-server", "memu"}
@@ -29,6 +29,7 @@ EXPECTED_DESTINATIONS = {
     "memu-server": CORE_DESTINATIONS,
     "channels-daemon": {"hermes-channels"},
     "atomic": {"atomic"},
+    "iris-server": {"mentra-os/miniapps/openalma"},
     "sillytavern": {
         "sillytavern/SillyTavern",
         "sillytavern/SillyTavern/plugins/memu-plugin",
@@ -39,6 +40,10 @@ _HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "OpenAlma-lau
 
 
 class SetupError(ValueError):
+    pass
+
+
+class SetupConflict(SetupError):
     pass
 
 
@@ -152,11 +157,33 @@ def discover_release(root: Path) -> tuple[str, dict[str, list[dict[str, str]]]]:
 
 
 def recorded_manifest(root: Path) -> dict[str, list[dict[str, str]]]:
-    tag = settings.read_paths().get(RELEASE_TAG_KEY)
-    if not isinstance(tag, str) or not tag.strip():
+    tag = read_recorded_release(root)
+    if tag is None:
         raise SetupError("The core installation has no recorded OpenAlma release")
-    encoded_tag = urllib.parse.quote(tag.strip(), safe="")
+    encoded_tag = urllib.parse.quote(tag, safe="")
     return validate_manifest(_request_json(OPENALMA_RAW_URL.format(tag=encoded_tag)), root)
+
+
+def read_recorded_release(root: Path) -> str | None:
+    try:
+        tag = (root / RELEASE_TAG_FILE).read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise SetupError(f"Cannot read {root / RELEASE_TAG_FILE}") from exc
+    if not tag or any(character.isspace() for character in tag):
+        raise SetupError(f"Invalid release tag in {root / RELEASE_TAG_FILE}")
+    return tag
+
+
+def _write_recorded_release(root: Path, tag: str) -> None:
+    target = root / RELEASE_TAG_FILE
+    temporary = root / f"{RELEASE_TAG_FILE}.{os.getpid()}.tmp"
+    try:
+        temporary.write_text(tag + "\n", encoding="utf-8")
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def iris_release_entry(root: Path) -> dict[str, str]:
@@ -338,13 +365,14 @@ def _install_core(operation: InstallOperation) -> None:
         with log_path.open("w", encoding="utf-8") as log:
             _set_operation(operation, step="Finding supported release")
             paths = settings.read_paths()
-            tag = paths.get(RELEASE_TAG_KEY)
-            if isinstance(tag, str) and tag.strip():
-                tag = tag.strip()
+            tag = read_recorded_release(operation.root)
+            if tag is not None:
                 manifest = recorded_manifest(operation.root)
             else:
                 tag, manifest = discover_release(operation.root)
-            paths.update(apps_root=str(operation.root), **{RELEASE_TAG_KEY: tag})
+                _write_recorded_release(operation.root, tag)
+            paths["apps_root"] = str(operation.root)
+            paths.pop("openalma_release_tag", None)
             settings.write_paths(paths)
 
             for entry in manifest["memu-server"]:
@@ -391,12 +419,21 @@ def _prerequisite_issue(root: Path) -> str:
     return ""
 
 
-def _npm_command(*arguments: str) -> list[str]:
-    npm = shutil.which("npm.cmd" if os.name == "nt" else "npm") or "npm"
-    if os.name != "nt":
-        return [npm, *arguments]
-    command = subprocess.list2cmdline([npm, *arguments])
+def _package_command(tool: str, *arguments: str, windows: bool | None = None) -> list[str]:
+    windows = os.name == "nt" if windows is None else windows
+    executable = shutil.which(tool) or tool
+    if not windows or Path(executable).suffix.casefold() not in {".bat", ".cmd"}:
+        return [executable, *arguments]
+    command = subprocess.list2cmdline([executable, *arguments])
     return [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/s", "/c", command]
+
+
+def _npm_command(*arguments: str) -> list[str]:
+    return _package_command("npm", *arguments)
+
+
+def _bun_command(*arguments: str) -> list[str]:
+    return _package_command("bun", *arguments)
 
 
 def _iris_workspace_issue(root: Path) -> str:
@@ -498,7 +535,7 @@ def _optional_commands(service_name: str, root: Path) -> list[tuple[list[str], P
             (_npm_command("ci"), root / "hermes-channels" / "web-source"),
         ]
     if service_name == "iris-server":
-        return [([shutil.which("bun") or "bun", "install", "--frozen-lockfile"], root / "mentra-os/miniapps/openalma")]
+        return [(_bun_command("install", "--frozen-lockfile"), root / "mentra-os/miniapps/openalma")]
     if service_name == "atomic":
         return [(_npm_command("ci"), root / "atomic")]
     if service_name == "sillytavern":
@@ -562,7 +599,7 @@ def _acquire_install_lock() -> Any:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError as exc:
         handle.close()
-        raise SetupError("Another OpenAlma installation is already running") from exc
+        raise SetupConflict("Another OpenAlma installation is already running") from exc
     return handle
 
 
@@ -584,7 +621,7 @@ def _release_install_lock(handle: Any) -> None:
 def _operation_worker(operation: InstallOperation, target: Any) -> None:
     try:
         target(operation)
-    except BaseException as exc:
+    except Exception as exc:
         _set_operation(operation, state="error", step="Installation failed", detail=str(exc))
     finally:
         _release_install_lock(operation.lock_handle)
@@ -595,7 +632,7 @@ def _begin_operation(service_name: str, root: Path, target: Any) -> dict[str, An
     with _LOCK:
         if _OPERATION is not None and _OPERATION.thread is not None and _OPERATION.thread.is_alive():
             if _OPERATION.root != root or _OPERATION.service_name != service_name:
-                raise SetupError(f"{_OPERATION.service_name} installation is already running")
+                raise SetupConflict(f"{_OPERATION.service_name} installation is already running")
             return operation_status(root, service_name)
         lock_handle = _acquire_install_lock()
         operation = InstallOperation(service_name=service_name, root=root, lock_handle=lock_handle)

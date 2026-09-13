@@ -396,6 +396,10 @@ function pollStatus(name) {
     .then(function(r) { return r.json(); })
     .then(function(data) {
       var row = document.querySelector('tr[data-service="' + name + '"]');
+      if (data.install_setup && row.dataset.runtime === 'true') {
+        location.reload();
+        return;
+      }
       var statusCell = row.querySelector('.svc-status');
       var actionsCell = row.querySelector('.svc-actions');
       var state = data.state || (data.running ? 'running' : 'stopped');
