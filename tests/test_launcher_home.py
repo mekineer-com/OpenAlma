@@ -69,3 +69,25 @@ def test_launcher_quit_uses_server_callback(monkeypatch):
 
     assert response.json() == {"ok": True}
     assert called == [True]
+
+
+def test_active_core_enables_optional_install_actions(tmp_path, monkeypatch):
+    specs = services.services_for_root(tmp_path)
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "all_services", lambda: specs)
+    monkeypatch.setattr(app.setup_install, "core_issue", lambda _root: "")
+    monkeypatch.setattr(app.setup_install, "optional_setup_status", lambda name, _root: {
+        "ready": False, "state": "setup", "status_label": "Not installed",
+        "detail": "Missing checkout", "startable": False,
+        "action_kind": "install", "action_label": "Install",
+    })
+    monkeypatch.setattr(app.policy, "list_whatsapp_chats", lambda: [])
+    monkeypatch.setattr(app.policy, "read_channel_settings", lambda: {})
+    monkeypatch.setattr(app.services, "read_owner", lambda: "Fictional Owner")
+    monkeypatch.setattr(app.services, "list_souls", lambda: ["Fictional Soul"])
+
+    response = TestClient(app.app).get("/")
+
+    assert response.status_code == 200
+    for name in ("iris-server", "atomic", "channels-daemon", "sillytavern"):
+        assert f'action="/install/{name}"' in response.text

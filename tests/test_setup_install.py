@@ -48,6 +48,17 @@ def test_manifest_requires_safe_exact_core_entries(tmp_path):
     with pytest.raises(setup_install.SetupError, match="only schema_version and services"):
         setup_install.validate_manifest(invalid, tmp_path)
 
+    unexpected = _manifest()
+    unexpected["services"]["atomic"] = {
+        "repositories": [{
+            "repository": "https://github.com/kenforthewin/atomic.git",
+            "ref": "v1.0.0",
+            "destination": "somewhere-else",
+        }],
+    }
+    with pytest.raises(setup_install.SetupError, match="unexpected destinations for atomic"):
+        setup_install.validate_manifest(unexpected, tmp_path)
+
 
 def test_discover_release_rejects_prerelease(tmp_path, monkeypatch):
     monkeypatch.setattr(
@@ -58,6 +69,20 @@ def test_discover_release_rejects_prerelease(tmp_path, monkeypatch):
 
     with pytest.raises(setup_install.SetupError, match="No supported stable"):
         setup_install.discover_release(tmp_path)
+
+
+def test_iris_uses_its_independent_stable_release(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        setup_install,
+        "_request_json",
+        lambda url: {"tag_name": "v2.0.0", "draft": False, "prerelease": False},
+    )
+
+    assert setup_install.iris_release_entry(tmp_path) == {
+        "repository": "https://github.com/mekineer-com/iris.git",
+        "ref": "v2.0.0",
+        "destination": "mentra-os/miniapps/openalma",
+    }
 
 
 def test_write_config_sets_shared_paths_once(tmp_path):
@@ -176,3 +201,61 @@ def test_begin_core_install_reuses_active_operation(tmp_path, monkeypatch):
 
     assert first["state"] == "running"
     assert second["state"] == "running"
+
+
+def test_optional_status_stops_at_real_manual_prerequisite(tmp_path, monkeypatch):
+    atomic = tmp_path / "atomic"
+    (atomic / "node_modules/vite").mkdir(parents=True)
+    (atomic / "node_modules/vite/package.json").write_text("{}", encoding="utf-8")
+    (atomic / "package.json").write_text(json.dumps({"devDependencies": {"vite": "1"}}), encoding="utf-8")
+    monkeypatch.setattr(setup_install, "_OPERATION", None)
+    monkeypatch.setattr(setup_install.shutil, "which", lambda _tool: "/usr/bin/npm")
+
+    status = setup_install.optional_setup_status("atomic", tmp_path)
+
+    assert status["status_label"] == "Installation incomplete"
+    assert status["action_kind"] is None
+    assert "compile guidance" in status["detail"]
+
+
+def test_partial_node_modules_is_not_setup_complete(tmp_path):
+    package = tmp_path / "client"
+    (package / "node_modules").mkdir(parents=True)
+    (package / "package.json").write_text(json.dumps({"dependencies": {"missing-package": "1"}}), encoding="utf-8")
+
+    assert setup_install._node_dependencies_ready(package) is False
+
+
+def test_optional_status_allows_clone_before_missing_runtime(tmp_path, monkeypatch):
+    monkeypatch.setattr(setup_install, "_OPERATION", None)
+    monkeypatch.setattr(setup_install.shutil, "which", lambda _tool: None)
+
+    status = setup_install.optional_setup_status("channels-daemon", tmp_path)
+
+    assert status["status_label"] == "Not installed"
+    assert status["action_kind"] == "install"
+
+
+def test_optional_worker_uses_shared_clone_and_command_pipeline(tmp_path, monkeypatch):
+    operation = setup_install.InstallOperation(service_name="channels-daemon", root=tmp_path)
+    cloned = []
+    commands = []
+    entry = {
+        "repository": "https://github.com/mekineer-com/hermes-channels.git",
+        "ref": "v1.0.0",
+        "destination": "hermes-channels",
+    }
+    monkeypatch.setattr(setup_install, "_OPERATION", operation)
+    monkeypatch.setattr(setup_install, "install_log_path", lambda _name: tmp_path / "install.log")
+    monkeypatch.setattr(setup_install, "_optional_entries", lambda _name, _root: [entry])
+    monkeypatch.setattr(setup_install, "_clone", lambda item, _root, _log: cloned.append(item))
+    monkeypatch.setattr(setup_install, "_optional_tool_issue", lambda _name: "")
+    monkeypatch.setattr(setup_install, "_optional_commands", lambda _name, _root: [(["npm", "ci"], tmp_path)])
+    monkeypatch.setattr(setup_install, "_run", lambda command, **_kwargs: commands.append(command))
+    monkeypatch.setattr(setup_install, "optional_issue", lambda _name, _root: "")
+
+    setup_install._install_optional(operation)
+
+    assert cloned == [entry]
+    assert commands == [["npm", "ci"]]
+    assert operation.state == "ready"

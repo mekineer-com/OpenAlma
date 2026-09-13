@@ -77,12 +77,22 @@ def index(request: Request) -> HTMLResponse:
         for spec in specs:
             if spec.name == "memu-server" and setup_install.core_issue(setup_root):
                 rows.append({"name": spec.name, "label": spec.label} | setup_install.setup_status(setup_root))
+            elif spec.name != "memu-server" and services.is_installed(spec):
+                setup = setup_install.optional_setup_status(spec.name, setup_root)
+                if setup["ready"]:
+                    row = {"name": spec.name, "label": spec.label} | services.status(spec)
+                    if setup["guidance"]:
+                        row["detail"] = "; ".join(filter(None, (row.get("detail"), setup["guidance"])))
+                    rows.append(row)
+                else:
+                    rows.append({"name": spec.name, "label": spec.label} | setup)
             elif services.is_installed(spec):
                 rows.append({"name": spec.name, "label": spec.label} | services.status(spec))
-        not_installed = [
-            {"name": spec.name, "label": spec.label, "install_enabled": False}
-            for spec in specs if not services.is_installed(spec) and spec.name != "memu-server"
-        ]
+        not_installed = []
+        for spec in specs:
+            if not services.is_installed(spec) and spec.name != "memu-server":
+                setup = setup_install.optional_setup_status(spec.name, setup_root)
+                not_installed.append({"name": spec.name, "label": spec.label} | setup)
     chats = policy.list_whatsapp_chats()
     current = policy.read_channel_settings()
     chat_rows = []
@@ -135,6 +145,7 @@ def index(request: Request) -> HTMLResponse:
         {
             "services": rows,
             "not_installed_services": not_installed,
+            "install_running": any(row.get("install_running") for row in rows + not_installed),
             "memorize": memorize,
             "chats": chat_rows,
             "visible_chats": visible_chats,
@@ -211,34 +222,50 @@ def settings_save(apps_root: str = Form(default="")) -> RedirectResponse:
     return RedirectResponse("/settings", status_code=303)
 
 
-@app.post("/install/memu-server")
-def install_memu_server() -> RedirectResponse:
-    root = settings.setup_apps_root()
+@app.post("/install/{service_name}")
+def install_service(service_name: str) -> RedirectResponse:
+    root = settings.setup_apps_root() if service_name == "memu-server" else settings.apps_root()
     if root is None:
-        raise HTTPException(status_code=400, detail="Choose an existing Apps-root directory")
+        raise HTTPException(status_code=400, detail="Install core and restart OpenAlma first")
     try:
-        setup_install.begin_core_install(root)
+        if service_name == "memu-server":
+            setup_install.begin_core_install(root)
+        else:
+            setup_install.begin_optional_install(service_name, root)
     except setup_install.SetupError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RedirectResponse("/", status_code=303)
 
 
-@app.get("/install/memu-server/status")
-def install_memu_server_status() -> dict:
-    root = settings.setup_apps_root()
-    return setup_install.setup_status(root) if root else {"state": "unavailable"}
+@app.get("/install/{service_name}/status")
+def install_service_status(service_name: str) -> dict:
+    root = settings.setup_apps_root() if service_name == "memu-server" else settings.apps_root()
+    if root is None:
+        return {"state": "unavailable"}
+    if service_name == "memu-server":
+        return setup_install.setup_status(root)
+    try:
+        return setup_install.optional_setup_status(service_name, root)
+    except setup_install.SetupError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown service: {service_name}") from exc
 
 
-@app.get("/install/memu-server/logs", response_class=HTMLResponse)
-def install_memu_server_logs(request: Request) -> HTMLResponse:
+@app.get("/install/{service_name}/logs", response_class=HTMLResponse)
+def install_service_logs(request: Request, service_name: str) -> HTMLResponse:
+    root = settings.setup_apps_root() or settings.apps_root()
+    labels = {
+        spec.name: spec.label for spec in services.services_for_root(root)
+    } if root else {}
+    if service_name not in labels:
+        raise HTTPException(status_code=404, detail=f"Unknown service: {service_name}")
     return templates.TemplateResponse(
         request,
         "logs.html",
         {
-            "service": "memu-server-install",
-            "label": "memU Server installation",
-            "log_path": str(setup_install.INSTALL_LOG),
-            "content": setup_install.install_log(),
+            "service": f"{service_name}-install",
+            "label": f"{labels[service_name]} installation",
+            "log_path": str(setup_install.install_log_path(service_name)),
+            "content": setup_install.install_log(service_name),
             "lines": 0,
         },
     )

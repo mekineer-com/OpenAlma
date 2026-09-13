@@ -161,7 +161,7 @@
           {% endif %}
           {% if s.running and s.open_url %}<a class="btn" href="{{ s.open_url }}" target="_blank" rel="noopener">Open</a>{% endif %}
         </td>
-        <td><a href="{{ '/install/memu-server/logs' if s.name == 'memu-server' and s.state == 'setup' else '/logs/' ~ s.name }}">view</a></td>
+        <td><a href="{{ '/install/' ~ s.name ~ '/logs' if s.state == 'setup' else '/logs/' ~ s.name }}">view</a></td>
       </tr>
       {% endfor %}
     </tbody>
@@ -170,12 +170,19 @@
   <details class="not-installed">
     <summary>Not installed ({{ not_installed_services|length }})</summary>
     <ul>
-      {% for s in not_installed_services %}<li class="muted">{{ s.label }} <button class="btn" disabled>Install</button></li>{% endfor %}
+      {% for s in not_installed_services %}
+      <li class="muted">
+        {{ s.label }}
+        {% if s.action_kind == "install" %}<form class="inline" method="post" action="/install/{{ s.name }}"><button class="btn" type="submit">Install</button></form>{% else %}<button class="btn" disabled>Install</button>{% endif %}
+        {% if s.detail %}<span class="svc-detail">{{ s.detail }}</span>{% endif %}
+        {% if s.state == "setup" %}<a href="/install/{{ s.name }}/logs">log</a>{% endif %}
+      </li>
+      {% endfor %}
     </ul>
   </details>
   {% endif %}
 
-  {% if services|selectattr('install_running')|list %}
+  {% if install_running %}
   <script>setTimeout(function () { location.reload(); }, 1500);</script>
   {% endif %}
 

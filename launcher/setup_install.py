@@ -20,10 +20,21 @@ import settings
 
 OPENALMA_RELEASE_URL = "https://api.github.com/repos/mekineer-com/OpenAlma/releases/latest"
 OPENALMA_RAW_URL = "https://raw.githubusercontent.com/mekineer-com/OpenAlma/{tag}/release-components.json"
+IRIS_RELEASE_URL = "https://api.github.com/repos/mekineer-com/iris/releases/latest"
 RELEASE_TAG_KEY = "openalma_release_tag"
 KNOWN_SERVICES = {"memu-server", "iris-server", "atomic", "channels-daemon", "sillytavern"}
+OPTIONAL_SERVICES = KNOWN_SERVICES - {"memu-server"}
 CORE_DESTINATIONS = {"mcp-memu-server", "memu"}
-INSTALL_LOG = Path.home() / ".cache" / "openalma-launcher" / "memu-server-install.log"
+EXPECTED_DESTINATIONS = {
+    "memu-server": CORE_DESTINATIONS,
+    "channels-daemon": {"hermes-channels"},
+    "atomic": {"atomic"},
+    "sillytavern": {
+        "sillytavern/SillyTavern",
+        "sillytavern/SillyTavern/plugins/memu-plugin",
+        "sillytavern/SillyTavern/data/default-user/extensions/memu-extension",
+    },
+}
 _HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "OpenAlma-launcher"}
 
 
@@ -33,6 +44,7 @@ class SetupError(ValueError):
 
 @dataclass
 class InstallOperation:
+    service_name: str
     root: Path
     state: str = "running"
     step: str = "Starting"
@@ -94,7 +106,7 @@ def validate_manifest(value: object, root: Path) -> dict[str, list[dict[str, str
                 raise SetupError(f"Blank repository entry for {service_name}")
             repository = entry["repository"].strip()
             url = urllib.parse.urlsplit(repository)
-            if url.scheme != "https" or url.hostname != "github.com":
+            if url.scheme != "https" or url.hostname != "github.com" or url.username or url.password:
                 raise SetupError(f"Unsupported repository URL for {service_name}")
             destination_text = entry["destination"].strip()
             relative = Path(destination_text)
@@ -113,9 +125,13 @@ def validate_manifest(value: object, root: Path) -> dict[str, list[dict[str, str
                 "destination": normalized,
             })
 
-    core = parsed.get("memu-server", [])
-    if {entry["destination"] for entry in core} != CORE_DESTINATIONS:
-        raise SetupError("Release manifest must declare mcp-memu-server and memu core repositories")
+    for service_name, expected in EXPECTED_DESTINATIONS.items():
+        if service_name not in parsed:
+            if service_name == "memu-server":
+                raise SetupError("Release manifest must declare mcp-memu-server and memu core repositories")
+            continue
+        if {entry["destination"] for entry in parsed[service_name]} != expected:
+            raise SetupError(f"Release manifest has unexpected destinations for {service_name}")
     return parsed
 
 
@@ -127,6 +143,30 @@ def discover_release(root: Path) -> tuple[str, dict[str, list[dict[str, str]]]]:
     encoded_tag = urllib.parse.quote(tag.strip(), safe="")
     manifest = _request_json(OPENALMA_RAW_URL.format(tag=encoded_tag))
     return tag.strip(), validate_manifest(manifest, root)
+
+
+def recorded_manifest(root: Path) -> dict[str, list[dict[str, str]]]:
+    tag = settings.read_paths().get(RELEASE_TAG_KEY)
+    if not isinstance(tag, str) or not tag.strip():
+        raise SetupError("The core installation has no recorded OpenAlma release")
+    encoded_tag = urllib.parse.quote(tag.strip(), safe="")
+    return validate_manifest(_request_json(OPENALMA_RAW_URL.format(tag=encoded_tag)), root)
+
+
+def iris_release_entry(root: Path) -> dict[str, str]:
+    release = _request_json(IRIS_RELEASE_URL)
+    tag = release.get("tag_name")
+    if release.get("draft") or release.get("prerelease") or not isinstance(tag, str) or not tag.strip():
+        raise SetupError("No supported stable Iris release is available")
+    destination = root / "mentra-os" / "miniapps" / "openalma"
+    openalma = settings.LAUNCHER_DIR.parent.resolve()
+    if _is_within(destination.resolve(), openalma) or _is_within(openalma, destination.resolve()):
+        raise SetupError("Unsafe Iris destination")
+    return {
+        "repository": "https://github.com/mekineer-com/iris.git",
+        "ref": tag.strip(),
+        "destination": "mentra-os/miniapps/openalma",
+    }
 
 
 def _run(command: list[str], *, cwd: Path | None, log: Any) -> None:
@@ -277,47 +317,54 @@ def _write_config(root: Path) -> None:
         temporary.replace(target)
 
 
-def _set_operation(**values: str) -> None:
+def install_log_path(service_name: str) -> Path:
+    return Path.home() / ".cache" / "openalma-launcher" / f"{service_name}-install.log"
+
+
+def _set_operation(operation: InstallOperation, **values: str) -> None:
     with _LOCK:
-        if _OPERATION is not None:
+        if _OPERATION is operation:
             for key, value in values.items():
-                setattr(_OPERATION, key, value)
+                setattr(operation, key, value)
 
 
 def _install_core(operation: InstallOperation) -> None:
-    INSTALL_LOG.parent.mkdir(parents=True, exist_ok=True)
+    log_path = install_log_path(operation.service_name)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with INSTALL_LOG.open("w", encoding="utf-8") as log:
-            _set_operation(step="Finding supported release")
+        with log_path.open("w", encoding="utf-8") as log:
+            _set_operation(operation, step="Finding supported release")
             tag, manifest = discover_release(operation.root)
             paths = settings.read_paths()
             paths.update(apps_root=str(operation.root), **{RELEASE_TAG_KEY: tag})
             settings.write_paths(paths)
 
             for entry in manifest["memu-server"]:
-                _set_operation(step=f"Installing {entry['destination']}")
+                _set_operation(operation, step=f"Installing {entry['destination']}")
                 _clone(entry, operation.root, log)
 
-            _set_operation(step="Creating Python environment")
+            _set_operation(operation, step="Creating Python environment")
             _run(
                 [sys.executable, "-m", "venv", "--system-site-packages", str(operation.root / "mcp-memu-server" / ".venv")],
                 cwd=None, log=log,
             )
             python = str(_venv_python(operation.root))
-            _set_operation(step="Installing core Python packages")
+            _set_operation(operation, step="Installing core Python packages")
             _run([
                 python, "-m", "pip", "install", "-e", str(operation.root / "mcp-memu-server"),
                 "-e", str(operation.root / "memu"),
             ], cwd=None, log=log)
-            _set_operation(step="Installing sqlite-vec")
+            _set_operation(operation, step="Installing sqlite-vec")
             _run([python, "scripts/install-sqlite-vec.py"], cwd=operation.root / "memu", log=log)
             _write_config(operation.root)
             issue = core_issue(operation.root)
             if issue:
                 raise SetupError(issue)
-        _set_operation(state="ready", step="Core prepared", detail="Quit and restart OpenAlma to activate it")
+        _set_operation(
+            operation, state="ready", step="Core prepared", detail="Quit and restart OpenAlma to activate it",
+        )
     except Exception as exc:
-        _set_operation(state="error", step="Installation failed", detail=str(exc))
+        _set_operation(operation, state="error", step="Installation failed", detail=str(exc))
 
 
 def _prerequisite_issue(root: Path) -> str:
@@ -336,31 +383,184 @@ def _prerequisite_issue(root: Path) -> str:
     return ""
 
 
-def begin_core_install(root: Path) -> dict[str, Any]:
+def _npm_command(*arguments: str) -> list[str]:
+    npm = shutil.which("npm.cmd" if os.name == "nt" else "npm") or "npm"
+    if os.name != "nt":
+        return [npm, *arguments]
+    command = subprocess.list2cmdline([npm, *arguments])
+    return [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/s", "/c", command]
+
+
+def _iris_workspace_issue(root: Path) -> str:
+    parent_package = root / "mentra-os" / "package.json"
+    if not parent_package.exists():
+        return ""
+    try:
+        workspaces = json.loads(parent_package.read_text(encoding="utf-8")).get("workspaces", [])
+    except (OSError, ValueError, AttributeError):
+        return "Cannot read the enclosing MentraOS package.json"
+    if "miniapps/*" in workspaces and "!miniapps/openalma" not in workspaces:
+        return "Exclude !miniapps/openalma from the enclosing MentraOS workspaces before installing Iris dependencies"
+    return ""
+
+
+def _node_dependencies_ready(directory: Path, *, include_dev: bool = False) -> bool:
+    try:
+        package = json.loads((directory / "package.json").read_text(encoding="utf-8"))
+        names = list((package.get("dependencies") or {}).keys())
+        if include_dev:
+            names.extend((package.get("devDependencies") or {}).keys())
+    except (OSError, ValueError, AttributeError):
+        return False
+    modules = directory / "node_modules"
+    return modules.is_dir() and all((modules.joinpath(*name.split("/")) / "package.json").exists() for name in names)
+
+
+def optional_issue(service_name: str, root: Path) -> str:
+    repositories = {
+        "channels-daemon": (
+            ("hermes-channels/gateway/daemon.py", "Hermes Channels checkout"),
+        ),
+        "iris-server": (
+            ("mentra-os/miniapps/openalma/miniapp.json", "Iris checkout"),
+        ),
+        "atomic": (
+            ("atomic/package.json", "Atomic checkout"),
+        ),
+        "sillytavern": (
+            ("sillytavern/SillyTavern/server.js", "SillyTavern checkout"),
+            ("sillytavern/SillyTavern/plugins/memu-plugin/dist/index.js", "memU server plugin"),
+            (
+                "sillytavern/SillyTavern/data/default-user/extensions/memu-extension/dist/index.js",
+                "memU SillyTavern extension",
+            ),
+        ),
+    }
+    for relative, label in repositories.get(service_name, ()):
+        if not (root / relative).exists():
+            return f"Missing {label}"
+    dependency_checks = {
+        "channels-daemon": (
+            (root / "hermes-channels/bridge", False, "bridge dependencies"),
+            (root / "hermes-channels/web-source", False, "web-source dependencies"),
+        ),
+        "iris-server": ((root / "mentra-os/miniapps/openalma", False, "Iris dependencies"),),
+        "atomic": ((root / "atomic", True, "Atomic dependencies"),),
+        "sillytavern": (
+            (root / "sillytavern/SillyTavern", False, "SillyTavern dependencies"),
+            (root / "sillytavern/SillyTavern/plugins/memu-plugin", False, "memU plugin dependencies"),
+        ),
+    }
+    for directory, include_dev, label in dependency_checks.get(service_name, ()):
+        if not _node_dependencies_ready(directory, include_dev=include_dev):
+            return f"Missing {label}"
+    if service_name == "iris-server":
+        return _iris_workspace_issue(root)
+    if service_name == "atomic":
+        binary = root / "atomic/target/server" / ("atomic-server.exe" if os.name == "nt" else "atomic-server")
+        if not binary.exists():
+            return "Missing Atomic server binary; follow the compile guidance"
+    return ""
+
+
+def _optional_entries(service_name: str, root: Path) -> list[dict[str, str]]:
+    if service_name == "iris-server":
+        return [iris_release_entry(root)]
+    manifest = recorded_manifest(root)
+    try:
+        return manifest[service_name]
+    except KeyError as exc:
+        raise SetupError(f"The selected OpenAlma release does not include {service_name}") from exc
+
+
+def _optional_commands(service_name: str, root: Path) -> list[tuple[list[str], Path]]:
+    if service_name == "channels-daemon":
+        return [
+            (_npm_command("ci"), root / "hermes-channels" / "bridge"),
+            (_npm_command("ci"), root / "hermes-channels" / "web-source"),
+        ]
+    if service_name == "iris-server":
+        return [([shutil.which("bun") or "bun", "install", "--frozen-lockfile"], root / "mentra-os/miniapps/openalma")]
+    if service_name == "atomic":
+        return [(_npm_command("ci"), root / "atomic")]
+    if service_name == "sillytavern":
+        return [
+            (_npm_command("ci"), root / "sillytavern/SillyTavern"),
+            (_npm_command("ci", "--omit=dev"), root / "sillytavern/SillyTavern/plugins/memu-plugin"),
+        ]
+    raise SetupError(f"Unknown optional service: {service_name}")
+
+
+def _optional_tool_issue(service_name: str) -> str:
+    tool = "bun" if service_name == "iris-server" else "npm"
+    return "" if shutil.which(tool) else f"Install {tool} to finish {service_name} setup"
+
+
+def _install_optional(operation: InstallOperation) -> None:
+    log_path = install_log_path(operation.service_name)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with log_path.open("w", encoding="utf-8") as log:
+            _set_operation(operation, step="Loading release selection")
+            entries = _optional_entries(operation.service_name, operation.root)
+            for entry in entries:
+                _set_operation(operation, step=f"Installing {entry['destination']}")
+                _clone(entry, operation.root, log)
+            issue = _optional_tool_issue(operation.service_name)
+            if issue:
+                raise SetupError(issue)
+            if operation.service_name == "iris-server" and (issue := _iris_workspace_issue(operation.root)):
+                raise SetupError(issue)
+            for command, cwd in _optional_commands(operation.service_name, operation.root):
+                _set_operation(operation, step=f"Installing dependencies in {cwd.name}")
+                _run(command, cwd=cwd, log=log)
+            issue = optional_issue(operation.service_name, operation.root)
+            if issue and operation.service_name != "atomic":
+                raise SetupError(issue)
+        detail = optional_issue(operation.service_name, operation.root)
+        _set_operation(operation, state="ready", step="Installation complete", detail=detail)
+    except Exception as exc:
+        _set_operation(operation, state="error", step="Installation failed", detail=str(exc))
+
+
+def _begin_operation(service_name: str, root: Path, target: Any) -> dict[str, Any]:
     global _OPERATION
-    root = root.resolve()
-    issue = _prerequisite_issue(root)
-    if issue:
-        raise SetupError(issue)
     with _LOCK:
         if _OPERATION is not None and _OPERATION.thread is not None and _OPERATION.thread.is_alive():
-            if _OPERATION.root != root:
-                raise SetupError(f"Core installation is already running in {_OPERATION.root}")
-            return operation_status(root)
-        operation = InstallOperation(root=root)
+            if _OPERATION.root != root or _OPERATION.service_name != service_name:
+                raise SetupError(f"{_OPERATION.service_name} installation is already running")
+            return operation_status(root, service_name)
+        operation = InstallOperation(service_name=service_name, root=root)
         thread = threading.Thread(
-            target=_install_core, args=(operation,), name="openalma-core-install", daemon=False,
+            target=target, args=(operation,), name=f"openalma-{service_name}-install", daemon=False,
         )
         operation.thread = thread
         _OPERATION = operation
         thread.start()
-    return operation_status(root)
+    return operation_status(root, service_name)
 
 
-def operation_status(root: Path) -> dict[str, Any]:
+def begin_core_install(root: Path) -> dict[str, Any]:
+    root = root.resolve()
+    issue = _prerequisite_issue(root)
+    if issue:
+        raise SetupError(issue)
+    return _begin_operation("memu-server", root, _install_core)
+
+
+def begin_optional_install(service_name: str, root: Path) -> dict[str, Any]:
+    if service_name not in OPTIONAL_SERVICES:
+        raise SetupError(f"Unknown optional service: {service_name}")
+    root = root.resolve()
+    if issue := core_issue(root):
+        raise SetupError(f"Install core first: {issue}")
+    return _begin_operation(service_name, root, _install_optional)
+
+
+def operation_status(root: Path, service_name: str = "memu-server") -> dict[str, Any]:
     with _LOCK:
         operation = _OPERATION
-        if operation is None or operation.root != root.resolve():
+        if operation is None or operation.root != root.resolve() or operation.service_name != service_name:
             return {"state": "idle", "step": "", "detail": ""}
         return {"state": operation.state, "step": operation.step, "detail": operation.detail}
 
@@ -389,8 +589,62 @@ def setup_status(root: Path) -> dict[str, Any]:
     }
 
 
-def install_log() -> str:
+def _optional_repositories_complete(service_name: str, root: Path) -> bool:
+    markers = {
+        "channels-daemon": ("hermes-channels/gateway/daemon.py",),
+        "iris-server": ("mentra-os/miniapps/openalma/miniapp.json",),
+        "atomic": ("atomic/package.json",),
+        "sillytavern": (
+            "sillytavern/SillyTavern/server.js",
+            "sillytavern/SillyTavern/plugins/memu-plugin/dist/index.js",
+            "sillytavern/SillyTavern/data/default-user/extensions/memu-extension/dist/index.js",
+        ),
+    }
+    return all((root / path).exists() for path in markers[service_name])
+
+
+def optional_setup_status(service_name: str, root: Path) -> dict[str, Any]:
+    if service_name not in OPTIONAL_SERVICES:
+        raise SetupError(f"Unknown optional service: {service_name}")
+    operation = operation_status(root, service_name)
+    if operation["state"] == "running":
+        return {
+            "ready": False, "state": "setup", "status_label": "Installing",
+            "detail": operation["step"], "startable": False, "install_running": True,
+        }
+    issue = optional_issue(service_name, root)
+    if not issue:
+        guidance = "Enable server plugins in SillyTavern configuration" if service_name == "sillytavern" else ""
+        return {"ready": True, "guidance": guidance}
+
+    present = _optional_repositories_complete(service_name, root)
+    manual = _optional_tool_issue(service_name) or (
+        _iris_workspace_issue(root) if service_name == "iris-server" else ""
+    )
+    if service_name == "atomic" and present and _node_dependencies_ready(root / "atomic", include_dev=True):
+        manual = issue
+    detail = operation["detail"] if operation["state"] == "error" else (manual or issue)
+    action = not present or not manual
+    primary = {
+        "channels-daemon": "hermes-channels/gateway/daemon.py",
+        "iris-server": "mentra-os/miniapps/openalma/miniapp.json",
+        "atomic": "atomic/package.json",
+        "sillytavern": "sillytavern/SillyTavern/server.js",
+    }[service_name]
+    checkout_present = (root / primary).exists()
+    return {
+        "ready": False,
+        "state": "setup",
+        "status_label": "Installation incomplete" if checkout_present else "Not installed",
+        "detail": detail,
+        "startable": False,
+        "action_kind": "install" if action else None,
+        "action_label": "Continue Install" if checkout_present else "Install",
+    }
+
+
+def install_log(service_name: str) -> str:
     try:
-        return INSTALL_LOG.read_text(encoding="utf-8", errors="replace")
+        return install_log_path(service_name).read_text(encoding="utf-8", errors="replace")
     except OSError:
         return ""
