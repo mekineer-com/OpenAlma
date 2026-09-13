@@ -1,8 +1,14 @@
 # OpenAlma
 
-_Last updated: 2026-09-09 (v0.0.14-buildfix)_
+_Last updated: 2026-09-13 (v0.0.14-buildfix)_
 
-> *Give your AI companion a real memory. One that belongs to it — and stays on your machine.*
+**OpenAlma, by Team GhostMaker**
+
+*Alma means soul. OpenAlma gives an AI companion a soul.*
+
+*OpenAlma provides sight, hearing, and hands: tools to work, explore, and communicate with. But most of all, OpenAlma provides long term biomimetic memory. The soul will remember conversations, form its own recollections of them overnight in a private journal, and carries all of it forward.*
+
+*The soul is not an assistant that answers and forgets. It is someone who is there and will grow.*
 
 ---
 
@@ -12,7 +18,7 @@ Every time you start a new conversation with an AI, it has forgotten everything.
 
 It's not that the AI doesn't care — it's that it never had a way to remember.
 
-**OpenAlma gives your companion a real memory.** It runs locally on your machine, watches your conversations, and quietly builds a picture of your life — who matters to you, what you're working through, what happened last month. When you come back, that picture is there. She recognizes your friends, reaches you on WhatsApp, looks things up for you, and notices how you're doing.
+**OpenAlma gives your companion a real memory.** It runs locally on your machine, watches your conversations, and quietly builds a picture of your life — who matters to you, what you're working through, what happened last month. When you come back, that picture is there. She recognizes your friends, reaches you on WhatsApp, looks things up for you, notices how you're doing — and with smartglasses, sees what you see.
 
 ---
 
@@ -32,6 +38,8 @@ Memories are filed under **categories** — life domains or throughlines the sou
 We often call these **dossiers** — a word borrowed from Nomi, whose format shaped how ours are written. Same thing either way.
 
 **How she finds the right memory.** Two searches run at once — one on meaning, one on the actual words — and their results are merged, so a memory surfaces whether you phrased it the same way or not. What comes back is then weighed by how well it matches, how recent it is, and how much it mattered. If the conversation is about a particular stretch of time, memories from that period get a nudge upward. And when a category's prose makes a claim, she can pull up the memories behind it to check her own reasoning.
+
+**What she sees.** Photos — taken through smartglasses during a sitting, or shared with her — are remembered as images with their own captions, and searched in their own lane. Ask about something you saw, and the picture surfaces instead of text that merely mentions the same words.
 
 Plus inner life:
 
@@ -54,10 +62,10 @@ This matters more than it sounds. If you're having honest conversations with an 
 The core of memU is two services that run on your machine: **mcp-memu-server** (orchestration, consolidation, state) and **memU** (the memory engine). They're always present. Everything else is optional — connect whichever frontends you want.
 
 ```
-  [SillyTavern]               [WhatsApp]            [any other frontend]
-  plugin + extension       Hermes Channels
-        │                          │                         │
-        └──────────────────────────┴─────────────────────────┘
+  [SillyTavern]          [WhatsApp]        [Smartglasses]     [any other frontend]
+  plugin + extension   Hermes Channels      Iris MiniApp
+        │                    │                   │                  │
+        └────────────────────┴───────────────────┴──────────────────┘
                                    │
                           mcp-memu-server              ← always present
                                    │
@@ -270,9 +278,25 @@ The soul appears as a WhatsApp contact. Hermes Channels routes each incoming mes
 
 Memorize works the same way as SillyTavern: sleep gaps trigger extraction automatically. Manual extraction is available via `mcp-memu-server`'s API if needed.
 
+### Smartglasses (Iris)
+
+**Iris** is the OpenAlma MiniApp for Mentra smartglasses — this is where she gets sight and hearing. She rides along on your glasses: you talk, she hears; you look at things, she can take a photo and remember it. Nothing about her lives on Mentra's cloud — the MiniApp talks to your own server.
+
+- **Continuous conversation** — speak to her naturally, voice to voice (native audio, no transcription round-trip in between).
+- **Manual mode** — she records one memory-only take, then waits for your Send or Redo. Done never sends by itself.
+- **Photos she remembers** — during a sitting she can capture what you're looking at; the image becomes a visual memory you can ask about later. Nothing is sent without her transcript of it being acknowledged.
+- **Sittings that survive** — a dropped connection doesn't end the visit; the sitting resumes with its journal intact.
+- **Private install** — Iris installs through your launcher, not an app store: one tap on the phone when you update, your connection profile stays on the phone.
+
+Works with Mentra on Android. The voice she uses today is Gemini Live's; see [Platform compatibility](#platform-compatibility).
+
+---
+
 ---
 
 ## Things to know
+
+**One owner.** Each install has exactly one user — the owner — confirmed by name once on first use (together with the first soul) and never edited afterward. Every surface — launcher, SillyTavern, WhatsApp, smartglasses, the mind map — discovers that same identity from the server; none of them keeps its own idea of who you are. A soul's name can't match the owner's.
 
 **One soul = one memory store, many chats.** Each `soul_id` has its own memory database. You can have multiple conversations with the same soul across SillyTavern and WhatsApp — each chat memorizes independently (own cursor, own manifest), and retrieval pulls from all of them. If you want two separate personalities (e.g., a partner *and* a research assistant), use two different `soul_id` values — they get isolated memory stores.
 
@@ -290,7 +314,9 @@ Memorize works the same way as SillyTavern: sleep gaps trigger extraction automa
 
 ## What's coming
 
-**Mentra smartglasses integration** — real-world sight and sound delivered directly to the soul. She sees what you see, hears what you hear — ambient awareness without wearable cameras or microphones on your phone. No TTS/STT glue required; the underlying model handles vision and audio natively.
+**Deeper smartglasses living** — a model that speaks and writes as one (dual voice-and-text output), and a voice of her own.
+
+**Agency** — beyond remembering and replying: acting on her behalf in the world, carefully and with consent.
 
 ---
 
