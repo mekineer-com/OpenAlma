@@ -123,9 +123,10 @@
   {% endif %}
 
   <h2>Apps root</h2>
-  <p class="muted">Directory that contains the sibling repos: <code>mcp-memu-server</code>, <code>hermes-channels</code>, <code>sillytavern</code>, <code>memu</code>.</p>
+  <p class="muted">Directory that contains, or will contain, the sibling OpenAlma repositories.</p>
   <p>Active: <code>{{ apps_root_active or "(not resolved — service list will be empty until set)" }}</code></p>
-  {% if apps_root_invalid %}<p class="failure">The saved Apps root is invalid. Choose a directory containing <code>mcp-memu-server/run.py</code>.</p>{% endif %}
+  {% if apps_root_invalid and not apps_root_setup_target %}<p class="failure">The saved Apps root is invalid. Choose an existing directory.</p>{% endif %}
+  {% if apps_root_pending %}<p>Setup target: <code>{{ apps_root_setup_target }}</code>. Install core from the Services page.</p>{% endif %}
   {% if apps_root_restart_required %}<p class="failure">Restart the launcher to use the saved Apps root.</p>{% endif %}
   <form method="post" action="/settings">
     <label for="apps_root">Override path (leave blank to auto-discover):</label>

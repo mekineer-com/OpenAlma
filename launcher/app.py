@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 
 import policy
 import services
+import setup_install
 import settings
 import soul
 
@@ -58,18 +59,30 @@ def _resolve_soul(soul_id: str, use_existing: bool) -> str:
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
     apps_root = settings.apps_root()
-    specs = services.all_services()
-    rows = [
-        ({
-            "name": s.name,
-            "label": s.label,
-        } | services.status(s))
-        for s in specs if services.is_installed(s)
-    ]
-    not_installed = [
-        {"name": s.name, "label": s.label}
-        for s in specs if not services.is_installed(s)
-    ]
+    setup_root = apps_root or settings.setup_apps_root()
+    specs = services.all_services() if apps_root else (
+        services.services_for_root(setup_root) if setup_root else []
+    )
+    if apps_root is None:
+        core = next((spec for spec in specs if spec.name == "memu-server"), None)
+        rows = [
+            {"name": core.name, "label": core.label} | setup_install.setup_status(setup_root)
+        ] if core is not None else []
+        not_installed = [
+            {"name": spec.name, "label": spec.label, "install_enabled": False}
+            for spec in specs if spec.name != "memu-server"
+        ]
+    else:
+        rows = []
+        for spec in specs:
+            if spec.name == "memu-server" and setup_install.core_issue(setup_root):
+                rows.append({"name": spec.name, "label": spec.label} | setup_install.setup_status(setup_root))
+            elif services.is_installed(spec):
+                rows.append({"name": spec.name, "label": spec.label} | services.status(spec))
+        not_installed = [
+            {"name": spec.name, "label": spec.label, "install_enabled": False}
+            for spec in specs if not services.is_installed(spec) and spec.name != "memu-server"
+        ]
     chats = policy.list_whatsapp_chats()
     current = policy.read_channel_settings()
     chat_rows = []
@@ -134,6 +147,7 @@ def index(request: Request) -> HTMLResponse:
             "soul_ids": soul_ids,
             "soul_error": soul_error,
             "apps_root": str(apps_root) if apps_root else "",
+            "setup_root": str(setup_root) if setup_root else "",
             "needs_setup": apps_root is None,
             "setup_issue": setup_issue,
             "owner_id": owner_id,
@@ -158,6 +172,7 @@ def settings_page(request: Request) -> HTMLResponse:
     apps_root = settings.apps_root()
     stored = settings.read_paths().get("apps_root") or ""
     candidate = settings.next_apps_root(stored)
+    setup_root = settings.setup_apps_root()
     editable = [
         {"key": key, "label": CONFIG_LABELS.get(key, key)}
         for key in _editable_configs(apps_root)
@@ -172,12 +187,14 @@ def settings_page(request: Request) -> HTMLResponse:
             "apps_root_active": str(apps_root) if apps_root else "",
             "apps_root_stored": str(stored),
             "apps_root_invalid": bool(stored and candidate is None),
+            "apps_root_setup_target": str(setup_root) if setup_root else "",
+            "apps_root_pending": setup_root is not None and candidate is None,
             "apps_root_restart_required": candidate is not None and candidate != apps_root,
             "editable_configs": editable,
             "settings_path": str(settings.SETTINGS_PATH),
             "iris": iris,
             "iris_setup": iris_setup,
-            "host_prerequisites": services.host_prerequisites(apps_root),
+            "host_prerequisites": services.host_prerequisites(apps_root or setup_root),
         },
     )
 
@@ -192,6 +209,48 @@ def settings_save(apps_root: str = Form(default="")) -> RedirectResponse:
         current.pop("apps_root", None)
     settings.write_paths(current)
     return RedirectResponse("/settings", status_code=303)
+
+
+@app.post("/install/memu-server")
+def install_memu_server() -> RedirectResponse:
+    root = settings.setup_apps_root()
+    if root is None:
+        raise HTTPException(status_code=400, detail="Choose an existing Apps-root directory")
+    try:
+        setup_install.begin_core_install(root)
+    except setup_install.SetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse("/", status_code=303)
+
+
+@app.get("/install/memu-server/status")
+def install_memu_server_status() -> dict:
+    root = settings.setup_apps_root()
+    return setup_install.setup_status(root) if root else {"state": "unavailable"}
+
+
+@app.get("/install/memu-server/logs", response_class=HTMLResponse)
+def install_memu_server_logs(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "logs.html",
+        {
+            "service": "memu-server-install",
+            "label": "memU Server installation",
+            "log_path": str(setup_install.INSTALL_LOG),
+            "content": setup_install.install_log(),
+            "lines": 0,
+        },
+    )
+
+
+@app.post("/launcher/quit")
+def launcher_quit(request: Request) -> dict[str, bool]:
+    shutdown = getattr(request.app.state, "request_shutdown", None)
+    if shutdown is None:
+        raise HTTPException(status_code=503, detail="Launcher shutdown is unavailable")
+    shutdown()
+    return {"ok": True}
 
 
 @app.get("/logs/{service_name}", response_class=HTMLResponse)

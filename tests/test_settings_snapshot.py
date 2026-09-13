@@ -37,3 +37,13 @@ def test_channels_editor_uses_active_channels_home(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "channels_home", lambda: channels_home)
 
     assert app._editable_configs(tmp_path)["channels-config"] == channels_home / "config.json"
+
+
+def test_setup_apps_root_accepts_existing_directory_before_core(tmp_path, monkeypatch):
+    target = tmp_path / "fresh apps"
+    target.mkdir()
+    monkeypatch.setattr(settings, "SETTINGS_PATH", tmp_path / "paths.json")
+    settings.write_paths({"apps_root": str(target)})
+
+    assert settings.setup_apps_root() == target.resolve()
+    assert settings.resolve_apps_root(str(target)) is None

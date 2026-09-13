@@ -39,3 +39,33 @@ def test_malformed_channels_config_keeps_home_available(tmp_path, monkeypatch):
     assert "Atomic Mind Map" in response.text
     assert "Channels configuration needs repair" in response.text
     assert config.read_text(encoding="utf-8") == "{broken"
+
+
+def test_fresh_root_shows_core_install_without_runtime_status(tmp_path, monkeypatch):
+    monkeypatch.setattr(app.settings, "apps_root", lambda: None)
+    monkeypatch.setattr(app.settings, "setup_apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.policy, "list_whatsapp_chats", lambda: [])
+    monkeypatch.setattr(app.policy, "read_channel_settings", lambda: {})
+    monkeypatch.setattr(app.services, "status", lambda _spec: pytest.fail("runtime status must not run"))
+    monkeypatch.setattr(app.setup_install, "setup_status", lambda _root: {
+        "state": "setup", "status_label": "Not installed", "detail": "Missing core",
+        "startable": False, "action_kind": "install", "action_label": "Install",
+    })
+
+    response = TestClient(app.app).get("/")
+
+    assert response.status_code == 200
+    assert "memU Server" in response.text
+    assert 'action="/install/memu-server"' in response.text
+    assert "Hermes Channels" in response.text
+    assert "disabled" in response.text
+
+
+def test_launcher_quit_uses_server_callback(monkeypatch):
+    called = []
+    monkeypatch.setattr(app.app.state, "request_shutdown", lambda: called.append(True), raising=False)
+
+    response = TestClient(app.app).post("/launcher/quit")
+
+    assert response.json() == {"ok": True}
+    assert called == [True]

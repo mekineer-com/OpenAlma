@@ -35,7 +35,9 @@ def read_paths() -> dict:
 
 def write_paths(paths: dict) -> None:
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    SETTINGS_PATH.write_text(json.dumps(paths, indent=2) + "\n", encoding="utf-8")
+    temporary = SETTINGS_PATH.with_suffix(".tmp")
+    temporary.write_text(json.dumps(paths, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(SETTINGS_PATH)
 
 
 def _autodiscover_apps_root() -> Path | None:
@@ -60,6 +62,19 @@ def resolve_apps_root(raw: object) -> Path | None:
 
 def next_apps_root(raw: object) -> Path | None:
     return resolve_apps_root(raw) if isinstance(raw, str) and raw.strip() else _autodiscover_apps_root()
+
+
+def setup_apps_root() -> Path | None:
+    """Return an existing directory where core can be prepared."""
+    raw = read_paths().get("apps_root")
+    if isinstance(raw, str) and raw.strip():
+        candidate = Path(raw.strip()).expanduser()
+    else:
+        candidate = LAUNCHER_DIR.parents[1]
+    try:
+        return candidate.resolve() if candidate.is_dir() else None
+    except OSError:
+        return None
 
 
 _ACTIVE_APPS_ROOT = resolve_apps_root(read_paths().get("apps_root")) or _autodiscover_apps_root()

@@ -646,6 +646,7 @@ class MentraStatusTest(TestCase):
                 self.assertNotIn("Your identity is saved", client.get("/").text)
             self.assertEqual(client.get("/memorize/status").json(), {})
             iris = services.ServiceSpec("iris-server", "Iris", [], Path(directory), Path("log"), Path("pid"))
+            app.settings.apps_root.return_value = Path(directory)
             with (
                 patch.object(services, "all_services", return_value=[iris]),
                 patch.object(services, "mentra_readiness", return_value={"enabled": True, "ready": True, "rows": []}),

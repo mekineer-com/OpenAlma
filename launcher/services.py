@@ -120,10 +120,7 @@ def _resolve_memu_server_pid_path(root: Path) -> Path:
     return (root / "mcp-memu-server" / path).resolve()
 
 
-def all_services() -> list[ServiceSpec]:
-    root = _resolve_apps_root()
-    if root is None:
-        return []
+def services_for_root(root: Path) -> list[ServiceSpec]:
     bun_dir = Path(shutil.which("bun") or Path.home() / ".bun" / "bin" / "bun").parent
     node = shutil.which("node") or "node"
     python = shutil.which("python3") or shutil.which("python") or sys.executable
@@ -138,6 +135,7 @@ def all_services() -> list[ServiceSpec]:
             pid_path=STATE_DIR / "memu-server.pid",
             port=MEMU_SERVER_PORT,
             adopt_pid_path=_resolve_memu_server_pid_path(root),
+            install_marker=root / "mcp-memu-server" / "run.py",
         ),
         ServiceSpec(
             name="iris-server",
@@ -191,6 +189,11 @@ def all_services() -> list[ServiceSpec]:
             install_marker=root / "sillytavern" / "SillyTavern" / "server.js",
         ),
     ]
+
+
+def all_services() -> list[ServiceSpec]:
+    root = _resolve_apps_root()
+    return services_for_root(root) if root is not None else []
 
 
 def is_installed(spec: ServiceSpec) -> bool:

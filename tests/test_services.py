@@ -56,6 +56,16 @@ def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch)
     ]
 
 
+def test_services_can_be_built_for_pending_root(tmp_path):
+    specs = services.services_for_root(tmp_path)
+
+    assert [spec.name for spec in specs] == [
+        "memu-server", "iris-server", "atomic", "channels-daemon", "sillytavern",
+    ]
+    assert specs[0].cwd == tmp_path / "mcp-memu-server"
+    assert services.is_installed(specs[0]) is False
+
+
 def test_iris_server_is_managed_by_launcher(tmp_path, monkeypatch):
     root = tmp_path / "apps"
     monkeypatch.setattr(services, "_resolve_apps_root", lambda: root)
