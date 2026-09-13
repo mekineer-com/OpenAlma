@@ -100,6 +100,24 @@ def test_iris_uses_its_independent_stable_release(tmp_path, monkeypatch):
         setup_install.iris_release_entry(tmp_path)
 
 
+def test_iris_retry_reuses_root_release_selection(tmp_path, monkeypatch):
+    requests = []
+
+    def release(url):
+        requests.append(url)
+        return {"tag_name": "v1.0.0", "draft": False, "prerelease": False}
+
+    monkeypatch.setattr(setup_install, "_request_json", release)
+
+    first = setup_install.iris_release_entry(tmp_path)
+    second = setup_install.iris_release_entry(tmp_path)
+
+    assert first == second
+    assert first["ref"] == "v1.0.0"
+    assert requests == [setup_install.IRIS_RELEASE_URL]
+    assert (tmp_path / ".openalma-iris-release").read_text(encoding="utf-8") == "v1.0.0\n"
+
+
 def test_write_config_sets_shared_paths_once(tmp_path):
     server = tmp_path / "mcp-memu-server"
     server.mkdir()
@@ -309,6 +327,20 @@ def test_sillytavern_can_start_before_integration_setup_finishes(tmp_path):
     assert "memU server plugin" in setup_install.optional_issue("sillytavern", tmp_path)
 
 
+def test_start_waits_for_same_service_install_operation(tmp_path, monkeypatch):
+    stock = tmp_path / "sillytavern/SillyTavern"
+    (stock / "node_modules").mkdir(parents=True)
+    (stock / "package.json").write_text(json.dumps({"dependencies": {}}), encoding="utf-8")
+    (stock / "server.js").write_text("", encoding="utf-8")
+    operation = setup_install.InstallOperation(service_name="sillytavern", root=tmp_path)
+    monkeypatch.setattr(setup_install, "_OPERATION", operation)
+
+    assert setup_install.start_issue("sillytavern", tmp_path) == "sillytavern installation is still running"
+
+    operation.service_name = "atomic"
+    assert setup_install.start_issue("sillytavern", tmp_path) == ""
+
+
 def test_optional_worker_uses_shared_clone_and_command_pipeline(tmp_path, monkeypatch):
     operation = setup_install.InstallOperation(service_name="sillytavern", root=tmp_path)
     cloned = []
@@ -341,10 +373,13 @@ def test_optional_worker_uses_shared_clone_and_command_pipeline(tmp_path, monkey
 
 def test_install_lock_excludes_another_process_owner(tmp_path, monkeypatch):
     monkeypatch.setattr(setup_install, "INSTALL_LOCK", tmp_path / "install.lock")
-    handle = setup_install._acquire_install_lock()
+    handle = setup_install._acquire_install_lock("sillytavern", tmp_path)
     try:
+        assert setup_install._active_install_owner() == ("sillytavern", str(tmp_path.resolve()))
+        monkeypatch.setattr(setup_install, "_OPERATION", None)
+        assert setup_install.start_issue("sillytavern", tmp_path) == "sillytavern installation is still running"
         with pytest.raises(setup_install.SetupError, match="already running"):
-            setup_install._acquire_install_lock()
+            setup_install._acquire_install_lock("atomic", tmp_path)
     finally:
         setup_install._release_install_lock(handle)
 

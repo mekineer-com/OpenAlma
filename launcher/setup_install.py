@@ -22,6 +22,7 @@ OPENALMA_RELEASE_URL = "https://api.github.com/repos/mekineer-com/OpenAlma/relea
 OPENALMA_RAW_URL = "https://raw.githubusercontent.com/mekineer-com/OpenAlma/{tag}/release-components.json"
 IRIS_RELEASE_URL = "https://api.github.com/repos/mekineer-com/iris/releases/latest"
 RELEASE_TAG_FILE = ".openalma-release"
+IRIS_RELEASE_TAG_FILE = ".openalma-iris-release"
 KNOWN_SERVICES = {"memu-server", "iris-server", "atomic", "channels-daemon", "sillytavern"}
 OPTIONAL_SERVICES = KNOWN_SERVICES - {"memu-server"}
 CORE_DESTINATIONS = {"mcp-memu-server", "memu"}
@@ -165,20 +166,28 @@ def recorded_manifest(root: Path) -> dict[str, list[dict[str, str]]]:
 
 
 def read_recorded_release(root: Path) -> str | None:
+    return _read_release(root, RELEASE_TAG_FILE)
+
+
+def _read_release(root: Path, filename: str) -> str | None:
     try:
-        tag = (root / RELEASE_TAG_FILE).read_text(encoding="utf-8").strip()
+        tag = (root / filename).read_text(encoding="utf-8").strip()
     except FileNotFoundError:
         return None
     except OSError as exc:
-        raise SetupError(f"Cannot read {root / RELEASE_TAG_FILE}") from exc
+        raise SetupError(f"Cannot read {root / filename}") from exc
     if not tag or any(character.isspace() for character in tag):
-        raise SetupError(f"Invalid release tag in {root / RELEASE_TAG_FILE}")
+        raise SetupError(f"Invalid release tag in {root / filename}")
     return tag
 
 
 def _write_recorded_release(root: Path, tag: str) -> None:
-    target = root / RELEASE_TAG_FILE
-    temporary = root / f"{RELEASE_TAG_FILE}.{os.getpid()}.tmp"
+    _write_release(root, RELEASE_TAG_FILE, tag)
+
+
+def _write_release(root: Path, filename: str, tag: str) -> None:
+    target = root / filename
+    temporary = root / f"{filename}.{os.getpid()}.tmp"
     try:
         temporary.write_text(tag + "\n", encoding="utf-8")
         temporary.replace(target)
@@ -187,14 +196,18 @@ def _write_recorded_release(root: Path, tag: str) -> None:
 
 
 def iris_release_entry(root: Path) -> dict[str, str]:
-    release = _request_json(IRIS_RELEASE_URL)
-    tag = release.get("tag_name")
-    if release.get("draft") or release.get("prerelease") or not isinstance(tag, str) or not tag.strip():
-        raise SetupError("No supported stable Iris release is available")
     _validated_destination(root, "mentra-os/miniapps/openalma", "iris-server")
+    tag = _read_release(root, IRIS_RELEASE_TAG_FILE)
+    if tag is None:
+        release = _request_json(IRIS_RELEASE_URL)
+        tag = release.get("tag_name")
+        if release.get("draft") or release.get("prerelease") or not isinstance(tag, str) or not tag.strip():
+            raise SetupError("No supported stable Iris release is available")
+        tag = tag.strip()
+        _write_release(root, IRIS_RELEASE_TAG_FILE, tag)
     return {
         "repository": "https://github.com/mekineer-com/iris.git",
-        "ref": tag.strip(),
+        "ref": tag,
         "destination": "mentra-os/miniapps/openalma",
     }
 
@@ -507,6 +520,10 @@ def optional_issue(service_name: str, root: Path) -> str:
 
 
 def start_issue(service_name: str, root: Path) -> str:
+    if operation_status(root, service_name)["state"] == "running":
+        return f"{service_name} installation is still running"
+    if _active_install_owner() == (service_name, str(root.resolve())):
+        return f"{service_name} installation is still running"
     if service_name == "memu-server":
         return core_issue(root)
     if service_name == "sillytavern":
@@ -581,39 +598,80 @@ def _install_optional(operation: InstallOperation) -> None:
         _set_operation(operation, state="error", step="Installation failed", detail=str(exc))
 
 
-def _acquire_install_lock() -> Any:
+def _lock_handle(handle: Any) -> None:
+    handle.seek(0)
+    if os.name == "nt":
+        import msvcrt  # noqa: PLC0415
+
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl  # noqa: PLC0415
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _unlock_handle(handle: Any) -> None:
+    if os.name == "nt":
+        import msvcrt  # noqa: PLC0415
+
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl  # noqa: PLC0415
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _acquire_install_lock(service_name: str, root: Path) -> Any:
     INSTALL_LOCK.parent.mkdir(parents=True, exist_ok=True)
     handle = INSTALL_LOCK.open("a+b")
     if handle.tell() == 0:
         handle.write(b"\0")
         handle.flush()
-    handle.seek(0)
     try:
-        if os.name == "nt":
-            import msvcrt  # noqa: PLC0415
-
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
-            import fcntl  # noqa: PLC0415
-
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _lock_handle(handle)
     except OSError as exc:
         handle.close()
         raise SetupConflict("Another OpenAlma installation is already running") from exc
+    try:
+        handle.seek(1)
+        handle.truncate()
+        handle.write(json.dumps({"service": service_name, "root": str(root.resolve())}).encode("utf-8"))
+        handle.flush()
+    except OSError:
+        _unlock_handle(handle)
+        handle.close()
+        raise
     return handle
+
+
+def _active_install_owner() -> tuple[str, str] | None:
+    try:
+        handle = INSTALL_LOCK.open("a+b")
+    except OSError:
+        return None
+    try:
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+        try:
+            _lock_handle(handle)
+        except OSError:
+            handle.seek(1)
+            try:
+                owner = json.loads(handle.read().decode("utf-8"))
+                return str(owner["service"]), str(owner["root"])
+            except (OSError, ValueError, KeyError, TypeError):
+                return None
+        _unlock_handle(handle)
+        return None
+    finally:
+        handle.close()
 
 
 def _release_install_lock(handle: Any) -> None:
     try:
-        if os.name == "nt":
-            import msvcrt  # noqa: PLC0415
-
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl  # noqa: PLC0415
-
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        _unlock_handle(handle)
     finally:
         handle.close()
 
@@ -634,7 +692,7 @@ def _begin_operation(service_name: str, root: Path, target: Any) -> dict[str, An
             if _OPERATION.root != root or _OPERATION.service_name != service_name:
                 raise SetupConflict(f"{_OPERATION.service_name} installation is already running")
             return operation_status(root, service_name)
-        lock_handle = _acquire_install_lock()
+        lock_handle = _acquire_install_lock(service_name, root)
         operation = InstallOperation(service_name=service_name, root=root, lock_handle=lock_handle)
         thread = threading.Thread(
             target=_operation_worker, args=(operation, target),
