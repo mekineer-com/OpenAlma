@@ -112,6 +112,13 @@ def test_host_prerequisites_ignore_uninstalled_optional_clients(tmp_path, monkey
     assert result["rows"][2]["detail"] == "Ready"
 
 
+def test_host_prerequisites_without_apps_root_still_render():
+    result = services.host_prerequisites(None)
+
+    assert result["ready"] is False
+    assert "OpenAlma launcher" in result["rows"][1]["detail"]
+
+
 def test_atomic_service_is_managed_by_launcher(tmp_path, monkeypatch):
     root = tmp_path / "apps"
     for name in ("mcp-memu-server", "atomic", "hermes-channels", "sillytavern"):
@@ -126,6 +133,18 @@ def test_atomic_service_is_managed_by_launcher(tmp_path, monkeypatch):
     assert spec.open_url == "http://127.0.0.1:1420"
     assert spec.cmd[-2:] == ["scripts/dev-server.js", "--production"]
     assert spec.env["ATOMIC_SERVER_BIN"].endswith("target/server/atomic-server")
+
+
+def test_atomic_service_uses_existing_debug_binary(tmp_path, monkeypatch):
+    root = tmp_path / "apps"
+    debug = root / "atomic/target/debug/atomic-server"
+    debug.parent.mkdir(parents=True)
+    debug.touch()
+    monkeypatch.setattr(services, "_resolve_apps_root", lambda: root)
+
+    spec = next(s for s in services.all_services() if s.name == "atomic")
+
+    assert spec.env["ATOMIC_SERVER_BIN"] == str(debug)
 
 
 def test_memorize_pending_sends_user_id(monkeypatch):

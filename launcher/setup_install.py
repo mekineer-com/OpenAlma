@@ -513,7 +513,7 @@ def optional_issue(service_name: str, root: Path) -> str:
         if not _node_dependencies_ready(directory, include_dev=include_dev):
             return f"Missing {label}"
     if service_name == "atomic":
-        binary = root / "atomic/target/server" / ("atomic-server.exe" if os.name == "nt" else "atomic-server")
+        binary = settings.atomic_server_binary(root)
         if not binary.exists():
             return "Missing Atomic server binary; follow the compile guidance"
     return ""

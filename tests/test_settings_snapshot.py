@@ -47,3 +47,16 @@ def test_setup_apps_root_accepts_existing_directory_before_core(tmp_path, monkey
 
     assert settings.setup_apps_root() == target.resolve()
     assert settings.resolve_apps_root(str(target)) is None
+
+
+def test_atomic_binary_prefers_production_then_debug(tmp_path):
+    debug = tmp_path / "atomic/target/debug/atomic-server"
+    production = tmp_path / "atomic/target/server/atomic-server"
+    debug.parent.mkdir(parents=True)
+    debug.touch()
+
+    assert settings.atomic_server_binary(tmp_path) == debug
+
+    production.parent.mkdir(parents=True)
+    production.touch()
+    assert settings.atomic_server_binary(tmp_path) == production

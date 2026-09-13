@@ -101,3 +101,10 @@ _ACTIVE_CHANNELS_HOME = _active_channels_home()
 
 def channels_home() -> Path:
     return _ACTIVE_CHANNELS_HOME
+
+
+def atomic_server_binary(root: Path) -> Path:
+    filename = "atomic-server.exe" if os.name == "nt" else "atomic-server"
+    production = root / "atomic" / "target" / "server" / filename
+    debug = root / "atomic" / "target" / "debug" / filename
+    return production if production.exists() or not debug.exists() else debug

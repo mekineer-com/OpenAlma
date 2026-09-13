@@ -299,6 +299,20 @@ def test_optional_status_stops_at_real_manual_prerequisite(tmp_path, monkeypatch
     assert "compile guidance" in status["detail"]
 
 
+def test_optional_status_accepts_atomic_debug_binary(tmp_path, monkeypatch):
+    atomic = tmp_path / "atomic"
+    (atomic / "node_modules/vite").mkdir(parents=True)
+    (atomic / "node_modules/vite/package.json").write_text("{}", encoding="utf-8")
+    (atomic / "package.json").write_text(json.dumps({"devDependencies": {"vite": "1"}}), encoding="utf-8")
+    debug = atomic / "target/debug/atomic-server"
+    debug.parent.mkdir(parents=True)
+    debug.touch()
+    monkeypatch.setattr(setup_install, "_OPERATION", None)
+    monkeypatch.setattr(setup_install.shutil, "which", lambda _tool: "/usr/bin/npm")
+
+    assert setup_install.optional_setup_status("atomic", tmp_path)["ready"] is True
+
+
 def test_partial_node_modules_is_not_setup_complete(tmp_path):
     package = tmp_path / "client"
     (package / "node_modules").mkdir(parents=True)

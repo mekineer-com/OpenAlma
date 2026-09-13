@@ -34,6 +34,7 @@ from pathlib import Path
 import psutil
 
 from settings import apps_root as _resolve_apps_root
+from settings import atomic_server_binary as _atomic_server_binary
 from settings import channels_home as _resolve_channels_home
 
 STATE_DIR = Path.home() / ".cache" / "openalma-launcher"
@@ -159,7 +160,7 @@ def services_for_root(root: Path) -> list[ServiceSpec]:
             open_url="http://127.0.0.1:1420",
             install_marker=root / "atomic" / "package.json",
             env={
-                "ATOMIC_SERVER_BIN": str(root / "atomic" / "target" / "server" / ("atomic-server.exe" if os.name == "nt" else "atomic-server")),
+                "ATOMIC_SERVER_BIN": str(_atomic_server_binary(root)),
                 "MEMU_SERVER_URL": f"http://127.0.0.1:{MEMU_SERVER_PORT}",
             },
         ),
@@ -761,7 +762,11 @@ def host_prerequisites(root: Path | None, os_release_path: Path = Path("/etc/os-
     }
     optional_paths = {
         "Iris": ("mentra-os/miniapps/openalma/miniapp.json", "mentra-os/miniapps/openalma/node_modules"),
-        "Atomic": ("atomic/package.json", f"atomic/target/server/{'atomic-server.exe' if os.name == 'nt' else 'atomic-server'}"),
+        "Atomic": (
+            "atomic/package.json",
+            str(_atomic_server_binary(root).relative_to(root)) if root is not None
+            else f"atomic/target/server/{'atomic-server.exe' if os.name == 'nt' else 'atomic-server'}",
+        ),
         "Hermes Channels": ("hermes-channels/gateway/daemon.py",),
         "SillyTavern": ("sillytavern/SillyTavern/server.js",),
     }
