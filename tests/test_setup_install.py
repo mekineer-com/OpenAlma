@@ -221,6 +221,7 @@ def test_begin_core_install_reuses_active_operation(tmp_path, monkeypatch):
         finish.wait(timeout=2)
 
     monkeypatch.setattr(setup_install, "_OPERATION", None)
+    monkeypatch.setattr(setup_install, "INSTALL_LOCK", tmp_path / "install.lock")
     monkeypatch.setattr(setup_install, "_prerequisite_issue", lambda _root: "")
     monkeypatch.setattr(setup_install, "_install_core", fake_install)
 
@@ -234,6 +235,28 @@ def test_begin_core_install_reuses_active_operation(tmp_path, monkeypatch):
 
     assert first["state"] == "running"
     assert second["state"] == "running"
+
+
+def test_thread_start_failure_clears_operation_and_releases_lock(tmp_path, monkeypatch):
+    released = []
+
+    class BrokenThread:
+        def __init__(self, **_kwargs):
+            pass
+
+        def start(self):
+            raise OSError("thread unavailable")
+
+    monkeypatch.setattr(setup_install, "_OPERATION", None)
+    monkeypatch.setattr(setup_install, "_acquire_install_lock", lambda *_args: "lock")
+    monkeypatch.setattr(setup_install, "_release_install_lock", lambda lock: released.append(lock))
+    monkeypatch.setattr(setup_install.threading, "Thread", BrokenThread)
+
+    with pytest.raises(OSError, match="thread unavailable"):
+        setup_install._begin_operation("atomic", tmp_path, lambda _operation: None)
+
+    assert setup_install._OPERATION is None
+    assert released == ["lock"]
 
 
 def test_core_retry_reuses_recorded_release(tmp_path, monkeypatch):

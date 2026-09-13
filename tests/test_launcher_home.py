@@ -93,14 +93,10 @@ def test_active_core_enables_optional_install_actions(tmp_path, monkeypatch):
         assert f'action="/install/{name}"' in response.text
 
 
-def test_live_service_keeps_stop_while_setup_is_incomplete(tmp_path, monkeypatch):
-    spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
-    monkeypatch.setattr(app.services, "status", lambda _spec: {
-        "state": "running", "status_label": "running", "running": True,
-        "stoppable": True, "startable": False, "detail": "",
-    })
-
-    row = app._row_with_setup(spec, {
+def test_live_service_keeps_stop_while_setup_is_incomplete():
+    row = app._row_with_setup({
+        "state": "running", "running": True, "stoppable": True,
+    }, {
         "install_setup": True, "detail": "Installation incomplete", "action_kind": "install",
     })
 
@@ -119,6 +115,28 @@ def test_stopped_incomplete_service_poll_returns_install_state(tmp_path, monkeyp
     monkeypatch.setattr(app.services, "status", lambda _spec: {"state": "stopped", "running": False})
 
     assert app._setup_aware_status(spec, tmp_path) == setup
+
+
+def test_live_and_blocked_services_do_not_run_core_setup_checks(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("memu-server", "memU", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(app.setup_install, "core_issue", lambda *_args, **_kwargs: pytest.fail("live runtime must skip setup checks"))
+
+    for runtime in ({"state": "running", "running": True}, {"state": "blocked", "blocked": True}):
+        monkeypatch.setattr(app.services, "status", lambda _spec, value=runtime: value.copy())
+        assert app._setup_aware_status(spec, tmp_path) == runtime
+
+    verified = []
+    monkeypatch.setattr(app.services, "status", lambda _spec: {"state": "stopped", "running": False})
+    monkeypatch.setattr(
+        app.setup_install, "core_issue",
+        lambda _root, *, verify_runtime=True: verified.append(verify_runtime) or "",
+    )
+    app._setup_aware_status(spec, tmp_path, verify_runtime=False)
+    assert verified == [False]
+
+
+def test_connected_iris_counts_as_active_runtime():
+    assert app._runtime_active({"state": "active", "active": True}) is True
 
 
 def test_iris_runtime_setup_state_is_not_an_install_row(tmp_path, monkeypatch):
@@ -182,6 +200,8 @@ def test_runtime_to_install_poll_reloads_the_page():
     text = template.read_text(encoding="utf-8")
 
     assert "data.install_setup && row.dataset.runtime === 'true'" in text
+    assert "if (!data.install_setup) row.dataset.runtime = 'true'" in text
+    assert "data.action_kind === 'install'" in text
     assert "location.reload();" in text
 
 

@@ -58,13 +58,12 @@ def _resolve_soul(soul_id: str, use_existing: bool) -> str:
 
 def _runtime_active(row: dict) -> bool:
     return bool(
-        row.get("running") or row.get("stuck") or row.get("orphaned")
-        or row.get("stoppable") or row.get("force_stoppable") or row.get("state") == "stopping"
+        row.get("running") or row.get("stuck") or row.get("orphaned") or row.get("blocked")
+        or row.get("stoppable") or row.get("force_stoppable") or row.get("state") in {"stopping", "active"}
     )
 
 
-def _row_with_setup(spec: services.ServiceSpec, setup: dict) -> dict:
-    runtime = services.status(spec)
+def _row_with_setup(runtime: dict, setup: dict) -> dict:
     if _runtime_active(runtime):
         runtime["detail"] = "; ".join(filter(None, (runtime.get("detail"), setup.get("detail"))))
         runtime["startable"] = False
@@ -72,13 +71,16 @@ def _row_with_setup(spec: services.ServiceSpec, setup: dict) -> dict:
     return setup
 
 
-def _setup_aware_status(spec: services.ServiceSpec, root: Path) -> dict:
+def _setup_aware_status(spec: services.ServiceSpec, root: Path, *, verify_runtime: bool = True) -> dict:
+    runtime = services.status(spec)
     if spec.name == "memu-server":
-        return _row_with_setup(spec, setup_install.setup_status(root)) if setup_install.core_issue(root) else services.status(spec)
+        if _runtime_active(runtime):
+            return runtime
+        issue = setup_install.core_issue(root, verify_runtime=verify_runtime)
+        return _row_with_setup(runtime, setup_install.setup_status(root, verify_runtime=verify_runtime)) if issue else runtime
     setup = setup_install.optional_setup_status(spec.name, root)
     if not setup["ready"]:
-        return _row_with_setup(spec, setup)
-    runtime = services.status(spec)
+        return _row_with_setup(runtime, setup)
     if setup["guidance"]:
         runtime["detail"] = "; ".join(filter(None, (runtime.get("detail"), setup["guidance"])))
     return runtime
@@ -409,7 +411,7 @@ def service_status(service_name: str) -> dict:
     root = settings.apps_root()
     if root is None:
         raise HTTPException(status_code=409, detail="Install core and restart OpenAlma first")
-    return _setup_aware_status(spec, root)
+    return _setup_aware_status(spec, root, verify_runtime=False)
 
 
 @app.get("/whatsapp/pair-status")

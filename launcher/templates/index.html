@@ -446,6 +446,11 @@ function actionHtml(name, data) {
     return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'force-stop\',this)">Force Stop</button>' + open;
   }
   if (data.action_kind === 'settings') return '<a class="btn" href="/settings">Settings</a>';
+  if (data.action_kind === 'install') {
+    var start = data.startable ? ' <button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'start\',this)">Start</button>' : '';
+    return '<form class="inline" method="post" action="/install/' + esc(name) + '"><button class="btn" type="submit">' +
+      esc(data.action_label || 'Continue Install') + '</button></form>' + start;
+  }
   if (data.action_kind === 'start' || data.action_kind === 'stop') {
     return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'' + data.action_kind + '\',this)">' + esc(data.action_label) + '</button>';
   }
@@ -472,6 +477,7 @@ function pollStatus(name) {
         location.reload();
         return;
       }
+      if (!data.install_setup) row.dataset.runtime = 'true';
       var statusCell = row.querySelector('.svc-status');
       var actionsCell = row.querySelector('.svc-actions');
       var state = data.state || (data.running ? 'running' : 'stopped');
