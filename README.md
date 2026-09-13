@@ -82,7 +82,7 @@ The complete OpenAlma stack has been tested on Alpine Linux 3.23 x86-64. Some co
 | mcp-memu-server | Alpine Linux 3.23 x86-64 | The included start/stop runner currently requires Linux. |
 | OpenAlma launcher | Alpine Linux 3.23 x86-64 | Linux only for now. |
 | Iris MiniApp | Mentra on Android | Mentra also supports iOS, but Iris has not yet been tested there. |
-| OpenAlma Mentra app | Android | Android only. On iOS, use stock Mentra. |
+| OpenAlma Mentra app | Android | Android only. On iOS, stock Mentra is expected to work. |
 | Hermes Channels | Alpine Linux 3.23 x86-64 | Other operating systems have not yet been tested. |
 | SillyTavern integration | Stock SillyTavern on Linux | The plugin and extension may work anywhere SillyTavern does, but OpenAlma's service controls currently require Linux. |
 | Atomic integration | Alpine Linux x86-64 | Atomic is available for Linux, macOS, and Windows; its OpenAlma integration has only been tested on Linux. |
@@ -145,11 +145,11 @@ After setup, open the memU extension panel in SillyTavern and set **Server URL**
 
 ### Optional: Atomic Mind Map
 
-6. **[Atomic](https://github.com/mekineer-com/atomic)** — clone as another sibling. The Stack Launcher starts and stops it from the Services panel. It's how you see inside her memory — see "The Mind Map" under [Day-to-day use](#day-to-day-use).
+6. **[Atomic](https://github.com/mekineer-com/atomic)** — clone as another sibling. It's source, so it needs a one-time build: Node.js for the UI and a Rust toolchain for the server. After that, the Stack Launcher starts and stops it from the Services panel. It's how you see inside her memory — see "The Mind Map" under [Day-to-day use](#day-to-day-use). (A one-click Install through the launcher comes with the first stable release.)
 
 ### Optional: Smartglasses (Iris)
 
-7. **Iris** — nothing to clone for this one. You need Mentra smartglasses and their Android phone app (on iOS, stock Mentra works too), plus Node.js on the host for the installer. Install Iris from the launcher's Iris row; the phone accepts with one tap, and her connection profile stays on the phone. Full walkthrough: [Smartglasses](docs/smartglasses.md).
+7. **Iris** — nothing to clone for this one. You need Mentra smartglasses and their Android phone app (on iOS, stock Mentra is expected to work), plus Node.js on the host for the installer. Install Iris from the launcher's Iris row; the phone accepts with one tap, and her connection profile stays on the phone. Full walkthrough: [Smartglasses](docs/smartglasses.md).
 
 ### Stack Launcher
 
@@ -166,7 +166,7 @@ After setup, open the memU extension panel in SillyTavern and set **Server URL**
 
    What's inside:
 
-   - **Services panel** — start, stop, and restart local services (memU Server, Atomic Mind Map, Hermes Channels, SillyTavern). View live logs for each. No terminal juggling needed.
+   - **Services panel** — start, stop, and restart local services (memU Server, Atomic Mind Map, Hermes Channels, SillyTavern), plus a permanent Iris row for phone status and installation. View live logs for each. No terminal juggling needed.
    - **Settings** — edit `config.json` for the server, and pair WhatsApp inline via QR code (no terminal needed). If your repo layout differs from the default siblings arrangement, set the parent directory here.
    - **Memorize-pressure gauge** (home page) — how many unmemorized tokens are queued across all conversations vs the 8,000-token threshold, and whether a sleep gap has been detected. Useful for knowing if memorize is about to fire or is just waiting.
    - **WhatsApp Channel Policy** — two settings per chat, both independent. **Policy** (`full` / `listen_only` / `excluded`): whether the soul can respond, can only listen, or is dropped entirely. **Mem** checkbox: whether this chat's messages are included in memory extraction, or kept as context-only. Reads and writes `CHANNELS_HOME/channel_directory.json` and `CHANNELS_HOME/memu.json`. This is where you tell the soul which conversations matter.
