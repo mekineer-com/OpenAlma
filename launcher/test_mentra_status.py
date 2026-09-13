@@ -647,6 +647,9 @@ class MentraStatusTest(TestCase):
             self.assertEqual(client.get("/memorize/status").json(), {})
             iris = services.ServiceSpec("iris-server", "Iris", [], Path(directory), Path("log"), Path("pid"))
             app.settings.apps_root.return_value = Path(directory)
+            start_issue_patch = patch.object(app.setup_install, "start_issue", return_value="")
+            start_issue_patch.start()
+            self.addCleanup(start_issue_patch.stop)
             with (
                 patch.object(services, "all_services", return_value=[iris]),
                 patch.object(services, "mentra_readiness", return_value={"enabled": True, "ready": True, "rows": []}),

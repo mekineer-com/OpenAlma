@@ -50,10 +50,12 @@ class InstallOperation:
     step: str = "Starting"
     detail: str = ""
     thread: threading.Thread | None = field(default=None, repr=False)
+    lock_handle: Any = field(default=None, repr=False)
 
 
 _LOCK = threading.RLock()
 _OPERATION: InstallOperation | None = None
+INSTALL_LOCK = Path.home() / ".cache" / "openalma-launcher" / "install.lock"
 
 
 def _request_json(url: str) -> dict[str, Any]:
@@ -79,6 +81,18 @@ def _is_within(path: Path, parent: Path) -> bool:
         return False
 
 
+def _validated_destination(root: Path, destination_text: str, service_name: str) -> tuple[Path, str]:
+    relative = Path(destination_text)
+    if relative.is_absolute() or relative == Path(".") or ".." in relative.parts:
+        raise SetupError(f"Unsafe destination for {service_name}: {destination_text}")
+    root = root.resolve()
+    destination = (root / relative).resolve()
+    openalma = settings.LAUNCHER_DIR.parent.resolve()
+    if not _is_within(destination, root) or _is_within(destination, openalma) or _is_within(openalma, destination):
+        raise SetupError(f"Unsafe destination for {service_name}: {destination_text}")
+    return destination, relative.as_posix()
+
+
 def validate_manifest(value: object, root: Path) -> dict[str, list[dict[str, str]]]:
     if not isinstance(value, dict) or set(value) != {"schema_version", "services"}:
         raise SetupError("Release manifest must contain only schema_version and services")
@@ -88,8 +102,6 @@ def validate_manifest(value: object, root: Path) -> dict[str, list[dict[str, str
     if not set(services).issubset(KNOWN_SERVICES):
         raise SetupError("Release manifest contains an unknown service")
 
-    root = root.resolve()
-    openalma = settings.LAUNCHER_DIR.parent.resolve()
     parsed: dict[str, list[dict[str, str]]] = {}
     destinations: set[str] = set()
     for service_name, service in services.items():
@@ -109,13 +121,7 @@ def validate_manifest(value: object, root: Path) -> dict[str, list[dict[str, str
             if url.scheme != "https" or url.hostname != "github.com" or url.username or url.password:
                 raise SetupError(f"Unsupported repository URL for {service_name}")
             destination_text = entry["destination"].strip()
-            relative = Path(destination_text)
-            if relative.is_absolute() or relative == Path(".") or ".." in relative.parts:
-                raise SetupError(f"Unsafe destination for {service_name}: {destination_text}")
-            destination = (root / relative).resolve()
-            if not _is_within(destination, root) or _is_within(destination, openalma) or _is_within(openalma, destination):
-                raise SetupError(f"Unsafe destination for {service_name}: {destination_text}")
-            normalized = relative.as_posix()
+            _destination, normalized = _validated_destination(root, destination_text, service_name)
             if normalized in destinations:
                 raise SetupError(f"Duplicate release destination: {normalized}")
             destinations.add(normalized)
@@ -158,10 +164,7 @@ def iris_release_entry(root: Path) -> dict[str, str]:
     tag = release.get("tag_name")
     if release.get("draft") or release.get("prerelease") or not isinstance(tag, str) or not tag.strip():
         raise SetupError("No supported stable Iris release is available")
-    destination = root / "mentra-os" / "miniapps" / "openalma"
-    openalma = settings.LAUNCHER_DIR.parent.resolve()
-    if _is_within(destination.resolve(), openalma) or _is_within(openalma, destination.resolve()):
-        raise SetupError("Unsafe Iris destination")
+    _validated_destination(root, "mentra-os/miniapps/openalma", "iris-server")
     return {
         "repository": "https://github.com/mekineer-com/iris.git",
         "ref": tag.strip(),
@@ -329,13 +332,18 @@ def _set_operation(operation: InstallOperation, **values: str) -> None:
 
 
 def _install_core(operation: InstallOperation) -> None:
-    log_path = install_log_path(operation.service_name)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
     try:
+        log_path = install_log_path(operation.service_name)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("w", encoding="utf-8") as log:
             _set_operation(operation, step="Finding supported release")
-            tag, manifest = discover_release(operation.root)
             paths = settings.read_paths()
+            tag = paths.get(RELEASE_TAG_KEY)
+            if isinstance(tag, str) and tag.strip():
+                tag = tag.strip()
+                manifest = recorded_manifest(operation.root)
+            else:
+                tag, manifest = discover_release(operation.root)
             paths.update(apps_root=str(operation.root), **{RELEASE_TAG_KEY: tag})
             settings.write_paths(paths)
 
@@ -454,13 +462,23 @@ def optional_issue(service_name: str, root: Path) -> str:
     for directory, include_dev, label in dependency_checks.get(service_name, ()):
         if not _node_dependencies_ready(directory, include_dev=include_dev):
             return f"Missing {label}"
-    if service_name == "iris-server":
-        return _iris_workspace_issue(root)
     if service_name == "atomic":
         binary = root / "atomic/target/server" / ("atomic-server.exe" if os.name == "nt" else "atomic-server")
         if not binary.exists():
             return "Missing Atomic server binary; follow the compile guidance"
     return ""
+
+
+def start_issue(service_name: str, root: Path) -> str:
+    if service_name == "memu-server":
+        return core_issue(root)
+    if service_name == "sillytavern":
+        if not (root / "sillytavern/SillyTavern/server.js").exists():
+            return "Missing SillyTavern checkout"
+        if not _node_dependencies_ready(root / "sillytavern/SillyTavern"):
+            return "Missing SillyTavern dependencies"
+        return ""
+    return optional_issue(service_name, root)
 
 
 def _optional_entries(service_name: str, root: Path) -> list[dict[str, str]]:
@@ -497,12 +515,15 @@ def _optional_tool_issue(service_name: str) -> str:
 
 
 def _install_optional(operation: InstallOperation) -> None:
-    log_path = install_log_path(operation.service_name)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
     try:
+        log_path = install_log_path(operation.service_name)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("w", encoding="utf-8") as log:
             _set_operation(operation, step="Loading release selection")
-            entries = _optional_entries(operation.service_name, operation.root)
+            entries = sorted(
+                _optional_entries(operation.service_name, operation.root),
+                key=lambda entry: len(Path(entry["destination"]).parts),
+            )
             for entry in entries:
                 _set_operation(operation, step=f"Installing {entry['destination']}")
                 _clone(entry, operation.root, log)
@@ -523,6 +544,52 @@ def _install_optional(operation: InstallOperation) -> None:
         _set_operation(operation, state="error", step="Installation failed", detail=str(exc))
 
 
+def _acquire_install_lock() -> Any:
+    INSTALL_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    handle = INSTALL_LOCK.open("a+b")
+    if handle.tell() == 0:
+        handle.write(b"\0")
+        handle.flush()
+    handle.seek(0)
+    try:
+        if os.name == "nt":
+            import msvcrt  # noqa: PLC0415
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl  # noqa: PLC0415
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as exc:
+        handle.close()
+        raise SetupError("Another OpenAlma installation is already running") from exc
+    return handle
+
+
+def _release_install_lock(handle: Any) -> None:
+    try:
+        if os.name == "nt":
+            import msvcrt  # noqa: PLC0415
+
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl  # noqa: PLC0415
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    finally:
+        handle.close()
+
+
+def _operation_worker(operation: InstallOperation, target: Any) -> None:
+    try:
+        target(operation)
+    except BaseException as exc:
+        _set_operation(operation, state="error", step="Installation failed", detail=str(exc))
+    finally:
+        _release_install_lock(operation.lock_handle)
+
+
 def _begin_operation(service_name: str, root: Path, target: Any) -> dict[str, Any]:
     global _OPERATION
     with _LOCK:
@@ -530,13 +597,19 @@ def _begin_operation(service_name: str, root: Path, target: Any) -> dict[str, An
             if _OPERATION.root != root or _OPERATION.service_name != service_name:
                 raise SetupError(f"{_OPERATION.service_name} installation is already running")
             return operation_status(root, service_name)
-        operation = InstallOperation(service_name=service_name, root=root)
+        lock_handle = _acquire_install_lock()
+        operation = InstallOperation(service_name=service_name, root=root, lock_handle=lock_handle)
         thread = threading.Thread(
-            target=target, args=(operation,), name=f"openalma-{service_name}-install", daemon=False,
+            target=_operation_worker, args=(operation, target),
+            name=f"openalma-{service_name}-install", daemon=False,
         )
         operation.thread = thread
         _OPERATION = operation
-        thread.start()
+        try:
+            thread.start()
+        except Exception:
+            _release_install_lock(lock_handle)
+            raise
     return operation_status(root, service_name)
 
 
@@ -569,20 +642,23 @@ def setup_status(root: Path) -> dict[str, Any]:
     operation = operation_status(root)
     if operation["state"] == "running":
         return {
-            "state": "setup", "status_label": "Installing core", "detail": operation["step"],
+            "state": "setup", "install_setup": True,
+            "status_label": "Installing core", "detail": operation["step"],
             "startable": False, "install_running": True,
         }
     issue = core_issue(root)
     if not issue:
         return {
-            "state": "setup", "status_label": "Core prepared", "detail": "Restart OpenAlma to activate it",
+            "state": "setup", "install_setup": True,
+            "status_label": "Core prepared", "detail": "Restart OpenAlma to activate it",
             "startable": False, "restart_required": True,
         }
     detail = operation["detail"] if operation["state"] == "error" else issue
     present = (root / "mcp-memu-server" / "run.py").exists()
     prerequisite = _prerequisite_issue(root)
     return {
-        "state": "setup", "status_label": "Installation incomplete" if present else "Not installed",
+        "state": "setup", "install_setup": True,
+        "status_label": "Installation incomplete" if present else "Not installed",
         "detail": prerequisite or detail, "startable": False,
         "action_kind": None if prerequisite else "install",
         "action_label": "Continue Install" if present else "Install",
@@ -609,7 +685,7 @@ def optional_setup_status(service_name: str, root: Path) -> dict[str, Any]:
     operation = operation_status(root, service_name)
     if operation["state"] == "running":
         return {
-            "ready": False, "state": "setup", "status_label": "Installing",
+            "ready": False, "state": "setup", "install_setup": True, "status_label": "Installing",
             "detail": operation["step"], "startable": False, "install_running": True,
         }
     issue = optional_issue(service_name, root)
@@ -632,12 +708,14 @@ def optional_setup_status(service_name: str, root: Path) -> dict[str, Any]:
         "sillytavern": "sillytavern/SillyTavern/server.js",
     }[service_name]
     checkout_present = (root / primary).exists()
+    startable = service_name == "sillytavern" and not start_issue(service_name, root)
     return {
         "ready": False,
         "state": "setup",
+        "install_setup": True,
         "status_label": "Installation incomplete" if checkout_present else "Not installed",
         "detail": detail,
-        "startable": False,
+        "startable": startable,
         "action_kind": "install" if action else None,
         "action_label": "Continue Install" if checkout_present else "Install",
     }

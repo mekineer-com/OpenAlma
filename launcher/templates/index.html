@@ -120,7 +120,7 @@
     </thead>
     <tbody>
       {% for s in services %}
-      <tr data-service="{{ s.name }}" data-runtime="{{ 'false' if s.state == 'setup' else 'true' }}">
+      <tr data-service="{{ s.name }}" data-runtime="{{ 'false' if s.install_setup else 'true' }}">
         <td>{{ s.label }}</td>
         <td class="svc-status">
           <span class="{{ s.state }}">{{ s.status_label }}</span>
@@ -149,6 +149,7 @@
             <button class="btn" onclick="svcAction('{{ s.name }}','stop',this)">{{ s.action_label }}</button>
           {% elif s.action_kind == "install" %}
             <form method="post" action="/install/{{ s.name }}"><button class="btn" type="submit">{{ s.action_label }}</button></form>
+            {% if s.startable %}<button class="btn" onclick="svcAction('{{ s.name }}','start',this)">Start</button>{% endif %}
           {% elif s.restart_required %}
             <form method="post" action="/launcher/quit"><button class="btn" type="submit">Quit launcher</button></form>
           {% elif s.action_kind is defined %}
@@ -161,7 +162,7 @@
           {% endif %}
           {% if s.running and s.open_url %}<a class="btn" href="{{ s.open_url }}" target="_blank" rel="noopener">Open</a>{% endif %}
         </td>
-        <td><a href="{{ '/install/' ~ s.name ~ '/logs' if s.state == 'setup' else '/logs/' ~ s.name }}">view</a></td>
+        <td><a href="{{ '/install/' ~ s.name ~ '/logs' if s.install_setup else '/logs/' ~ s.name }}">view</a></td>
       </tr>
       {% endfor %}
     </tbody>

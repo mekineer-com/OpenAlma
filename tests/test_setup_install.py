@@ -84,6 +84,10 @@ def test_iris_uses_its_independent_stable_release(tmp_path, monkeypatch):
         "destination": "mentra-os/miniapps/openalma",
     }
 
+    monkeypatch.setattr(setup_install.settings, "LAUNCHER_DIR", tmp_path / "launcher")
+    with pytest.raises(setup_install.SetupError, match="Unsafe destination"):
+        setup_install.iris_release_entry(tmp_path)
+
 
 def test_write_config_sets_shared_paths_once(tmp_path):
     server = tmp_path / "mcp-memu-server"
@@ -203,6 +207,31 @@ def test_begin_core_install_reuses_active_operation(tmp_path, monkeypatch):
     assert second["state"] == "running"
 
 
+def test_core_retry_reuses_recorded_release(tmp_path, monkeypatch):
+    operation = setup_install.InstallOperation(service_name="memu-server", root=tmp_path)
+    manifest = {"memu-server": [{"destination": "memu"}]}
+    writes = []
+    monkeypatch.setattr(setup_install, "_OPERATION", operation)
+    monkeypatch.setattr(setup_install, "install_log_path", lambda _name: tmp_path / "install.log")
+    monkeypatch.setattr(setup_install.settings, "read_paths", lambda: {
+        "apps_root": str(tmp_path), "openalma_release_tag": "v1.0.0", "other": True,
+    })
+    monkeypatch.setattr(setup_install.settings, "write_paths", lambda value: writes.append(value.copy()))
+    monkeypatch.setattr(setup_install, "recorded_manifest", lambda _root: manifest)
+    monkeypatch.setattr(setup_install, "discover_release", lambda _root: pytest.fail("retry rescanned newest"))
+    monkeypatch.setattr(setup_install, "_clone", lambda *_args: None)
+    monkeypatch.setattr(setup_install, "_run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(setup_install, "_write_config", lambda _root: None)
+    monkeypatch.setattr(setup_install, "core_issue", lambda _root: "")
+
+    setup_install._install_core(operation)
+
+    assert writes == [{
+        "apps_root": str(tmp_path), "openalma_release_tag": "v1.0.0", "other": True,
+    }]
+    assert operation.state == "ready"
+
+
 def test_optional_status_stops_at_real_manual_prerequisite(tmp_path, monkeypatch):
     atomic = tmp_path / "atomic"
     (atomic / "node_modules/vite").mkdir(parents=True)
@@ -236,18 +265,33 @@ def test_optional_status_allows_clone_before_missing_runtime(tmp_path, monkeypat
     assert status["action_kind"] == "install"
 
 
+def test_sillytavern_can_start_before_integration_setup_finishes(tmp_path):
+    stock = tmp_path / "sillytavern/SillyTavern"
+    (stock / "node_modules").mkdir(parents=True)
+    (stock / "package.json").write_text(json.dumps({"dependencies": {}}), encoding="utf-8")
+    (stock / "server.js").write_text("", encoding="utf-8")
+
+    assert setup_install.start_issue("sillytavern", tmp_path) == ""
+    assert "memU server plugin" in setup_install.optional_issue("sillytavern", tmp_path)
+
+
 def test_optional_worker_uses_shared_clone_and_command_pipeline(tmp_path, monkeypatch):
-    operation = setup_install.InstallOperation(service_name="channels-daemon", root=tmp_path)
+    operation = setup_install.InstallOperation(service_name="sillytavern", root=tmp_path)
     cloned = []
     commands = []
-    entry = {
+    stock = {
+        "repository": "https://github.com/SillyTavern/SillyTavern.git",
+        "ref": "1.0.0",
+        "destination": "sillytavern/SillyTavern",
+    }
+    plugin = {
         "repository": "https://github.com/mekineer-com/hermes-channels.git",
         "ref": "v1.0.0",
-        "destination": "hermes-channels",
+        "destination": "sillytavern/SillyTavern/plugins/memu-plugin",
     }
     monkeypatch.setattr(setup_install, "_OPERATION", operation)
     monkeypatch.setattr(setup_install, "install_log_path", lambda _name: tmp_path / "install.log")
-    monkeypatch.setattr(setup_install, "_optional_entries", lambda _name, _root: [entry])
+    monkeypatch.setattr(setup_install, "_optional_entries", lambda _name, _root: [plugin, stock])
     monkeypatch.setattr(setup_install, "_clone", lambda item, _root, _log: cloned.append(item))
     monkeypatch.setattr(setup_install, "_optional_tool_issue", lambda _name: "")
     monkeypatch.setattr(setup_install, "_optional_commands", lambda _name, _root: [(["npm", "ci"], tmp_path)])
@@ -256,6 +300,29 @@ def test_optional_worker_uses_shared_clone_and_command_pipeline(tmp_path, monkey
 
     setup_install._install_optional(operation)
 
-    assert cloned == [entry]
+    assert cloned == [stock, plugin]
     assert commands == [["npm", "ci"]]
     assert operation.state == "ready"
+
+
+def test_install_lock_excludes_another_process_owner(tmp_path, monkeypatch):
+    monkeypatch.setattr(setup_install, "INSTALL_LOCK", tmp_path / "install.lock")
+    handle = setup_install._acquire_install_lock()
+    try:
+        with pytest.raises(setup_install.SetupError, match="already running"):
+            setup_install._acquire_install_lock()
+    finally:
+        setup_install._release_install_lock(handle)
+
+
+def test_operation_worker_reports_early_failure_and_releases_lock(tmp_path, monkeypatch):
+    operation = setup_install.InstallOperation(service_name="atomic", root=tmp_path, lock_handle=object())
+    released = []
+    monkeypatch.setattr(setup_install, "_OPERATION", operation)
+    monkeypatch.setattr(setup_install, "_release_install_lock", lambda handle: released.append(handle))
+
+    setup_install._operation_worker(operation, lambda _operation: (_ for _ in ()).throw(OSError("log failure")))
+
+    assert operation.state == "error"
+    assert operation.detail == "log failure"
+    assert released == [operation.lock_handle]

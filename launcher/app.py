@@ -56,6 +56,46 @@ def _resolve_soul(soul_id: str, use_existing: bool) -> str:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _runtime_active(row: dict) -> bool:
+    return bool(
+        row.get("running") or row.get("stuck") or row.get("orphaned")
+        or row.get("stoppable") or row.get("force_stoppable") or row.get("state") == "stopping"
+    )
+
+
+def _row_with_setup(spec: services.ServiceSpec, setup: dict) -> dict:
+    runtime = services.status(spec)
+    if _runtime_active(runtime):
+        runtime["detail"] = "; ".join(filter(None, (runtime.get("detail"), setup.get("detail"))))
+        runtime["startable"] = False
+        return runtime
+    return setup
+
+
+def _setup_aware_status(spec: services.ServiceSpec, root: Path) -> dict:
+    if spec.name == "memu-server":
+        return _row_with_setup(spec, setup_install.setup_status(root)) if setup_install.core_issue(root) else services.status(spec)
+    setup = setup_install.optional_setup_status(spec.name, root)
+    if not setup["ready"]:
+        return _row_with_setup(spec, setup)
+    runtime = services.status(spec)
+    if setup["guidance"]:
+        runtime["detail"] = "; ".join(filter(None, (runtime.get("detail"), setup["guidance"])))
+    return runtime
+
+
+def _require_startable_setup(service_name: str) -> None:
+    root = settings.apps_root()
+    if root is None:
+        raise HTTPException(status_code=409, detail="Install core and restart OpenAlma first")
+    try:
+        issue = setup_install.start_issue(service_name, root)
+    except setup_install.SetupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if issue:
+        raise HTTPException(status_code=409, detail=issue)
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
     apps_root = settings.apps_root()
@@ -73,21 +113,10 @@ def index(request: Request) -> HTMLResponse:
             for spec in specs if spec.name != "memu-server"
         ]
     else:
-        rows = []
-        for spec in specs:
-            if spec.name == "memu-server" and setup_install.core_issue(setup_root):
-                rows.append({"name": spec.name, "label": spec.label} | setup_install.setup_status(setup_root))
-            elif spec.name != "memu-server" and services.is_installed(spec):
-                setup = setup_install.optional_setup_status(spec.name, setup_root)
-                if setup["ready"]:
-                    row = {"name": spec.name, "label": spec.label} | services.status(spec)
-                    if setup["guidance"]:
-                        row["detail"] = "; ".join(filter(None, (row.get("detail"), setup["guidance"])))
-                    rows.append(row)
-                else:
-                    rows.append({"name": spec.name, "label": spec.label} | setup)
-            elif services.is_installed(spec):
-                rows.append({"name": spec.name, "label": spec.label} | services.status(spec))
+        rows = [
+            {"name": spec.name, "label": spec.label} | _setup_aware_status(spec, setup_root)
+            for spec in specs if services.is_installed(spec)
+        ]
         not_installed = []
         for spec in specs:
             if not services.is_installed(spec) and spec.name != "memu-server":
@@ -227,6 +256,11 @@ def install_service(service_name: str) -> RedirectResponse:
     root = settings.setup_apps_root() if service_name == "memu-server" else settings.apps_root()
     if root is None:
         raise HTTPException(status_code=400, detail="Install core and restart OpenAlma first")
+    spec = next((item for item in services.services_for_root(root) if item.name == service_name), None)
+    if spec is None:
+        raise HTTPException(status_code=404, detail=f"Unknown service: {service_name}")
+    if _runtime_active(services.status(spec)):
+        raise HTTPException(status_code=409, detail=f"Stop {spec.label} before changing its installation")
     try:
         if service_name == "memu-server":
             setup_install.begin_core_install(root)
@@ -304,6 +338,7 @@ def logs(request: Request, service_name: str, lines: int = 200) -> HTMLResponse:
 @app.post("/service/{service_name}/start")
 def service_start(service_name: str) -> dict:
     spec = _find_service(service_name)
+    _require_startable_setup(service_name)
     try:
         services.start(spec)
     except services.ServiceStoppingError as exc:
@@ -318,6 +353,7 @@ def iris_install(
     soul_id: str = Form(), device_session_id: str = Form(), use_existing: bool = Form(default=False),
 ) -> RedirectResponse:
     spec = _find_service("iris-server")
+    _require_startable_setup("iris-server")
     target = {"soul_id": soul_id, "device_session_id": device_session_id}
     try:
         services.raise_if_stopping(spec)
@@ -377,7 +413,10 @@ def service_force_stop(service_name: str, confirmed: bool = False) -> dict:
 @app.get("/service/{service_name}/status")
 def service_status(service_name: str) -> dict:
     spec = _find_service(service_name)
-    return services.status(spec)
+    root = settings.apps_root()
+    if root is None:
+        raise HTTPException(status_code=409, detail="Install core and restart OpenAlma first")
+    return _setup_aware_status(spec, root)
 
 
 @app.get("/whatsapp/pair-status")

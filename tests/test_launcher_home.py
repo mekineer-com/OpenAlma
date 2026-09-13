@@ -91,3 +91,72 @@ def test_active_core_enables_optional_install_actions(tmp_path, monkeypatch):
     assert response.status_code == 200
     for name in ("iris-server", "atomic", "channels-daemon", "sillytavern"):
         assert f'action="/install/{name}"' in response.text
+
+
+def test_live_service_keeps_stop_while_setup_is_incomplete(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(app.services, "status", lambda _spec: {
+        "state": "running", "status_label": "running", "running": True,
+        "stoppable": True, "startable": False, "detail": "",
+    })
+
+    row = app._row_with_setup(spec, {
+        "install_setup": True, "detail": "Installation incomplete", "action_kind": "install",
+    })
+
+    assert row["stoppable"] is True
+    assert row["detail"] == "Installation incomplete"
+    assert "install_setup" not in row
+
+
+def test_stopped_incomplete_service_poll_returns_install_state(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    setup = {
+        "ready": False, "state": "setup", "install_setup": True,
+        "action_kind": "install", "detail": "Installation incomplete",
+    }
+    monkeypatch.setattr(app.setup_install, "optional_setup_status", lambda _name, _root: setup)
+    monkeypatch.setattr(app.services, "status", lambda _spec: {"state": "stopped", "running": False})
+
+    assert app._setup_aware_status(spec, tmp_path) == setup
+
+
+def test_iris_runtime_setup_state_is_not_an_install_row(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(
+        app.setup_install, "optional_setup_status", lambda _name, _root: {"ready": True, "guidance": ""},
+    )
+    monkeypatch.setattr(app.services, "status", lambda _spec: {"state": "setup", "action_kind": "settings"})
+
+    status = app._setup_aware_status(spec, tmp_path)
+
+    assert status == {"state": "setup", "action_kind": "settings"}
+    assert "install_setup" not in status
+
+
+def test_start_route_rejects_incomplete_setup(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    started = []
+    monkeypatch.setattr(app, "_find_service", lambda _name: spec)
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.setup_install, "start_issue", lambda _name, _root: "Missing Atomic binary")
+    monkeypatch.setattr(app.services, "start", lambda _spec: started.append(True))
+
+    response = TestClient(app.app).post("/service/atomic/start")
+
+    assert response.status_code == 409
+    assert started == []
+
+
+def test_install_route_rejects_live_service(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    begun = []
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "services_for_root", lambda _root: [spec])
+    monkeypatch.setattr(app.services, "status", lambda _spec: {"running": True})
+    monkeypatch.setattr(app.setup_install, "begin_optional_install", lambda *_args: begun.append(True))
+
+    response = TestClient(app.app).post("/install/atomic")
+
+    assert response.status_code == 409
+    assert begun == []
