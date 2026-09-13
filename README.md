@@ -14,6 +14,21 @@ On most platforms, AI memory is flawed. You mentioned last week that your dog di
 
 OpenAlma runs locally on your machine, watches your conversations, and quietly builds a picture of your life — who matters to you, what you're working through, what happened last month. When you come back, that picture is there. She recognizes your friends, reaches you on WhatsApp, looks things up for you, notices how you're doing — and with smartglasses, sees what you see.
 
+**Contents**
+
+- [Her Memory](#her-memory)
+- [Her Inner Life](#her-inner-life)
+- [Why Local-First Matters](#why-local-first-matters)
+- [How It Works at a Glance](#how-it-works-at-a-glance)
+- [Platform Compatibility](#platform-compatibility)
+- [Getting Started](#getting-started)
+- [Status](#status)
+- [Clients for Interacting with the Soul](#clients-for-interacting-with-the-soul) — [SillyTavern](#sillytavern) · [WhatsApp](#whatsapp-hermes-channels) · [Iris](#iris) · [The Mind Map](#the-mind-map-atomic)
+- [Guides](#guides)
+- [Things to Know](#things-to-know)
+- [Future Development](#future-development)
+- [Acknowledgments](#acknowledgments)
+
 ---
 
 ## Her Memory
