@@ -32,7 +32,7 @@ function createSoulSelector(input, select, useExisting) {
   };
 }
 
-async function submitSoulForm(form) {
+async function submitSoulForm(form, onSuccess) {
   try {
     const response = await fetch(form.action, {method: "POST", body: new FormData(form)});
     if (!response.ok) {
@@ -40,12 +40,13 @@ async function submitSoulForm(form) {
       const message = typeof error.detail === "string" ? error.detail : error.detail?.message || "Soul selection failed";
       if (response.status === 409 && error.detail?.reason === "existing_exact" && confirm(message)) {
         form.querySelector('[name="use_existing"]').value = "true";
-        return submitSoulForm(form);
+        return submitSoulForm(form, onSuccess);
       }
       alert(message);
       return;
     }
-    location.href = response.url;
+    if (onSuccess) onSuccess();
+    else location.href = response.url;
   } catch (error) {
     alert("Could not submit: " + error.message);
   }

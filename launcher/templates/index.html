@@ -57,9 +57,6 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .banner { padding: 0.6rem 0.8rem; margin: 1rem 0; border-radius: 3px;
               background: #3a2415; color: #f5c084; border: 1px solid #6b3a16; }
-    .setup-cue { color: #ff6b6b; font-family: cursive; font-size: 1rem; font-weight: 700;
-                 animation: point 0.8s ease-in-out infinite alternate; }
-    @keyframes point { to { transform: translateX(0.35rem); } }
     .meter { width: 100%; max-width: 28rem; height: 0.6rem; background: #2a2a2a;
              border: 1px solid #444; border-radius: 3px; overflow: hidden; }
     .meter-fill { height: 100%; background: #6aa9ff; }
@@ -121,10 +118,6 @@
   </div>
   {% endif %}
 
-  <div id="setup-cue" class="setup-cue" {% if not setup_issue %}hidden{% endif %}>
-    <span id="setup-reason">{{ setup_issue }} &nbsp;↗ </span><a href="/settings">Settings</a>
-  </div>
-
   <h2>Services</h2>
   <table>
     <thead>
@@ -132,7 +125,7 @@
     </thead>
     <tbody>
       {% for s in services %}
-      <tr data-service="{{ s.name }}" data-runtime="{{ 'false' if s.install_setup else 'true' }}" data-state="{{ s.state }}">
+      <tr data-service="{{ s.name }}" data-runtime="{{ 'false' if s.install_setup else 'true' }}">
         <td>{{ s.label }}</td>
         <td class="svc-status">
           <span class="{{ s.state }}">{{ s.status_label }}</span>
@@ -327,21 +320,40 @@
         soulMenu.hidden = knownSouls.size === 0;
         soulInput.setAttribute("aria-expanded", String(!soulMenu.hidden));
       }
-      knownSouls.forEach(function(name) {
+      function addSoulOption(name) {
         const option = document.createElement("button");
         option.type = "button";
         option.role = "option";
         option.textContent = name;
         option.addEventListener("mousedown", function(event) { event.preventDefault(); });
         option.addEventListener("click", function() {
+          if (!soulReady.hidden && soulInput.value.trim() === name) {
+            closeSoulMenu();
+            return;
+          }
           soulInput.value = name;
           soulUseExisting.value = "true";
+          soulReady.hidden = true;
+          soulNew.hidden = true;
           closeSoulMenu();
-          void submitSoulForm(soulForm);
         });
         soulMenu.appendChild(option);
-      });
+      }
+      function saveSoul(name) {
+        void submitSoulForm(soulForm, function() {
+          if (!knownSouls.has(name)) {
+            knownSouls.add(name);
+            addSoulOption(name);
+          }
+          pendingNewSoul = "";
+          soulNew.hidden = true;
+          soulReady.hidden = false;
+          closeSoulMenu();
+        });
+      }
+      knownSouls.forEach(addSoulOption);
       soulInput.addEventListener("focus", openSoulMenu);
+      soulInput.addEventListener("click", openSoulMenu);
       soulInput.addEventListener("blur", closeSoulMenu);
       soulInput.addEventListener("input", function() {
         pendingNewSoul = "";
@@ -356,7 +368,7 @@
         if (!name) return;
         if (knownSouls.has(name)) {
           soulUseExisting.value = "true";
-          void submitSoulForm(soulForm);
+          saveSoul(name);
           return;
         }
         soulUseExisting.value = "false";
@@ -365,7 +377,7 @@
           soulNew.hidden = false;
           return;
         }
-        void submitSoulForm(soulForm);
+        saveSoul(name);
       });
     }
 
@@ -463,11 +475,6 @@ function pollStatus(name) {
       var statusCell = row.querySelector('.svc-status');
       var actionsCell = row.querySelector('.svc-actions');
       var state = data.state || (data.running ? 'running' : 'stopped');
-      if (name === 'memu-server' && state === 'running' && row.dataset.state !== 'running') {
-        location.reload();
-        return;
-      }
-      row.dataset.state = state;
       var label = data.status_label || (data.running ? '● running' : '○ stopped');
       var html = '<span class="' + esc(state) + '">' + esc(label) + '</span>';
       if (data.detail) {
@@ -483,12 +490,6 @@ function pollStatus(name) {
         html += '</div>';
       }
       statusCell.innerHTML = html;
-      if (name === 'iris-server') {
-        var cue = document.getElementById('setup-cue');
-        var issue = data.setup_issue || '';
-        cue.hidden = !issue;
-        document.getElementById('setup-reason').textContent = issue ? issue + '  ↗ ' : '';
-      }
       var starting = pendingStarts[name] > Date.now() && !data.stoppable && data.startable !== false;
       if (pendingStops[name]) {
         statusCell.innerHTML = '<span class="starting">◐ waiting for graceful shutdown</span>';
@@ -543,6 +544,13 @@ setInterval(function() {
     pollStatus(row.dataset.service);
   });
 }, 2000);
+{% if owner_error or soul_error %}
+setInterval(function() {
+  fetch('/souls', { cache: 'no-store' }).then(function(response) {
+    if (response.ok) location.reload();
+  }).catch(function() {});
+}, 2000);
+{% endif %}
 setInterval(pollMemorize, 10000);
 </script>
 </body>

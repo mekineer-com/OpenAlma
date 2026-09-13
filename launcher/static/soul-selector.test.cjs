@@ -37,3 +37,17 @@ test('late existing-soul conflict can be confirmed and retried', async () => {
   assert.equal(consent.value, 'true');
   assert.equal(context.location.href, '/done');
 });
+
+test('success callback avoids a page redirect', async () => {
+  let succeeded = false;
+  const context = vm.createContext({
+    FormData: class {},
+    fetch: async () => ({ok: true, url: '/done'}),
+    alert: () => assert.fail('success should not alert'),
+    location: {href: '/original'},
+  });
+  vm.runInContext(fs.readFileSync(__dirname + '/soul-selector.js', 'utf8'), context);
+  await context.submitSoulForm({action: '/soul'}, () => { succeeded = true; });
+  assert.equal(succeeded, true);
+  assert.equal(context.location.href, '/original');
+});

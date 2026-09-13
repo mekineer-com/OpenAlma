@@ -160,14 +160,6 @@ def index(request: Request) -> HTMLResponse:
     except (services.SoulServiceUnavailable, ValueError) as exc:
         soul_error = str(exc)
     memorize = services.memorize_pending(active_soul, owner_id) if active_soul and owner_id else {}
-    setup_issue = next(
-        (
-            str(row.get("setup_issue") or "")
-            for row in rows
-            if row.get("name") == "iris-server"
-        ),
-        "",
-    )
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -189,7 +181,6 @@ def index(request: Request) -> HTMLResponse:
             "apps_root": str(apps_root) if apps_root else "",
             "setup_root": str(setup_root) if setup_root else "",
             "needs_setup": apps_root is None,
-            "setup_issue": setup_issue,
             "owner_id": owner_id,
             "owner_error": owner_error,
         },
