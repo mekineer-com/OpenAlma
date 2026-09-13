@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>OpenAlma</title>
   <style>
-    :root { color-scheme: dark; }
+    :root { color-scheme: dark; font-size: 15px; }
     body {
       font-family: system-ui, sans-serif;
       font-size: 0.82rem;
@@ -20,7 +20,7 @@
     h2 { border-bottom: 1px solid #333; padding-bottom: 0.3rem; margin-top: 2rem; color: #f0f0f0; }
     p.muted, .muted { color: #888; }
     table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 0.4rem 0.6rem; text-align: left; border-bottom: 1px solid #2a2a2a; vertical-align: middle; }
+    th, td { padding: 0.35rem 0.4rem; text-align: left; border-bottom: 1px solid #2a2a2a; vertical-align: middle; }
     th { font-weight: 600; background: #222; color: #eee; }
     details.excluded-chats { margin-top: 0.8rem; }
     details.excluded-chats summary { cursor: pointer; color: #aaa; margin-bottom: 0.4rem; }
@@ -35,11 +35,13 @@
     .stopped { color: #f87171; }
     .svc-detail { margin-top: 0.15rem; font-size: 0.78rem; color: #aaa; }
     .svc-children { margin-top: 0.15rem; font-size: 0.78rem; color: #888; }
-    .btn { padding: 0.3rem 0.7rem; font: inherit; cursor: pointer; text-decoration: none;
+    .btn { padding: 0.25rem 0.55rem; font: inherit; cursor: pointer; text-decoration: none;
            background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 3px; }
     .btn:hover { background: #353535; border-color: #555; }
     .btn:disabled { opacity: 0.7; cursor: progress; }
     form.inline { display: inline; margin: 0; }
+    .svc-actions { white-space: nowrap; }
+    .svc-actions + td { padding-left: 0.55rem; }
     select { font: inherit; padding: 0.15rem 0.25rem; background: #2a2a2a; color: #eee; border: 1px solid #444; }
     a { color: #7cb7ff; }
     a:visited { color: #b18cd9; }
@@ -204,7 +206,7 @@
         {% endif %}
       </p>
       <div class="meter"><div class="meter-fill" style="width: {{ [memorize.pct, 100]|min }}%"></div></div>
-      <p class="muted">Memorize-eligible at {{ "{:,}".format(memorize.threshold) }} tokens; a sleep-gap releases it. Snapshot {{ memorize.computed_at }}.</p>
+      <p class="muted">Memorize-eligible at {{ "{:,}".format(memorize.threshold) }} tokens; a sleep-gap releases it. Snapshot <span class="snapshot-time" data-timestamp="{{ memorize.computed_at }}">{{ memorize.computed_at }}</span>.</p>
     {% else %}
       <p class="muted">No pending-memorize data — is mcp-memu-server running?</p>
     {% endif %}
@@ -212,7 +214,7 @@
 
   {% if channels_configured %}
   <h2>Hermes Channels Soul selector</h2>
-  <p class="muted">One active Hermes Channels soul at a time. This updates <code>hermes-channels/data/config.json</code>.</p>
+  <p class="muted">Choose an existing soul or enter a new name. Stored in hermes-channels/data/config.json</p>
   {% if channels_error %}
   <p class="failure">Channels configuration needs repair: {{ channels_error }}</p>
   {% elif soul_error %}
@@ -233,16 +235,16 @@
     </span>
     <input id="soul-use-existing" type="hidden" name="use_existing" value="false">
   </form>
-  <p class="muted">Choose an existing soul or enter a new name.</p>
   {% endif %}
   {% endif %}
 
   <h2>WhatsApp channel policy</h2>
   {% if chats %}
   <p class="muted">
-    <strong>full</strong> — soul can choose to respond or listen.
-    <strong>listen_only</strong> — soul can only listen.
-    <strong>excluded</strong> — Hermes Channels drops the message entirely.
+    Legend:<br>
+    <strong>full</strong> — soul can choose to respond or listen.<br>
+    <strong>listen_only</strong> — soul can only listen.<br>
+    <strong>excluded</strong> — Hermes Channels drops the message entirely.<br>
     <strong>Mem</strong> — include this chat in memory extraction; unchecked chats stay as context-only during memorize.
   </p>
   <form method="post" action="/policy">
@@ -514,6 +516,11 @@ function fmt(n) {
   return Number(n || 0).toLocaleString();
 }
 
+function fmtSnapshot(value) {
+  var date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value || '') : date.toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'});
+}
+
 function renderMemorize(data) {
   var box = document.getElementById('memorize-meter');
   if (!box) return;
@@ -534,9 +541,13 @@ function renderMemorize(data) {
   }
   html += '</p>';
   html += '<div class="meter"><div class="meter-fill" style="width: ' + Math.min(pct, 100) + '%"></div></div>';
-  html += '<p class="muted">Memorize-eligible at ' + fmt(threshold) + ' tokens; a sleep-gap releases it. Snapshot ' + esc(data.computed_at) + '.</p>';
+  html += '<p class="muted">Memorize-eligible at ' + fmt(threshold) + ' tokens; a sleep-gap releases it. Snapshot ' + esc(fmtSnapshot(data.computed_at)) + '.</p>';
   box.innerHTML = html;
 }
+
+document.querySelectorAll('.snapshot-time').forEach(function(element) {
+  element.textContent = fmtSnapshot(element.dataset.timestamp);
+});
 
 function pollMemorize() {
   fetch('/memorize/status', { cache: 'no-store' })
