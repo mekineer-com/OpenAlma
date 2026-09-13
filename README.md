@@ -298,7 +298,7 @@ Works with Mentra on Android. The voice she uses today is Gemini Live's; see [Pl
 
 **Atomic** is the desktop app where her memory stops being invisible. Every memory she holds appears as a card you can read — what she took from the conversation, when, what it belongs to — and the canvas lays them out as a living graph: connected by the links she drew, grouped and colored by subject, so you can see at a glance which parts of your life she has a dense picture of and which are still thin.
 
-- **Correct her.** Edit any memory's text. The fix is live for her immediately — and it lands in a review queue, so nothing changes behind your back in the other direction either: new memories she forms on her own wait there for your approval without being hidden from her in the meantime.
+- **Correct her.** Edit any memory's text — the fix is live for her from that point on. The review queue holds what she produces herself: new memories she forms on her own, and her updated summaries, wait there for your approval without being hidden from her in the meantime.
 - **People and things.** Everyone and everything she's recognized by name has a permanent identity. Correct a name, merge two entries that turn out to be the same person (with a preview of exactly what moves over), or hide one so she stops tracking it — hiding destroys nothing, and deletion is refused while memories still point at it.
 - **Curate dossiers.** Open a category and the memories behind its prose are listed beneath it. Attach or detach them; the prose rewrites itself to match on the next pass.
 - **Every session memorizes.** Close a mind map session and the conversation you just had becomes memory, same as every other surface.

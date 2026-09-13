@@ -8,9 +8,9 @@ The mind map is a desktop app that opens her memory up. Every memory she holds a
 
 ## Correcting her
 
-You can edit any memory's text. The change takes effect immediately — she's working from the corrected version from that point on — but it also lands in a review queue, so you can come back and approve, revise again, or delete it outright.
+You can edit any memory's text. The change takes effect immediately — she's working from the corrected version from that point on.
 
-The same queue holds memories she formed on her own that you haven't looked at yet. Nothing is hidden from you, and nothing waits on your approval to be useful to her.
+The review queue holds what she produces herself: memories she formed on her own that you haven't looked at yet, and her updated summaries. Nothing is hidden from you, and nothing waits on your approval to be useful to her.
 
 ## The canvas
 
