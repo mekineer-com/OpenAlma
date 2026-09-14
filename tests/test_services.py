@@ -304,6 +304,20 @@ def test_atomic_match_requires_expected_cwd(tmp_path, monkeypatch):
 
     monkeypatch.setattr(services, "_proc_cwd", lambda _pid: spec.cwd)
     assert services._matches_service_process(spec, 123) is True
+    for command in (
+        "npm run dev:server",
+        "node node_modules/vite/bin/vite.js --host 127.0.0.1",
+        "/apps/atomic/target/debug/atomic-server serve --bind 127.0.0.1",
+    ):
+        monkeypatch.setattr(services, "_proc_cmdline", lambda _pid: command)
+        assert services._matches_service_process(spec, 123) is True
+    for command in (
+        "cargo build -j1 -p atomic-server",
+        "rustc --crate-name atomic_server crates/atomic-server/src/main.rs -o target/debug/atomic-server",
+        "node node_modules/vite/bin/vite.js build",
+    ):
+        monkeypatch.setattr(services, "_proc_cmdline", lambda _pid: command)
+        assert services._matches_service_process(spec, 123) is False
 
 
 def test_status_reports_stuck_for_verified_process_without_port(tmp_path, monkeypatch):

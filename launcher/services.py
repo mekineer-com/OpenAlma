@@ -290,11 +290,16 @@ def _matches_service_process(spec: ServiceSpec, pid: int) -> bool:
     if spec.name == "sillytavern":
         return cwd_matches and ("server.js" in cmd or "start.sh" in cmd)
     if spec.name == "atomic":
-        return cwd_matches and (
-            "npm run dev:server" in cmd
-            or "scripts/dev-server.js" in cmd
-            or "atomic-server" in cmd
-            or "vite" in cmd
+        try:
+            args = shlex.split(cmd)
+        except ValueError:
+            return False
+        names = [Path(arg).name.removesuffix(".exe") for arg in args]
+        return cwd_matches and bool(args) and (
+            names[0] == "atomic-server"
+            or "dev-server.js" in names
+            or "dev:server" in args
+            or (bool({"vite", "vite.js"}.intersection(names)) and "build" not in args)
         )
     return False
 
