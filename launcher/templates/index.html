@@ -563,7 +563,7 @@ setInterval(function() {
 }, 2000);
 {% if owner_error or soul_error %}
 setInterval(function() {
-  fetch('/souls', { cache: 'no-store' }).then(function(response) {
+  fetch('{% if owner_error %}/owner{% else %}/souls{% endif %}', { cache: 'no-store' }).then(function(response) {
     if (response.ok) location.reload();
   }).catch(function() {});
 }, 2000);

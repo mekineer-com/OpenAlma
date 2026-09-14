@@ -135,6 +135,41 @@ def test_live_and_blocked_services_do_not_run_core_setup_checks(tmp_path, monkey
     assert verified == [False]
 
 
+def test_optional_install_refresh_skips_core_runtime_validation(tmp_path, monkeypatch):
+    core = services.ServiceSpec("memu-server", "memU", [], tmp_path, tmp_path / "core.log", tmp_path / "core.pid")
+    atomic = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "atomic.log", tmp_path / "atomic.pid")
+    verified = []
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "all_services", lambda: [core, atomic])
+    monkeypatch.setattr(app.services, "is_installed", lambda _spec: True)
+    monkeypatch.setattr(app.services, "status", lambda _spec: {"state": "stopped", "running": False})
+    monkeypatch.setattr(
+        app.setup_install, "operation_status",
+        lambda _root, name="memu-server": {"state": "running" if name == "atomic" else "idle"},
+    )
+    monkeypatch.setattr(
+        app.setup_install, "core_issue",
+        lambda _root, *, verify_runtime=True: verified.append(verify_runtime) or "Missing runtime",
+    )
+    monkeypatch.setattr(
+        app.setup_install, "setup_status",
+        lambda _root, **_kwargs: {"state": "setup", "detail": "Missing runtime"},
+    )
+    monkeypatch.setattr(
+        app.setup_install, "optional_setup_status",
+        lambda _name, _root: {"ready": False, "install_running": True, "state": "setup", "detail": "Installing"},
+    )
+    monkeypatch.setattr(app.policy, "list_whatsapp_chats", lambda: [])
+    monkeypatch.setattr(app.policy, "read_channel_settings", lambda: {})
+    monkeypatch.setattr(app.services, "read_owner", lambda: "Fictional Owner")
+    monkeypatch.setattr(app.services, "list_souls", lambda: ["Fictional Soul"])
+
+    response = TestClient(app.app).get("/")
+
+    assert response.status_code == 200
+    assert verified == [False]
+
+
 def test_connected_iris_counts_as_active_runtime():
     assert app._runtime_active({"state": "active", "active": True}) is True
 
@@ -210,5 +245,11 @@ def test_unavailable_mcp_poll_refreshes_dependent_sections():
     text = template.read_text(encoding="utf-8")
 
     assert "{% if owner_error or soul_error %}" in text
-    assert "fetch('/souls', { cache: 'no-store' })" in text
+    assert "{% if owner_error %}/owner{% else %}/souls{% endif %}" in text
     assert "setInterval(pollMemorize, 10000)" in text
+
+
+def test_owner_readiness_endpoint_tracks_owner_service(monkeypatch):
+    monkeypatch.setattr(app.services, "read_owner", lambda: "Fictional Owner")
+
+    assert TestClient(app.app).get("/owner").json() == {"user_id": "Fictional Owner"}

@@ -77,7 +77,8 @@ def _setup_aware_status(spec: services.ServiceSpec, root: Path, *, verify_runtim
         if _runtime_active(runtime):
             return runtime
         issue = setup_install.core_issue(root, verify_runtime=verify_runtime)
-        return _row_with_setup(runtime, setup_install.setup_status(root, verify_runtime=verify_runtime)) if issue else runtime
+        setup = setup_install.setup_status(root, verify_runtime=verify_runtime, known_issue=issue)
+        return _row_with_setup(runtime, setup) if issue else runtime
     setup = setup_install.optional_setup_status(spec.name, root)
     if not setup["ready"]:
         return _row_with_setup(runtime, setup)
@@ -105,6 +106,9 @@ def index(request: Request) -> HTMLResponse:
     specs = services.all_services() if apps_root else (
         services.services_for_root(setup_root) if setup_root else []
     )
+    install_in_progress = bool(setup_root) and any(
+        setup_install.operation_status(setup_root, spec.name)["state"] == "running" for spec in specs
+    )
     if apps_root is None:
         core = next((spec for spec in specs if spec.name == "memu-server"), None)
         rows = [
@@ -116,7 +120,9 @@ def index(request: Request) -> HTMLResponse:
         ]
     else:
         rows = [
-            {"name": spec.name, "label": spec.label} | _setup_aware_status(spec, setup_root)
+            {"name": spec.name, "label": spec.label} | _setup_aware_status(
+                spec, setup_root, verify_runtime=not install_in_progress,
+            )
             for spec in specs if services.is_installed(spec)
         ]
         not_installed = []
@@ -372,6 +378,14 @@ def souls() -> dict:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/owner")
+def owner() -> dict:
+    try:
+        return {"user_id": services.read_owner()}
+    except services.OwnerServiceUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post("/service/{service_name}/stop")

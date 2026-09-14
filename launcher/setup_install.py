@@ -734,7 +734,9 @@ def operation_status(root: Path, service_name: str = "memu-server") -> dict[str,
         return {"state": operation.state, "step": operation.step, "detail": operation.detail}
 
 
-def setup_status(root: Path, *, verify_runtime: bool = True) -> dict[str, Any]:
+def setup_status(
+    root: Path, *, verify_runtime: bool = True, known_issue: str | None = None,
+) -> dict[str, Any]:
     operation = operation_status(root)
     if operation["state"] == "running":
         return {
@@ -742,7 +744,7 @@ def setup_status(root: Path, *, verify_runtime: bool = True) -> dict[str, Any]:
             "status_label": "Installing core", "detail": operation["step"],
             "startable": False, "install_running": True,
         }
-    issue = core_issue(root, verify_runtime=verify_runtime)
+    issue = known_issue if known_issue is not None else core_issue(root, verify_runtime=verify_runtime)
     if not issue:
         return {
             "state": "setup", "install_setup": True,
