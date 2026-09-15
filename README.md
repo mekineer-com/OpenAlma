@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/spiral-white-512.png">
+    <img src="docs/spiral-black-512.png" alt="OpenAlma" width="140">
+  </picture>
+</p>
+
 # OpenAlma
 
 _Last updated: 2026-09-13 (v0.0.14-buildfix)_
