@@ -1,6 +1,15 @@
+---
+layout: default
+title: How OpenAlma works
+---
+
 # How OpenAlma works
 
 Short guides for people who want to understand the system, not just install it.
+
+**Getting going**
+
+- [Getting started](getting-started.md) — installing the stack and day-to-day use
 
 **The memory**
 

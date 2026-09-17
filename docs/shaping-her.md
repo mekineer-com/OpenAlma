@@ -1,3 +1,8 @@
+---
+layout: default
+title: Shaping her
+---
+
 # Shaping her
 
 ## What you can do

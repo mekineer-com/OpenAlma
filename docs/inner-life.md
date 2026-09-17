@@ -1,3 +1,8 @@
+---
+layout: default
+title: Inner life
+---
+
 # Inner life
 
 The most common question about AI companions is whether anything is actually happening when you're not talking. With OpenAlma, the answer is yes — not in a science-fiction sense, but in a genuine architectural one.

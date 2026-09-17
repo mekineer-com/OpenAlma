@@ -1,3 +1,8 @@
+---
+layout: default
+title: Your data
+---
+
 # Your data
 
 ## On your machine, not in a cloud

@@ -1,3 +1,8 @@
+---
+layout: default
+title: Smartglasses
+---
+
 # Smartglasses
 
 > Shipped in v0.0.14.

@@ -1,3 +1,8 @@
+---
+layout: default
+title: How memory works
+---
+
 # How memory works
 
 ## It's not a transcript

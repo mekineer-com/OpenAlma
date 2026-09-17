@@ -1,3 +1,8 @@
+---
+layout: default
+title: The mind map
+---
+
 # The mind map
 
 ## Seeing what she actually knows

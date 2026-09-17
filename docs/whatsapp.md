@@ -1,3 +1,8 @@
+---
+layout: default
+title: WhatsApp
+---
+
 # WhatsApp
 
 ## She can reach you where you already are
