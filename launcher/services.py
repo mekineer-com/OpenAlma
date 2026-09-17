@@ -700,6 +700,10 @@ def iris_install_env(target: dict[str, str] | None) -> dict[str, str]:
         target = {key: installed.get(f"installed_{field}") or "" for key, field in (
             ("soul_id", "soul"), ("device_session_id", "device")
         )}
+    else:
+        installed = _read_mentra_status(
+            MEMU_SERVER_PORT, device_session_id=str(target.get("device_session_id") or "")
+        )
     target = {**target, "user_id": owner_id}
     values = {
         "BASE_URL": str(mentra.get("public_base_url") or ""),
@@ -713,7 +717,11 @@ def iris_install_env(target: dict[str, str] | None) -> dict[str, str]:
         raise ValueError("Iris device ID must be 1-128 letters, digits, dots, underscores or hyphens")
     for key in ("USER_ID", "SOUL_ID"):
         values[key] = urllib.parse.quote(values[key], safe="")
-    return {f"MENTRA_PUBLIC_OPENALMA_{key}": value for key, value in values.items()}
+    env = {f"MENTRA_PUBLIC_OPENALMA_{key}": value for key, value in values.items()}
+    env["MENTRA_PUBLIC_OPENALMA_PREVIOUS_VERSION"] = str(
+        installed.get("installed_version") or ""
+    )
+    return env
 
 
 def _iris_build_env(spec: ServiceSpec, target: dict[str, str] | None) -> dict[str, str]:
@@ -1045,6 +1053,12 @@ def _iris_product_status(
     active = bool(mentra.get("active"))
     installed_package = str(mentra.get("installed_package") or "")
     installed_version = str(mentra.get("installed_version") or "")
+    host = mentra.get("host") if isinstance(mentra.get("host"), dict) else {}
+    automatic_host = (
+        host.get("host_package") == "com.mentra.mentra.openalma"
+        and "iris_install_ack" in (host.get("capabilities") or [])
+    )
+    repair_available = bool(installed_package and automatic_host)
     installed_semver = _iris_semver(installed_version)
     available_semver = _iris_semver(available_version)
     mismatch = bool(installed_package) and (
@@ -1098,12 +1112,13 @@ def _iris_product_status(
         label = f"▲ {state.replace('_', ' ')}"
         detail, action = str(mentra.get("detail") or ""), None
     else:
-        state, label, detail, action = "ready", "● Host ready", "", None
+        state, label, detail = "ready", "● Host ready", ""
+        action = "start" if repair_available else None
 
     if age and state not in {"update", "installing"}:
         detail = "; ".join(part for part in (detail, age) if part)
     action_label = (
-        ("Update" if mismatch else "Install")
+        ("Update" if mismatch else "Repair" if installed_package else "Install")
         if action == "start"
         else "Cancel" if action == "stop" else "Settings" if action == "settings" else ""
     )
@@ -1130,6 +1145,16 @@ def _iris_product_status(
         "available_package": available_package or None,
         "available_version": available_version or None,
         "update_available": mismatch,
+        "automatic_host": automatic_host,
+        "repair_available": repair_available,
+        "open_not_installed": bool(
+            not installed_package
+            and automatic_host
+            and available_package
+            and available_version
+            and readiness
+            and readiness.get("ready")
+        ),
     }
 
 
@@ -1159,6 +1184,13 @@ def status(spec: ServiceSpec) -> dict:
         readiness = mentra_readiness()
         runtime = _runtime_state(spec)
         mentra = _read_mentra_status(MEMU_SERVER_PORT)
+        if not mentra.get("installed_package") and readiness.get("device_session_id"):
+            scoped = _read_mentra_status(
+                MEMU_SERVER_PORT,
+                device_session_id=str(readiness["device_session_id"]),
+            )
+            if isinstance(scoped.get("host"), dict):
+                mentra = {**mentra, "host": scoped["host"]}
         package, version, url, github_status = _iris_release_candidate(spec)
         result = _iris_product_status(runtime, mentra, package, version, readiness)
         result.update(available_source="github" if url else "local", github_status=github_status)
@@ -1166,6 +1198,8 @@ def status(spec: ServiceSpec) -> dict:
         release = _read_iris_release_status(spec, runtime)
         if release:
             result["release_uri"] = release.get("release_uri")
+            result["release_device_session_id"] = release.get("device_session_id")
+            result["release_started_at"] = release.get("started_at")
         return _stop_status(spec, result)
     runtime = _runtime_state(spec)
     running = runtime.running

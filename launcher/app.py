@@ -1,6 +1,7 @@
 """FastAPI app for the OpenAlma launcher."""
 from __future__ import annotations
 
+import json
 import webbrowser
 from pathlib import Path
 
@@ -119,14 +120,22 @@ def index(request: Request) -> HTMLResponse:
             for spec in specs if spec.name != "memu-server"
         ]
     else:
-        rows = [
-            {"name": spec.name, "label": spec.label} | _setup_aware_status(
-                spec, setup_root, verify_runtime=not install_in_progress,
-            )
-            for spec in specs if services.is_installed(spec)
-        ]
+        rows = []
         not_installed = []
         for spec in specs:
+            if spec.name == "iris-server":
+                iris = {"name": spec.name, "label": spec.label} | _setup_aware_status(
+                    spec, setup_root, verify_runtime=not install_in_progress,
+                )
+                (rows if iris.get("installed_package") else not_installed).append(iris)
+                continue
+            if services.is_installed(spec):
+                rows.append(
+                    {"name": spec.name, "label": spec.label} | _setup_aware_status(
+                        spec, setup_root, verify_runtime=not install_in_progress,
+                    )
+                )
+                continue
             if not services.is_installed(spec) and spec.name != "memu-server":
                 setup = setup_install.optional_setup_status(spec.name, setup_root)
                 not_installed.append({"name": spec.name, "label": spec.label} | setup)
@@ -174,6 +183,9 @@ def index(request: Request) -> HTMLResponse:
         {
             "services": rows,
             "not_installed_services": not_installed,
+            "open_not_installed": any(
+                row.get("open_not_installed") for row in not_installed
+            ),
             "install_running": any(row.get("install_running") for row in rows + not_installed),
             "memorize": memorize,
             "chats": chat_rows,
@@ -219,6 +231,18 @@ def settings_page(request: Request) -> HTMLResponse:
     iris_spec = next((spec for spec in services.all_services() if spec.name == "iris-server"), None)
     iris = services.status(iris_spec) if iris_spec else {}
     iris_setup = iris.get("setup") or services.mentra_readiness(apps_root)
+    iris_connection = {}
+    if apps_root:
+        try:
+            mentra = json.loads(
+                (apps_root / "mcp-memu-server" / "config.json").read_text(encoding="utf-8")
+            ).get("mentra") or {}
+            iris_connection = {
+                "base_url": str(mentra.get("public_base_url") or ""),
+                "bearer": str(mentra.get("integration_bearer_token") or ""),
+            }
+        except (OSError, ValueError):
+            pass
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -233,6 +257,7 @@ def settings_page(request: Request) -> HTMLResponse:
             "settings_path": str(settings.SETTINGS_PATH),
             "iris": iris,
             "iris_setup": iris_setup,
+            "iris_connection": iris_connection,
             "host_prerequisites": services.host_prerequisites(apps_root or setup_root),
         },
     )

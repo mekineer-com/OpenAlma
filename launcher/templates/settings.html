@@ -86,6 +86,19 @@
       <p>Scan this QR in Mentra:</p>
       <canvas id="iris-install-qr" width="220" height="220"></canvas>
       <p><a href="{{ iris.release_uri }}">Open installation link</a></p>
+      <p>Phone ID: <code>{{ iris.release_device_session_id }}</code></p>
+      {% if iris.automatic_host %}<p class="ready">OpenAlma Mentra detected. Bring it to the foreground; it may complete installation automatically.</p>{% endif %}
+      <p>Manual Mentra fallback:</p>
+      <ol class="tight">
+        <li>Open Mentra Settings.</li>
+        <li>If Miniapp Developer Settings is missing, tap the release number ten times.</li>
+        <li>Open Miniapp Developer Settings and choose Scan Miniapp QR Code.</li>
+        <li>Scan this QR, then open Iris.</li>
+        <li>If Iris asks for setup, use the connection values below and enter the displayed Phone ID exactly.</li>
+        <li>Wait for OpenAlma to confirm installation; cleanup is automatic.</li>
+      </ol>
+      <label>OpenAlma address<input type="text" readonly value="{{ iris_connection.base_url or '' }}"></label>
+      <label>Connection key<input type="password" readonly value="{{ iris_connection.bearer or '' }}"></label>
       <p><button class="btn" type="button" onclick="irisAction('stop')">Cancel</button></p>
     {% elif iris.running %}
       <p>{{ iris.status_label }}</p>
@@ -102,7 +115,9 @@
         <p><button class="btn" id="iris-install-button" type="submit" disabled>Install Iris</button></p>
       </form>
       {% else %}
-      <p><button class="btn" type="button" onclick="irisAction('start', this)">{{ "Reinstall / Repair" if iris.installed_version else "Install Iris" }}</button></p>
+        {% if iris.update_available or iris.repair_available %}
+        <p><button class="btn" type="button" onclick="irisAction('start', this)">{{ iris.action_label }}</button></p>
+        {% endif %}
       {% endif %}
     {% endif %}
 

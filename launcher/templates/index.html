@@ -175,13 +175,16 @@
     </tbody>
   </table>
   {% if not_installed_services %}
-  <details class="not-installed">
+  <details class="not-installed"{% if open_not_installed %} open{% endif %}>
     <summary>Not installed ({{ not_installed_services|length }})</summary>
     <ul>
       {% for s in not_installed_services %}
       <li class="muted">
         {{ s.label }}
-        {% if s.action_kind == "install" %}<form class="inline" method="post" action="/install/{{ s.name }}"><button class="btn" type="submit">Install</button></form>{% else %}<button class="btn" disabled>Install</button>{% endif %}
+        {% if s.action_kind == "install" %}<form class="inline" method="post" action="/install/{{ s.name }}"><button class="btn" type="submit">Install</button></form>
+        {% elif s.action_kind == "settings" %}<a class="btn" href="/settings">Install</a>
+        {% elif s.action_kind == "start" %}<button class="btn" onclick="svcAction('{{ s.name }}','start',this)">{{ s.action_label }}</button>
+        {% else %}<button class="btn" disabled>Install</button>{% endif %}
         {% if s.detail %}<span class="svc-detail">{{ s.detail }}</span>{% endif %}
         {% if s.state == "setup" %}<a href="/install/{{ s.name }}/logs">log</a>{% endif %}
       </li>

@@ -202,6 +202,21 @@ class MentraStatusTest(TestCase):
                     self.assertEqual(result["status_label"], label)
                     self.assertEqual(result["action_kind"], action)
 
+        openalma = services._iris_product_status(
+            services.RuntimeState(),
+            {
+                **installed,
+                "host": {
+                    "host_package": "com.mentra.mentra.openalma",
+                    "capabilities": ["iris_install_ack"],
+                },
+            },
+            "com.openalma.mentra",
+            "0.1.0",
+        )
+        self.assertTrue(openalma["repair_available"])
+        self.assertEqual(openalma["action_label"], "Repair")
+
     def test_disabled_mentra_skips_all_live_probes(self) -> None:
         root = Path(self._testMethodName)
         config = root / "mcp-memu-server" / "config.json"
@@ -261,6 +276,28 @@ class MentraStatusTest(TestCase):
 
         self.assertEqual(result["step"], "release")
         self.assertEqual(result["reason"], "Private release unavailable; install: ip")
+
+    def test_running_installer_shows_stock_steps_and_exact_phone_id(self) -> None:
+        from app import templates
+
+        page = templates.get_template("settings.html").render(
+            iris_setup={"enabled": True, "ready": True, "rows": []},
+            iris={
+                "running": True,
+                "release_uri": "miniapp://fictional",
+                "release_device_session_id": "test-phone",
+                "automatic_host": True,
+            },
+            iris_connection={"base_url": "http://10.77.0.1", "bearer": "fictional-key"},
+            host_prerequisites={"rows": []},
+        )
+
+        self.assertIn("test-phone", page)
+        self.assertIn("tap the release number ten times", page)
+        self.assertIn("Scan Miniapp QR Code", page)
+        self.assertIn("http://10.77.0.1", page)
+        self.assertIn("fictional-key", page)
+        self.assertIn("OpenAlma Mentra detected", page)
 
     def test_readiness_checks_private_ingress_once_per_cache_window(self) -> None:
         root = Path(self._testMethodName)
@@ -661,7 +698,9 @@ class MentraStatusTest(TestCase):
                 patch.object(services, "iris_install_env", return_value={}),
                 patch.object(services, "start") as start,
             ):
-                self.assertIn('data-service="iris-server"', client.get("/").text)
+                home = client.get("/").text
+                self.assertIn("Not installed (1)", home)
+                self.assertIn("Iris", home)
                 self.assertIn('action="/iris/install"', client.get("/settings").text)
                 target = {"soul_id": "Fictional Soul", "device_session_id": "test-phone"}
                 self.assertEqual(client.post("/iris/install", data=target, follow_redirects=False).status_code, 303)
@@ -757,6 +796,7 @@ class MentraStatusTest(TestCase):
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_USER_ID"], "Fictional%20User")
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID"], "test-phone")
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_SOUL_ID"], "Fictional%20%22Soul%22")
+                self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_PREVIOUS_VERSION"], "")
                 self.assertEqual(built["MENTRA_RELEASE_BUNDLE"], str(root / "iris.zip"))
                 self.assertIn('BEARER="new-key"', env_path.read_text())
                 self.assertIn('SOUL_ID="Fictional%20%22Soul%22"', env_path.read_text())

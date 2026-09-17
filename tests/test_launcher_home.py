@@ -187,6 +187,49 @@ def test_iris_runtime_setup_state_is_not_an_install_row(tmp_path, monkeypatch):
     assert "install_setup" not in status
 
 
+def test_uninstalled_iris_opens_phone_client_section_for_openalma_host(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "all_services", lambda: [spec])
+    monkeypatch.setattr(app.services, "status", lambda _spec: {
+        "state": "stopped",
+        "installed_package": None,
+        "open_not_installed": True,
+        "action_kind": "settings",
+        "detail": "Not yet verified",
+    })
+    monkeypatch.setattr(app.setup_install, "optional_setup_status", lambda *_args: {"ready": True, "guidance": ""})
+    monkeypatch.setattr(app.policy, "list_whatsapp_chats", lambda: [])
+    monkeypatch.setattr(app.policy, "read_channel_settings", lambda: {})
+    monkeypatch.setattr(app.services, "read_owner", lambda: "Fictional Owner")
+    monkeypatch.setattr(app.services, "list_souls", lambda: ["Fictional Soul"])
+
+    html = TestClient(app.app).get("/").text
+
+    assert '<details class="not-installed" open>' in html
+    assert 'href="/settings">Install</a>' in html
+    assert 'data-service="iris-server"' not in html
+
+
+def test_phone_reported_iris_is_a_service(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "all_services", lambda: [spec])
+    monkeypatch.setattr(app.services, "status", lambda _spec: {
+        "state": "ready", "installed_package": "com.openalma.mentra",
+    })
+    monkeypatch.setattr(app.setup_install, "optional_setup_status", lambda *_args: {"ready": True, "guidance": ""})
+    monkeypatch.setattr(app.policy, "list_whatsapp_chats", lambda: [])
+    monkeypatch.setattr(app.policy, "read_channel_settings", lambda: {})
+    monkeypatch.setattr(app.services, "read_owner", lambda: "Fictional Owner")
+    monkeypatch.setattr(app.services, "list_souls", lambda: ["Fictional Soul"])
+
+    html = TestClient(app.app).get("/").text
+
+    assert 'data-service="iris-server"' in html
+    assert "Not installed (" not in html
+
+
 def test_start_route_rejects_incomplete_setup(tmp_path, monkeypatch):
     spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
     started = []
