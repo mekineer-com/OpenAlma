@@ -209,6 +209,7 @@ class MentraStatusTest(TestCase):
                 "host": {
                     "host_package": "com.mentra.mentra.openalma",
                     "capabilities": ["iris_install_ack"],
+                    "seen_at": services.time.time(),
                 },
             },
             "com.openalma.mentra",
@@ -216,6 +217,39 @@ class MentraStatusTest(TestCase):
         )
         self.assertTrue(openalma["repair_available"])
         self.assertEqual(openalma["action_label"], "Repair")
+
+        stale = services._iris_product_status(
+            services.RuntimeState(),
+            {**installed, "installed_seen_at": 1000.0, "host": {
+                "host_package": "com.mentra.mentra.openalma",
+                "capabilities": ["iris_install_ack"],
+                "seen_at": 1.0,
+            }},
+            "com.openalma.mentra",
+            "0.1.0",
+        )
+        self.assertFalse(stale["repair_available"])
+
+    def test_running_offer_reads_exact_phone_host(self) -> None:
+        spec = services.ServiceSpec("iris-server", "Iris", [], Path("."), Path("log"), Path("pid"))
+        release = {"pid": 1, "device_session_id": "offered-phone", "started_at": 100.0}
+        host = {
+            "host_package": "com.mentra.mentra.openalma",
+            "capabilities": ["iris_install_ack"],
+            "seen_at": 101.0,
+        }
+        with (
+            patch.object(services, "mentra_readiness", return_value={"enabled": True, "ready": True}),
+            patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True, port_pid=1)),
+            patch.object(services, "_read_iris_release_status", return_value=release),
+            patch.object(services, "_read_mentra_status", return_value={"state": "ready", "host": host}) as read,
+            patch.object(services, "_iris_release_candidate", return_value=(services.IRIS_PACKAGE, "0.1.0", None, "available")),
+            patch.object(services.time, "time", return_value=101.0),
+        ):
+            result = services.status(spec)
+
+        read.assert_called_once_with(services.MEMU_SERVER_PORT, device_session_id="offered-phone")
+        self.assertTrue(result["automatic_offer"])
 
     def test_disabled_mentra_skips_all_live_probes(self) -> None:
         root = Path(self._testMethodName)
@@ -286,7 +320,7 @@ class MentraStatusTest(TestCase):
                 "running": True,
                 "release_uri": "miniapp://fictional",
                 "release_device_session_id": "test-phone",
-                "automatic_host": True,
+                "automatic_offer": True,
             },
             iris_connection={"base_url": "http://10.77.0.1", "bearer": "fictional-key"},
             host_prerequisites={"rows": []},
@@ -496,7 +530,7 @@ class MentraStatusTest(TestCase):
         ):
             result = services.status(spec)
         self.assertTrue(result["active"])
-        status.assert_called_once_with(8099)
+        status.assert_called_once_with(8099, device_session_id="")
 
     def test_soul_api_uses_authoritative_server_contract(self) -> None:
         requests = []
@@ -701,10 +735,41 @@ class MentraStatusTest(TestCase):
                 home = client.get("/").text
                 self.assertIn("Not installed (1)", home)
                 self.assertIn("Iris", home)
+                with patch.object(
+                    services, "_runtime_state", return_value=services.RuntimeState(running=True, port_pid=41)
+                ):
+                    running_home = client.get("/").text
+                self.assertIn("waiting for phone installation", running_home)
+                self.assertIn(">Cancel<", running_home)
+                self.assertNotIn("Not installed (1)", running_home)
                 self.assertIn('action="/iris/install"', client.get("/settings").text)
+                with (
+                    patch.object(services, "_read_mentra_status", return_value={
+                        "state": "ready",
+                        "installed_package": "com.openalma.mentra",
+                        "installed_version": "0.1.0",
+                        "installed_soul": "Fictional Soul",
+                        "installed_device": "test-phone",
+                    }),
+                    patch.object(app.setup_install, "optional_setup_status", return_value={
+                        "ready": True, "guidance": "",
+                    }),
+                ):
+                    installed_home = client.get("/").text
+                self.assertIn('data-soul="Fictional Soul"', installed_home)
+                self.assertIn('data-device="test-phone"', installed_home)
                 target = {"soul_id": "Fictional Soul", "device_session_id": "test-phone"}
                 self.assertEqual(client.post("/iris/install", data=target, follow_redirects=False).status_code, 303)
                 start.assert_called_once_with(iris, install_target=target)
+                start.reset_mock()
+                response = client.post(
+                    "/service/iris-server/start",
+                    params={"soul_id": "Fictional Soul", "device_session_id": "other-phone"},
+                )
+                self.assertEqual(response.status_code, 200)
+                start.assert_called_once_with(iris, install_target={
+                    "soul_id": "Fictional Soul", "device_session_id": "other-phone",
+                })
                 with (
                     patch.object(services, "iris_install_env", side_effect=ValueError("Invalid install target")),
                     patch.object(services, "resolve_soul") as resolve,

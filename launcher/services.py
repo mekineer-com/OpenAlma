@@ -1054,9 +1054,16 @@ def _iris_product_status(
     installed_package = str(mentra.get("installed_package") or "")
     installed_version = str(mentra.get("installed_version") or "")
     host = mentra.get("host") if isinstance(mentra.get("host"), dict) else {}
+    try:
+        host_seen_at = float(host.get("seen_at"))
+        installed_seen_at = float(mentra.get("installed_seen_at") or host_seen_at)
+    except (TypeError, ValueError):
+        host_seen_at, installed_seen_at = 0.0, float("inf")
     automatic_host = (
         host.get("host_package") == "com.mentra.mentra.openalma"
         and "iris_install_ack" in (host.get("capabilities") or [])
+        # The installation report normally follows the pre-install host announcement.
+        and host_seen_at + 300 >= installed_seen_at
     )
     repair_available = bool(installed_package and automatic_host)
     installed_semver = _iris_semver(installed_version)
@@ -1142,6 +1149,8 @@ def _iris_product_status(
         "setup_issue": str(readiness.get("reason") or "") if setup_required and readiness.get("step") != "server" and not active and not runtime.running else "",
         "installed_package": installed_package or None,
         "installed_version": installed_version or None,
+        "installed_soul": mentra.get("installed_soul") or None,
+        "installed_device": mentra.get("installed_device") or None,
         "available_package": available_package or None,
         "available_version": available_version or None,
         "update_available": mismatch,
@@ -1183,23 +1192,23 @@ def status(spec: ServiceSpec) -> dict:
     if spec.name == "iris-server":
         readiness = mentra_readiness()
         runtime = _runtime_state(spec)
-        mentra = _read_mentra_status(MEMU_SERVER_PORT)
-        if not mentra.get("installed_package") and readiness.get("device_session_id"):
-            scoped = _read_mentra_status(
-                MEMU_SERVER_PORT,
-                device_session_id=str(readiness["device_session_id"]),
-            )
-            if isinstance(scoped.get("host"), dict):
-                mentra = {**mentra, "host": scoped["host"]}
+        release = _read_iris_release_status(spec, runtime)
+        release_device = str(release.get("device_session_id") or "")
+        mentra = _read_mentra_status(MEMU_SERVER_PORT, device_session_id=release_device)
         package, version, url, github_status = _iris_release_candidate(spec)
         result = _iris_product_status(runtime, mentra, package, version, readiness)
         result.update(available_source="github" if url else "local", github_status=github_status)
         result["setup"] = readiness
-        release = _read_iris_release_status(spec, runtime)
         if release:
             result["release_uri"] = release.get("release_uri")
             result["release_device_session_id"] = release.get("device_session_id")
             result["release_started_at"] = release.get("started_at")
+            try:
+                result["automatic_offer"] = result["automatic_host"] and float(
+                    (mentra.get("host") or {}).get("seen_at")
+                ) >= float(release.get("started_at"))
+            except (AttributeError, TypeError, ValueError):
+                result["automatic_offer"] = False
         return _stop_status(spec, result)
     runtime = _runtime_state(spec)
     running = runtime.running

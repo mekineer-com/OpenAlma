@@ -127,7 +127,7 @@
     </thead>
     <tbody>
       {% for s in services %}
-      <tr data-service="{{ s.name }}" data-runtime="{{ 'false' if s.install_setup else 'true' }}">
+      <tr data-service="{{ s.name }}" data-runtime="{{ 'false' if s.install_setup else 'true' }}" data-soul="{{ s.installed_soul or '' }}" data-device="{{ s.installed_device or '' }}">
         <td>{{ s.label }}</td>
         <td class="svc-status">
           <span class="{{ s.state }}">{{ s.status_label }}</span>
@@ -418,6 +418,9 @@ async function svcAction(name, action, btn) {
 
   try {
     var url = '/service/' + name + '/' + action;
+    if (name === 'iris-server' && action === 'start' && row.dataset.soul && row.dataset.device) {
+      url += '?' + new URLSearchParams({soul_id: row.dataset.soul, device_session_id: row.dataset.device});
+    }
     var response = await fetch(url, {method: 'POST'});
     var result = await response.json();
     if (response.status === 428 && confirm(result.detail)) {
@@ -483,6 +486,8 @@ function pollStatus(name) {
         return;
       }
       if (!data.install_setup) row.dataset.runtime = 'true';
+      row.dataset.soul = data.installed_soul || '';
+      row.dataset.device = data.installed_device || '';
       var statusCell = row.querySelector('.svc-status');
       var actionsCell = row.querySelector('.svc-actions');
       var state = data.state || (data.running ? 'running' : 'stopped');

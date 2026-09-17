@@ -127,7 +127,7 @@ def index(request: Request) -> HTMLResponse:
                 iris = {"name": spec.name, "label": spec.label} | _setup_aware_status(
                     spec, setup_root, verify_runtime=not install_in_progress,
                 )
-                (rows if iris.get("installed_package") else not_installed).append(iris)
+                (rows if iris.get("installed_package") or iris.get("running") else not_installed).append(iris)
                 continue
             if services.is_installed(spec):
                 rows.append(
@@ -362,11 +362,19 @@ def logs(request: Request, service_name: str, lines: int = 200) -> HTMLResponse:
 
 
 @app.post("/service/{service_name}/start")
-def service_start(service_name: str) -> dict:
+def service_start(service_name: str, soul_id: str = "", device_session_id: str = "") -> dict:
     spec = _find_service(service_name)
     _require_startable_setup(service_name)
     try:
-        services.start(spec)
+        target = None
+        if service_name == "iris-server" and (soul_id or device_session_id):
+            if not soul_id or not device_session_id:
+                raise ValueError("Iris Update/Repair requires its Soul and Phone ID")
+            target = {"soul_id": soul_id, "device_session_id": device_session_id}
+        if target:
+            services.start(spec, install_target=target)
+        else:
+            services.start(spec)
     except services.ServiceStoppingError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (OSError, ValueError) as exc:
