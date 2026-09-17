@@ -159,6 +159,8 @@ class MentraStatusTest(TestCase):
             "installed_package": "com.openalma.mentra",
             "installed_version": "0.1.0",
             "installed_seen_at": 100.0,
+            "installed_soul": "Fictional Soul",
+            "installed_device": "test-phone",
         }
         cases = [
             (services.RuntimeState(), {"state": "unavailable", "detail": "Cannot read mcp config.json"}, "▲ status unavailable", None),
@@ -216,7 +218,17 @@ class MentraStatusTest(TestCase):
             "0.1.0",
         )
         self.assertTrue(openalma["repair_available"])
-        self.assertEqual(openalma["action_label"], "Repair")
+        self.assertIsNone(openalma["action_kind"])
+        self.assertEqual(openalma["action_label"], "")
+        from app import templates
+        page = templates.get_template("settings.html").render(
+            iris_setup={"enabled": True, "ready": True, "rows": []},
+            iris=openalma,
+            host_prerequisites={"rows": []},
+        )
+        self.assertIn(">Repair<", page)
+        self.assertIn('soul_id: "Fictional Soul"', page)
+        self.assertIn('device_session_id: "test-phone"', page)
 
         stale = services._iris_product_status(
             services.RuntimeState(),

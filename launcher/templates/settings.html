@@ -116,7 +116,7 @@
       </form>
       {% else %}
         {% if iris.update_available or iris.repair_available %}
-        <p><button class="btn" type="button" onclick="irisAction('start', this)">{{ iris.action_label }}</button></p>
+        <p><button class="btn" type="button" onclick="irisAction('start', this)">{{ "Update" if iris.update_available else "Repair" }}</button></p>
         {% endif %}
       {% endif %}
     {% endif %}
@@ -247,7 +247,14 @@
     {% endif %}
     function irisAction(action, button) {
       if (button) { button.disabled = true; button.textContent = "Starting…"; }
-      fetch('/service/iris-server/' + action, {method: 'POST'})
+      let url = '/service/iris-server/' + action;
+      if (action === 'start') {
+        url += '?' + new URLSearchParams({
+          soul_id: {{ (iris.installed_soul or '')|tojson }},
+          device_session_id: {{ (iris.installed_device or '')|tojson }}
+        });
+      }
+      fetch(url, {method: 'POST'})
         .then(function(response) { if (!response.ok) throw new Error(); location.reload(); })
         .catch(function() { location.reload(); });
     }

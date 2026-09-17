@@ -1120,7 +1120,7 @@ def _iris_product_status(
         detail, action = str(mentra.get("detail") or ""), None
     else:
         state, label, detail = "ready", "● Host ready", ""
-        action = "start" if repair_available else None
+        action = None
 
     if age and state not in {"update", "installing"}:
         detail = "; ".join(part for part in (detail, age) if part)
