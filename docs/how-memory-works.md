@@ -31,23 +31,29 @@ A photo you share becomes a memory like anything else — held as what it shows 
 
 ## Dossiers
 
-On top of those memories sits a second layer. Related memories are filed together into **dossiers**: lore about people, places, projects, and shared history; topics she keeps returning to; and goals she's holding. Each dossier carries a written summary of what she understands about that subject, and the summary gets rewritten as new memories land in it.
+On top of those memories sits a second layer. Related memories are filed together into **dossiers**: lore about people, places, projects, and shared history; topics she keeps returning to; and goals she's holding. Two exist from the start — one about herself, one about you — and every other one emerges on its own as memories accumulate.
+
+Each dossier carries a written summary of what she understands about that subject, in her own first person, citing the specific memories behind each claim — nothing in it is unsourced. The summary is rewritten when it goes stale, and you can attach or detach memories yourself in the [mind map](mind-map.md); the prose catches up on the next pass.
 
 This is what lets her answer a question about someone without re-reading every conversation you ever had. She reads the dossier.
 
-## When memories get extracted
+## Curated anchors
 
-Extraction runs on its own as you talk. Each turn the system checks whether enough unmemorized conversation has piled up, and when it has, it reads that stretch, pulls out what matters, and stores it.
+Separate from everything she learned from you, she can draw on curated knowledge — written by hand, in the same first-person voice, and searched like memory when the conversation touches its theme. The first set covers mental health: rumination, grief, panic, self-criticism, loneliness — steady, internalized understanding rather than clinical quoting. She can tell it apart from her own experience; it's labeled by its domain.
 
-A long gap also triggers it — end a conversation, come back the next morning, and what you talked about has already been processed.
+## It waits for the night
 
-If you don't want to wait for either, you can force extraction manually at any time.
+Nothing is memorized mid-conversation. Extraction waits for a **sleep gap** — you close the chat, hours pass overnight, you come back — and for enough conversation to have accumulated. Then the whole stretch is read as one story.
+
+Waiting is deliberate. A day is judged whole — what felt urgent at noon may have dissolved by evening, and the lenses read it with that perspective. If you don't want to wait (say, after a conversation you want captured now), you can trigger extraction manually at any time.
+
+And it's always every chat. When any conversation fires extraction, the pending tails of all her chats are gathered and split into episodes by storyline, not by app — so a short WhatsApp exchange that could never trigger the threshold on its own gets folded in when a longer sitting does. Stretches she only overheard advance her place in the conversation but extract nothing: she heard them, they aren't hers to remember.
 
 ## What gets forgotten on purpose
 
 OpenAlma is deliberately sparse. It doesn't try to capture everything — it tries to capture what's worth keeping. A good memory system, like a good friend, knows that forgetting is part of thinking clearly.
 
-Exact repeats can be reinforced rather than duplicated. Broader semantic deduplication is currently disabled while its Gemini threshold is calibrated, so similar memories may remain separate. When something you said earlier turns out to be wrong or outdated, the old version can be retired as the new understanding takes its place.
+Exact repeats can be reinforced rather than duplicated. Near-duplicate merging exists — built so identical wording from two different people never collapses — but it is currently switched off in the shipped configuration while its similarity threshold is calibrated, so similar memories may remain separate. When something you said earlier turns out to be wrong or outdated, the old version retires as the new understanding takes its place, and she can still look back at what she used to believe.
 
 ## Honest limitations
 

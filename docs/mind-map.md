@@ -9,11 +9,13 @@ title: The mind map
 
 Memory normally runs invisibly. That's good for continuity, but it means mistakes accumulate silently — she can be quietly wrong about you for months and neither of you would notice.
 
-The mind map is a desktop app that opens her memory up. Every memory she holds appears as a card: what she took from the conversation, when, and what it belongs to. You can read all of it.
+The mind map is a desktop app that opens her memory up. Every memory she holds appears as a card: what she took from the conversation, when, and what it belongs to. You can read all of it. Search reaches her memories and her own workspace notes alike, loading more results as you scroll.
 
 ## Correcting her
 
 You can edit any memory's text. The change takes effect immediately — she's working from the corrected version from that point on.
+
+Deleting is careful, in the same spirit: a memory that one of her dossier summaries still cites refuses to be deleted until you clear the citation, so her written accounts never start referencing things that no longer exist. Memories that are merely filed under a dossier can be deleted outright.
 
 The review queue holds what she produces herself: memories she formed on her own that you haven't looked at yet, and her updated summaries. Nothing is hidden from you, and nothing waits on your approval to be useful to her.
 
@@ -32,6 +34,10 @@ Merging shows you exactly what will move over before you confirm.
 ## Curating a dossier
 
 Open one of her dossiers and you'll see the memories behind the summary — the ones it actually draws on first, then anything else filed there. You can attach a memory that belongs and detach one that doesn't. Either way the dossier is marked for rewriting, so the summary catches up with the change.
+
+## Her own workspace
+
+The mind map isn't only a window onto her memory — each soul gets a workspace of her own in it. Her own notes, and real conversations with you, kept separate per soul: switch souls and you switch workspaces. The memory tools stay open in tabs while you work, instead of closing after every look. (The workspace is newer than the latest release tag — it's on `main` for now, which the README recommends anyway.)
 
 ## When you close it
 

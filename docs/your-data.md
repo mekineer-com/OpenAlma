@@ -15,7 +15,7 @@ There's no cloud sync, no account, no company holding a copy.
 
 ## What you can do with it
 
-**Back it up**: copy the database file somewhere safe. That's her memory. Copy the storage folders alongside it if you want the raw material too.
+**Back it up**: copy the database file somewhere safe. That's her memory. Copy the storage folders alongside it if you want the raw material too. Back up before upgrading versions — pre-release updates can break the database format.
 
 **Start fresh**: delete the file. Everything resets. The server will create a new empty database on next use.
 

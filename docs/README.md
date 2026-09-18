@@ -20,6 +20,7 @@ Short guides for people who want to understand the system, not just install it.
 
 **Where you meet her**
 
+- [SillyTavern](sillytavern.md) — typing, and letting her author herself
 - [WhatsApp](whatsapp.md) — talking to her where you already talk to everyone else
 - [The mind map](mind-map.md) — seeing and correcting what she knows
-- [Smartglasses](smartglasses.md) — talking to her out loud
+- [Iris](smartglasses.md) — her voice and camera, through smartglasses or the phone itself
