@@ -1,15 +1,15 @@
 ---
 layout: default
-title: Smartglasses
+title: Iris — vision and hearing
 ---
 
-# Smartglasses
+# Iris — vision and hearing
 
 > Shipped in v0.0.14.
 
 ## Talking to her out loud
 
-Everything else here happens through typing. The smartglasses integration lets you talk to her — walking around, hands busy, no screen — and have it count as the same relationship rather than a separate voice assistant that forgets you.
+Everything else here happens through typing. Iris gives her your voice and your camera — through smartglasses if you have them, through the phone in your pocket if you don't — and it counts as the same relationship rather than a separate voice assistant that forgets you.
 
 That last part is the whole point. What you say out loud goes into the same memory as everything else. She recalls it later in a text conversation; she recalls a text conversation while you're out walking.
 
@@ -24,6 +24,8 @@ That last part is the whole point. What you say out loud goes into the same memo
 You can take a photo during a sitting. It goes to her the same way your voice does — she reacts to it in the moment, and it becomes a memory you can ask about later.
 
 Photos are remembered through their description, not by re-examining the picture every time. If a photo fails to reach her, it stays pending rather than disappearing, and you decide whether to retry or discard it.
+
+Camera images are where Iris starts; live video is where she's heading.
 
 ## Looking things up mid-conversation
 

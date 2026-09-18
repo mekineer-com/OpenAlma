@@ -59,7 +59,7 @@ OpenAlma is pre-release. It works, it's used daily, and it will change — expec
 
 - [SillyTavern](sillytavern.md) — typing
 - [WhatsApp](whatsapp.md) — messaging
-- [Iris](smartglasses.md) — voice and camera, through smartglasses or the phone itself
+- [Iris](iris.md) — voice and camera, through smartglasses or the phone itself
 - [The mind map](mind-map.md) — her memory, opened up
 
 **The concept guides:**

@@ -90,7 +90,7 @@ After setup, open the memU extension panel in SillyTavern and set **Server URL**
 
 ### Iris (voice and camera)
 
-7. **Iris** — nothing to clone for this one. Iris runs through Mentra on your phone (the Android app; on iOS, stock Mentra is expected to work), plus Node.js on the host for the installer. With smartglasses she sees and hears through them; without glasses, the phone's camera and microphone do the job. Install Iris from the launcher's Iris row; the phone accepts with one tap, and her connection profile stays on the phone. Full walkthrough: [Smartglasses](smartglasses.md).
+7. **Iris** — nothing to clone for this one. Iris runs through Mentra on your phone (the Android app; on iOS, stock Mentra is expected to work), plus Node.js on the host for the installer. With smartglasses she sees and hears through them; without glasses, the phone's camera and microphone do the job. Install Iris from the launcher's Iris row; the phone accepts with one tap, and her connection profile stays on the phone. Full walkthrough: [Iris](iris.md).
 
 ## Stack Launcher
 
@@ -148,7 +148,7 @@ Memorize works the same way as SillyTavern: sleep gaps trigger extraction automa
 - **Sittings that survive** — a dropped connection doesn't end the visit; the sitting resumes with its journal intact.
 - **Private updates** — new versions arrive through your launcher the same private way she installed; no app store involved.
 
-Works with Mentra on Android. The voice she uses today is Gemini Live's; see [Platform compatibility](#platform-compatibility). Full guide: [Smartglasses](smartglasses.md).
+Works with Mentra on Android. The voice she uses today is Gemini Live's; see [Platform compatibility](#platform-compatibility). Full guide: [Iris](iris.md).
 
 ### The Mind Map (Atomic)
 
@@ -163,7 +163,7 @@ Full guide: [The mind map](mind-map.md).
 
 ## Things to know
 
-**One owner.** Each install has exactly one user — the owner — confirmed by name once on first use (together with the first soul) and never edited afterward. Every surface — launcher, SillyTavern, WhatsApp, smartglasses, the mind map — discovers that same identity from the server; none of them keeps its own idea of who you are. A soul's name can't match the owner's.
+**One owner.** Each install has exactly one user — the owner — confirmed by name once on first use (together with the first soul) and never edited afterward. Every surface — launcher, SillyTavern, WhatsApp, Iris, the mind map — discovers that same identity from the server; none of them keeps its own idea of who you are. A soul's name can't match the owner's.
 
 **One soul = one memory store, many chats.** Each `soul_id` has its own memory database. You can have multiple conversations with the same soul across SillyTavern and WhatsApp — each chat memorizes independently (own cursor, own manifest), and retrieval pulls from all of them. If you want two separate personalities (e.g., a partner *and* a research assistant), use two different `soul_id` values — they get isolated memory stores.
 

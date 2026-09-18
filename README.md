@@ -19,13 +19,13 @@ _Last updated: 2026-09-13 (v0.0.14-buildfix)_
 
 On most platforms, AI memory is flawed. You mentioned last week that your dog died. You spent an hour explaining how you feel about your work. But what's important for either of you was lost to poor memory organization, prioritization, and recall.
 
-OpenAlma runs locally on your machine, watches your conversations, and quietly builds a picture of your life — who matters to you, what you're working through, what happened last month. When you come back, that picture is there. She recognizes your friends, reaches you on WhatsApp, looks things up for you, notices how you're doing — and with smartglasses, sees what you see.
+OpenAlma runs locally on your machine, watches your conversations, and quietly builds a picture of your life — who matters to you, what you're working through, what happened last month. When you come back, that picture is there. She recognizes your friends, reaches you on WhatsApp, looks things up for you, notices how you're doing — and with Iris, sees what you see.
 
 **What she does**
 
 - **She remembers.** Conversations become episodes with their own stories; the people, patterns, and knowledge in them become dossiers she maintains and revises. Photos are remembered as images.
 - **She has an inner life.** She rehearses before she replies, keeps working thoughts between turns, holds a small set of life goals, and writes a private journal overnight.
-- **She meets you where you are.** Chat through SillyTavern, WhatsApp, or smartglasses and your phone's camera. See and correct what she knows on a visual mind map.
+- **She meets you where you are.** Chat through SillyTavern, WhatsApp, or Iris — smartglasses or your phone's camera and mic. See and correct what she knows on a visual mind map.
 
 **Contents**
 
@@ -43,7 +43,7 @@ OpenAlma runs locally on your machine, watches your conversations, and quietly b
 The core of OpenAlma is two services that run on your machine: **mcp-memu-server** (orchestration, consolidation, state) and **memU** (the memory engine). They're always present. Everything else is a client — connect whichever you want, at least one.
 
 ```
-  [SillyTavern]          [WhatsApp]        [Smartglasses]     [any other frontend]
+  [SillyTavern]          [WhatsApp]        [Iris]             [any other frontend]
   plugin + extension   Hermes Channels      Iris MiniApp
         │                    │                   │                  │
         └────────────────────┴───────────────────┴──────────────────┘
@@ -65,7 +65,7 @@ Memory extraction happens during **sleep gaps** — when you close a conversatio
 
 Specifically: the SQLite schema changes between versions, and there's no migration tooling yet. When you move to a new release tag, expect a fresh start — don't build anything irreplaceable on top of an old version.
 
-Prefer `main` for the latest. If you'd rather pin to a tag, match all repos to the same one (memu, mcp-memu-server, memu-sillytavern-plugin, memu-sillytavern-extension, OpenAlma, atomic, and channels if you're using them). The smartglasses MiniApp, `iris`, releases on its own version line — the launcher installs the newest one it finds rather than a matching tag.
+Prefer `main` for the latest. If you'd rather pin to a tag, match all repos to the same one (memu, mcp-memu-server, memu-sillytavern-plugin, memu-sillytavern-extension, OpenAlma, atomic, and channels if you're using them). The Iris MiniApp releases on its own version line — the launcher installs the newest one it finds rather than a matching tag.
 
 ### Release tags
 

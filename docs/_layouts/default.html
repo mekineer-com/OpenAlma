@@ -8,6 +8,10 @@
     {% seo %}
 
     <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
+    <style>
+      .wrapper nav a { display: block; padding: 2px 0; }
+      .wrapper a:hover { font-weight: inherit !important; text-decoration: underline; }
+    </style>
     <!--[if lt IE 9]>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv.min.js"></script>
     <![endif]-->
@@ -16,11 +20,6 @@
   <body>
     <div class="wrapper">
       <header>
-        <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="{{ 'spiral-white-512.png' | relative_url }}">
-          <img src="{{ 'spiral-black-512.png' | relative_url }}" alt="OpenAlma" width="88">
-        </picture>
-
         <h1><a href="{{ '/' | absolute_url }}">{{ site.title | default: site.github.repository_name }}</a></h1>
 
         <p>{{ site.description | default: site.github.project_tagline }}</p>
@@ -28,18 +27,25 @@
         <p class="view"><a href="{{ site.github.repository_url }}">View the Project on GitHub</a></p>
 
         <nav>
-          <a href="{{ '/getting-started.html' | relative_url }}">Get started</a> ·
-          <a href="{{ '/how-memory-works.html' | relative_url }}">How memory works</a> ·
-          <a href="{{ '/inner-life.html' | relative_url }}">Inner life</a> ·
-          <a href="{{ '/your-data.html' | relative_url }}">Your data</a> ·
-          <a href="{{ '/shaping-her.html' | relative_url }}">Shaping her</a> ·
-          <a href="{{ '/sillytavern.html' | relative_url }}">SillyTavern</a> ·
-          <a href="{{ '/whatsapp.html' | relative_url }}">WhatsApp</a> ·
-          <a href="{{ '/mind-map.html' | relative_url }}">Mind map</a> ·
-          <a href="{{ '/smartglasses.html' | relative_url }}">Iris</a>
+          <a href="{{ '/getting-started.html' | relative_url }}">Get started</a>
+          <a href="{{ '/how-memory-works.html' | relative_url }}">How memory works</a>
+          <a href="{{ '/inner-life.html' | relative_url }}">Inner life</a>
+          <a href="{{ '/your-data.html' | relative_url }}">Your data</a>
+          <a href="{{ '/shaping-her.html' | relative_url }}">Shaping her</a>
+          <a href="{{ '/sillytavern.html' | relative_url }}">SillyTavern</a>
+          <a href="{{ '/whatsapp.html' | relative_url }}">WhatsApp</a>
+          <a href="{{ '/mind-map.html' | relative_url }}">Mind map</a>
+          <a href="{{ '/iris.html' | relative_url }}">Iris</a>
         </nav>
       </header>
       <section>
+
+      <p align="center">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="{{ 'spiral-white-512.png' | relative_url }}">
+          <img src="{{ 'spiral-black-512.png' | relative_url }}" alt="OpenAlma" width="140">
+        </picture>
+      </p>
 
       {{ content }}
 

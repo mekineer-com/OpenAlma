@@ -9,7 +9,7 @@ title: Your data
 
 Every memory, every reflection, every intention lives in a single SQLite database file on your computer — one file per companion. You configured where it lives when you set up the server.
 
-A few things sit next to it rather than inside it: the raw conversation segments memories were extracted from, the WhatsApp history if you connected it, and voice transcripts if you use the smartglasses. Those live in their own folders under the same server configuration.
+A few things sit next to it rather than inside it: the raw conversation segments memories were extracted from, the WhatsApp history if you connected it, and voice transcripts if you use Iris. Those live in their own folders under the same server configuration.
 
 There's no cloud sync, no account, no company holding a copy.
 
