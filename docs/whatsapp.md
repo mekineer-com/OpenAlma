@@ -1,9 +1,9 @@
 ---
 layout: default
-title: WhatsApp
+title: Hermes Channels (WhatsApp)
 ---
 
-# WhatsApp
+# Hermes Channels (WhatsApp)
 
 ## She can reach you where you already are
 

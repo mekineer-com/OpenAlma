@@ -1,15 +1,15 @@
 ---
 layout: default
-title: The mind map
+title: Atomic Mind Map
 ---
 
-# The mind map
+# Atomic Mind Map
 
 ## Seeing what she actually knows
 
 Memory normally runs invisibly. That's good for continuity, but it means mistakes accumulate silently — she can be quietly wrong about you for months and neither of you would notice.
 
-The mind map is a desktop app that opens her memory up. Every memory she holds appears as a card: what she took from the conversation, when, and what it belongs to. You can read all of it. Search reaches her memories and her own workspace notes alike, loading more results as you scroll.
+Atomic is the desktop app that opens her memory up — the mind map, made real. Every memory she holds appears as a card: what she took from the conversation, when, and what it belongs to. You can read all of it. Search reaches her memories and her own workspace notes alike, loading more results as you scroll.
 
 ## Correcting her
 
@@ -37,8 +37,8 @@ Open one of her dossiers and you'll see the memories behind the summary — the 
 
 ## Her own workspace
 
-The mind map isn't only a window onto her memory — each soul gets a workspace of her own in it. Her own notes, and real conversations with you, kept separate per soul: switch souls and you switch workspaces. The memory tools stay open in tabs while you work, instead of closing after every look. (The workspace is newer than the latest release tag — it's on `main` for now, which the README recommends anyway.)
+Atomic isn't only a window onto her memory — each soul gets a workspace of her own in it. Her own notes, and real conversations with you, kept separate per soul: switch souls and you switch workspaces. The memory tools stay open in tabs while you work, instead of closing after every look. (The workspace is newer than the latest release tag — it's on `main` for now, which the README recommends anyway.)
 
 ## When you close it
 
-Talking to her inside the mind map is a real conversation, so ending the session sends it to be memorized like any other.
+Talking to her inside Atomic is a real conversation, so ending the session sends it to be memorized like any other.

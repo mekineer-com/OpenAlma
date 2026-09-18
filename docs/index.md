@@ -57,10 +57,10 @@ OpenAlma is pre-release. It works, it's used daily, and it will change — expec
 
 **Where you meet her:**
 
-- [SillyTavern](sillytavern.md) — typing
-- [WhatsApp](whatsapp.md) — messaging
-- [Iris](iris.md) — voice and camera, through smartglasses or the phone itself
-- [The mind map](mind-map.md) — her memory, opened up
+- [SillyTavern](sillytavern.md) — chat client
+- [Hermes Channels](whatsapp.md) — messaging networks (WhatsApp for now)
+- [Iris Video Chat](iris.md) — voice and camera, through smartglasses or the phone itself
+- [Atomic Mind Map](mind-map.md) — graphical presentation of her memory with interactive chat
 
 **The concept guides:**
 

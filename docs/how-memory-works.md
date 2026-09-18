@@ -33,7 +33,7 @@ A photo you share becomes a memory like anything else — held as what it shows 
 
 On top of those memories sits a second layer. Related memories are filed together into **dossiers**: lore about people, places, projects, and shared history; topics she keeps returning to; and goals she's holding. Two exist from the start — one about herself, one about you — and every other one emerges on its own as memories accumulate.
 
-Each dossier carries a written summary of what she understands about that subject, in her own first person, citing the specific memories behind each claim — nothing in it is unsourced. The summary is rewritten when it goes stale, and you can attach or detach memories yourself in the [mind map](mind-map.md); the prose catches up on the next pass.
+Each dossier carries a written summary of what she understands about that subject, in her own first person, citing the specific memories behind each claim — nothing in it is unsourced. The summary is rewritten when it goes stale, and you can attach or detach memories yourself in [Atomic](mind-map.md); the prose catches up on the next pass.
 
 This is what lets her answer a question about someone without re-reading every conversation you ever had. She reads the dossier.
 

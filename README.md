@@ -25,7 +25,7 @@ OpenAlma runs locally on your machine, watches your conversations, and quietly b
 
 - **She remembers.** Conversations become episodes with their own stories; the people, patterns, and knowledge in them become dossiers she maintains and revises. Photos are remembered as images.
 - **She has an inner life.** She rehearses before she replies, keeps working thoughts between turns, holds a small set of life goals, and writes a private journal overnight.
-- **She meets you where you are.** Chat through SillyTavern, WhatsApp, or Iris — smartglasses or your phone's camera and mic. See and correct what she knows on a visual mind map.
+- **She meets you where you are.** Chat through SillyTavern, WhatsApp, or Iris — smartglasses or your phone's camera and mic. See and correct what she knows in Atomic.
 
 **Contents**
 

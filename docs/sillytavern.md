@@ -1,9 +1,9 @@
 ---
 layout: default
-title: SillyTavern
+title: SillyTavern Chat Client
 ---
 
-# SillyTavern
+# SillyTavern Chat Client
 
 How the soul behaves in SillyTavern — the controls, and letting her author herself. For installing the plugin and extension, see [Getting started](getting-started.md).
 

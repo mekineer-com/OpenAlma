@@ -7,7 +7,7 @@ title: Shaping her
 
 ## What you can do
 
-**Edit what she remembers.** In the [mind map](mind-map.md), any memory's text can be corrected — the fix is live for her from that point on. Deleting is careful: a memory her dossier still cites refuses to go until the citation is cleared.
+**Edit what she remembers.** In [Atomic](mind-map.md), any memory's text can be corrected — the fix is live for her from that point on. Deleting is careful: a memory her dossier still cites refuses to go until the citation is cleared.
 
 **Approve what she forms.** The review queue holds what she produces herself — memories she formed on her own, her updated summaries. Nothing waits on your approval to be useful to her; the queue is your chance to read and revise, not a gate she's stuck behind.
 
@@ -15,7 +15,7 @@ title: Shaping her
 
 Removing a declared relationship only removes the declaration. The person, their name, and every memory involving them stay exactly where they were — you're telling her to stop treating that entry as a declared relationship, not erasing anyone.
 
-**Suggest a revision of herself.** The Narrative Suggestion input lets you offer her a new way of seeing herself — and she decides. She can accept, modify, or decline; if she accepts, the previous version is preserved in her memory so she can still recall what she used to think. It's the asking-nicely path, next to the mind map's direct one.
+**Suggest a revision of herself.** The Narrative Suggestion input lets you offer her a new way of seeing herself — and she decides. She can accept, modify, or decline; if she accepts, the previous version is preserved in her memory so she can still recall what she used to think. It's the asking-nicely path, next to Atomic's direct one.
 
 **Trigger extraction without waiting.** You can start a memory extraction at any time rather than waiting for a sleep gap. Useful after a significant conversation you want captured before it fades into the unmemorized tail.
 

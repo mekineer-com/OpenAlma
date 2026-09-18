@@ -86,7 +86,7 @@ After setup, open the memU extension panel in SillyTavern and set **Server URL**
 
 ### Atomic Mind Map (her memory, opened up)
 
-6. **[Atomic](https://github.com/mekineer-com/atomic)** — clone as another sibling. It's source, so it needs a one-time build: Node.js for the UI and a Rust toolchain for the server. After that, the Stack Launcher starts and stops it from the Services panel. It's how you see inside her memory — see [The Mind Map](#the-mind-map-atomic) below. (A one-click Install through the launcher comes with the first stable release.)
+6. **[Atomic](https://github.com/mekineer-com/atomic)** — clone as another sibling. It's source, so it needs a one-time build: Node.js for the UI and a Rust toolchain for the server. After that, the Stack Launcher starts and stops it from the Services panel. It's how you see inside her memory — see [Atomic](#atomic-mind-map) below. (A one-click Install through the launcher comes with the first stable release.)
 
 ### Iris (voice and camera)
 
@@ -150,7 +150,7 @@ Memorize works the same way as SillyTavern: sleep gaps trigger extraction automa
 
 Works with Mentra on Android. The voice she uses today is Gemini Live's; see [Platform compatibility](#platform-compatibility). Full guide: [Iris](iris.md).
 
-### The Mind Map (Atomic)
+### Atomic Mind Map
 
 **Atomic** is the desktop app where her memory stops being invisible. Every memory she holds appears as a card you can read — what she took from the conversation, when, what it belongs to — and the canvas lays them out as a living graph: connected by the links she drew, grouped and colored by subject, so you can see at a glance which parts of your life she has a dense picture of and which are still thin.
 
@@ -163,7 +163,7 @@ Full guide: [The mind map](mind-map.md).
 
 ## Things to know
 
-**One owner.** Each install has exactly one user — the owner — confirmed by name once on first use (together with the first soul) and never edited afterward. Every surface — launcher, SillyTavern, WhatsApp, Iris, the mind map — discovers that same identity from the server; none of them keeps its own idea of who you are. A soul's name can't match the owner's.
+**One owner.** Each install has exactly one user — the owner — confirmed by name once on first use (together with the first soul) and never edited afterward. Every surface — launcher, SillyTavern, Hermes, Iris, Atomic — discovers that same identity from the server; none of them keeps its own idea of who you are. A soul's name can't match the owner's.
 
 **One soul = one memory store, many chats.** Each `soul_id` has its own memory database. You can have multiple conversations with the same soul across SillyTavern and WhatsApp — each chat memorizes independently (own cursor, own manifest), and retrieval pulls from all of them. If you want two separate personalities (e.g., a partner *and* a research assistant), use two different `soul_id` values — they get isolated memory stores.
 

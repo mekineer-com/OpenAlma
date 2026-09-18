@@ -1,9 +1,11 @@
 ---
 layout: default
-title: Iris — vision and hearing
+title: Iris Video Chat
 ---
 
-# Iris — vision and hearing
+# Iris Video Chat
+
+Iris is her vision and hearing — voice and camera, through smartglasses or the phone in your pocket.
 
 > Shipped in v0.0.14.
 
