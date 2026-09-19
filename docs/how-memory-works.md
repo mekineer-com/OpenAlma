@@ -53,7 +53,7 @@ And it's always every chat. When any conversation fires extraction, the pending 
 
 OpenAlma is deliberately sparse. It doesn't try to capture everything — it tries to capture what's worth keeping. A good memory system, like a good friend, knows that forgetting is part of thinking clearly.
 
-Exact repeats can be reinforced rather than duplicated. Near-duplicate merging exists — built so identical wording from two different people never collapses — but it is currently switched off in the shipped configuration while its similarity threshold is calibrated, so similar memories may remain separate. When something you said earlier turns out to be wrong or outdated, the old version retires as the new understanding takes its place, and she can still look back at what she used to believe.
+Exact repeats can be reinforced rather than duplicated. Near-duplicate merging uses a conservative threshold matched to the shipped embedding model, and identical wording from two different people never collapses. When something you said earlier turns out to be wrong or outdated, the old version retires as the new understanding takes its place, and she can still look back at what she used to believe.
 
 ## Honest limitations
 
