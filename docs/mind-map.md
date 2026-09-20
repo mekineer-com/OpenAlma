@@ -23,9 +23,9 @@ The review queue holds what she produces herself: memories she formed on her own
 
 Memories can also be viewed as a graph rather than a list. Related ones sit near each other, connected by the links she drew between them, grouped and colored by subject. Named people and topics are highlighted. It's the fastest way to see the shape of what she's built — which parts of your life she has a dense picture of, and which are thin.
 
-![Her memory graph in Atomic, running on the desktop](atomic-mind-map.png)
+<a href="atomic-mind-map.png" target="_blank"><img src="atomic-mind-map.png" alt="Her memory graph in Atomic, running on the desktop"></a>
 
-*Running on an ordinary desktop — Atomic is a local app, not a hosted service.*
+*Running on an ordinary desktop — Atomic is a local app, not a hosted service. Click to open full size.*
 
 ## People and things
 
