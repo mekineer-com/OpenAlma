@@ -25,7 +25,7 @@ Memories can also be viewed as a graph rather than a list. Related ones sit near
 
 <a href="atomic-mind-map.png" target="_blank"><img src="atomic-mind-map.png" alt="Her memory graph in Atomic, running on the desktop"></a>
 
-*Running on an ordinary desktop — Atomic is a local app, not a hosted service. Click to open full size.*
+*A real memory graph from an installation in daily use (identifying labels rewritten) — running on an ordinary desktop, not a hosted service. Click to open full size.*
 
 ## People and things
 
