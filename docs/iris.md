@@ -25,7 +25,7 @@ That last part is the whole point. What you say out loud goes into the same memo
 
 You can take a photo during a sitting. It goes to her the same way your voice does — she reacts to it in the moment, and it becomes a memory you can ask about later.
 
-Photos are remembered through their description, not by re-examining the picture every time. If a photo fails to reach her, it stays pending rather than disappearing, and you decide whether to retry or discard it.
+Each photo is remembered two ways: a description of what it shows, and a stored impression of the image itself that search can match against directly. Ask about something you saw and she searches both — a photo can surface even when its description never used the words you asked with. If a photo fails to reach her, it stays pending rather than disappearing, and you decide whether to retry or discard it.
 
 Camera images are where Iris starts; live video is where she's heading.
 

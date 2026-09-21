@@ -27,7 +27,7 @@ The fifth stored type is **Episodes** — short titled summaries of what happene
 
 ## Photos are memories too
 
-A photo you share becomes a memory like anything else — held as what it shows rather than as pixels. Ask her about something you saw and she searches those separately from what was said, so an image isn't drowned out by conversation that happened to use the same words.
+A photo you share becomes a memory like anything else: a description of what it shows, plus a stored impression of the image itself that search can match against directly. Ask her about something you saw and she searches photos in their own lane, apart from what was said — so an image isn't drowned out by conversation that happened to use the same words, and it can be found by what it looked like, not only by the words in its description.
 
 ## Dossiers
 
