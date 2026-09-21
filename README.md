@@ -88,6 +88,7 @@ Prefer `main` for the latest. If you'd rather pin to a tag, match all repos to t
 
 - **[openalma.org](https://openalma.org)** — the project home: guides on how her memory works, her inner life, your data, and each surface you meet her on
 - **[Getting started](https://openalma.org/getting-started.html)** — installing the stack, choosing clients, and day-to-day use
+- **[Discussions](https://github.com/mekineer-com/OpenAlma/discussions)** — questions and open-ended ideas across the OpenAlma stack
 
 The same guides also live in [`docs/`](docs/) in this repo.
 
@@ -107,7 +108,7 @@ python3 -m venv .venv
 
 Opens at `http://127.0.0.1:8765`. For everything else — the memory engine, the server, clients — see [Getting started](https://openalma.org/getting-started.html).
 
-Questions? Open an issue on the relevant repo.
+Bugs or specific changes? Open an issue on the relevant repo.
 
 ---
 
