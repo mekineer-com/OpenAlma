@@ -17,6 +17,7 @@ class MentraStatusTest(TestCase):
 
     def tearDown(self) -> None:
         services._MENTRA_READINESS_CACHE.clear()
+        services._MENTRA_INGRESS_AUDIT_CACHE.clear()
         services._IRIS_RELEASE_CACHE = None
 
     def test_iris_candidate_uses_highest_numeric_version(self) -> None:
@@ -386,9 +387,18 @@ class MentraStatusTest(TestCase):
             self.assertEqual(http.call_args_list[2].args, ("http://10.77.0.1/health",))
             self.assertEqual(len(first["rows"]), 5)
 
+            with (
+                patch.object(services, "all_services", return_value=[memu]),
+                patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
+                patch.object(services, "_mentra_http_status", return_value=200) as http,
+            ):
+                self.assertTrue(services._mentra_readiness_uncached(root)["ready"])
+            http.assert_called_once_with("http://10.77.0.1/integration/mentra/health", "fictional")
+
             for responses, detail in (([0], "Cannot reach"), ([401], "rejected the bearer"), ([502], "HTTP 502"),
                                       ([200, 200], "accepts missing credentials"), ([200, 401, 200], "exposes an unrelated path"),
                                       ([200, 401, 0], "no connection")):
+                services._MENTRA_INGRESS_AUDIT_CACHE.clear()
                 with (
                     patch.object(services, "all_services", return_value=[memu]),
                     patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),

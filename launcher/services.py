@@ -47,6 +47,7 @@ FORCE_STOP_RECOVERY_SECONDS = 30.0
 _PROCESS_SCAN_CACHE: dict[tuple[str, str, str], tuple[float, list[int]]] = {}
 _PORT_PID_CACHE: dict[int, tuple[float, int | None]] = {}
 _MENTRA_READINESS_CACHE: dict[str, tuple[float, dict]] = {}
+_MENTRA_INGRESS_AUDIT_CACHE: set[tuple[str, str]] = set()
 _IRIS_RELEASE_CACHE: tuple[float, tuple[str, str, str] | None, str] | None = None
 _STOP_LOCK = threading.Lock()
 _STOP_THREADS: dict[str, threading.Thread] = {}
@@ -910,14 +911,17 @@ def _mentra_readiness_uncached(root: Path) -> dict:
             else f"Mentra health check failed (HTTP {status}); check the server and proxy"
         )
         return fail("ingress", "Authenticated narrow ingress", reason)
-    status = _mentra_http_status(f"{base_url}/integration/mentra/health")
-    if status != 401:
-        reason = "Mentra health accepts missing credentials" if 200 <= status < 300 else "Could not verify credential protection"
-        return fail("ingress", "Authenticated narrow ingress", f"{reason} ({status or 'no connection'})")
-    status = _mentra_http_status(f"{base_url}/health")
-    if status not in {401, 404}:
-        reason = "Ingress exposes an unrelated path" if 200 <= status < 300 else "Could not verify unrelated-route blocking"
-        return fail("ingress", "Authenticated narrow ingress", f"{reason} ({status or 'no connection'})")
+    audit_key = (base_url, bearer)
+    if audit_key not in _MENTRA_INGRESS_AUDIT_CACHE:
+        status = _mentra_http_status(f"{base_url}/integration/mentra/health")
+        if status != 401:
+            reason = "Mentra health accepts missing credentials" if 200 <= status < 300 else "Could not verify credential protection"
+            return fail("ingress", "Authenticated narrow ingress", f"{reason} ({status or 'no connection'})")
+        status = _mentra_http_status(f"{base_url}/health")
+        if status not in {401, 404}:
+            reason = "Ingress exposes an unrelated path" if 200 <= status < 300 else "Could not verify unrelated-route blocking"
+            return fail("ingress", "Authenticated narrow ingress", f"{reason} ({status or 'no connection'})")
+        _MENTRA_INGRESS_AUDIT_CACHE.add(audit_key)
     rows.append({"label": "Authenticated narrow ingress", "state": "ready", "detail": "Ready"})
     return {
         "enabled": True,
