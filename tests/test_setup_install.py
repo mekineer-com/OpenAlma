@@ -72,6 +72,22 @@ def test_manifest_requires_safe_exact_core_entries(tmp_path):
         setup_install.validate_manifest(unexpected, tmp_path)
 
 
+def test_repository_manifest_resolves_only_the_selected_release(tmp_path):
+    manifest = json.loads(
+        (Path(__file__).resolve().parents[1] / "release-components.json").read_text(encoding="utf-8")
+    )
+
+    parsed = setup_install.validate_manifest(manifest, tmp_path, "v9.8.7-buildfix")
+
+    coordinated = [
+        entry["ref"]
+        for service in parsed.values()
+        for entry in service
+        if entry["repository"] != "https://github.com/SillyTavern/SillyTavern.git"
+    ]
+    assert coordinated == ["v9.8.7-buildfix"] * len(coordinated)
+
+
 def test_discover_release_rejects_prerelease(tmp_path, monkeypatch):
     monkeypatch.setattr(
         setup_install,

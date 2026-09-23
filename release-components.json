@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "services": {
+    "memu-server": {
+      "repositories": [
+        {
+          "repository": "https://github.com/mekineer-com/mcp-memu-server.git",
+          "ref": "$OPENALMA_RELEASE_TAG",
+          "destination": "mcp-memu-server"
+        },
+        {
+          "repository": "https://github.com/mekineer-com/memU.git",
+          "ref": "$OPENALMA_RELEASE_TAG",
+          "destination": "memu"
+        }
+      ]
+    },
+    "channels-daemon": {
+      "repositories": [
+        {
+          "repository": "https://github.com/mekineer-com/hermes-channels.git",
+          "ref": "$OPENALMA_RELEASE_TAG",
+          "destination": "hermes-channels"
+        }
+      ]
+    },
+    "atomic": {
+      "repositories": [
+        {
+          "repository": "https://github.com/mekineer-com/atomic.git",
+          "ref": "$OPENALMA_RELEASE_TAG",
+          "destination": "atomic"
+        }
+      ]
+    },
+    "sillytavern": {
+      "repositories": [
+        {
+          "repository": "https://github.com/SillyTavern/SillyTavern.git",
+          "ref": "1.18.0",
+          "destination": "sillytavern/SillyTavern"
+        },
+        {
+          "repository": "https://github.com/mekineer-com/memu-sillytavern-plugin.git",
+          "ref": "$OPENALMA_RELEASE_TAG",
+          "destination": "sillytavern/SillyTavern/plugins/memu-plugin"
+        },
+        {
+          "repository": "https://github.com/mekineer-com/memu-sillytavern-extension.git",
+          "ref": "$OPENALMA_RELEASE_TAG",
+          "destination": "sillytavern/SillyTavern/data/default-user/extensions/memu-extension"
+        }
+      ]
+    }
+  }
+}

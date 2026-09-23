@@ -100,7 +100,9 @@ def _validated_destination(root: Path, destination_text: str, service_name: str)
     return destination, relative.as_posix()
 
 
-def validate_manifest(value: object, root: Path) -> dict[str, list[dict[str, str]]]:
+def validate_manifest(
+    value: object, root: Path, release_tag: str | None = None,
+) -> dict[str, list[dict[str, str]]]:
     if not isinstance(value, dict) or set(value) != {"schema_version", "services"}:
         raise SetupError("Release manifest must contain only schema_version and services")
     if value["schema_version"] != 1 or not isinstance(value["services"], dict):
@@ -132,9 +134,14 @@ def validate_manifest(value: object, root: Path) -> dict[str, list[dict[str, str
             if normalized in destinations:
                 raise SetupError(f"Duplicate release destination: {normalized}")
             destinations.add(normalized)
+            ref = entry["ref"].strip()
+            if ref == "$OPENALMA_RELEASE_TAG":
+                if release_tag is None:
+                    raise SetupError("Release manifest tag placeholder has no selected release")
+                ref = release_tag
             parsed[service_name].append({
                 "repository": repository,
-                "ref": entry["ref"].strip(),
+                "ref": ref,
                 "destination": normalized,
             })
 
@@ -155,7 +162,7 @@ def discover_release(root: Path) -> tuple[str, dict[str, list[dict[str, str]]]]:
         raise SetupError("No supported stable OpenAlma release is available")
     encoded_tag = urllib.parse.quote(tag.strip(), safe="")
     manifest = _request_json(OPENALMA_RAW_URL.format(tag=encoded_tag))
-    return tag.strip(), validate_manifest(manifest, root)
+    return tag.strip(), validate_manifest(manifest, root, tag.strip())
 
 
 def recorded_manifest(root: Path) -> dict[str, list[dict[str, str]]]:
@@ -163,7 +170,7 @@ def recorded_manifest(root: Path) -> dict[str, list[dict[str, str]]]:
     if tag is None:
         raise SetupError("The core installation has no recorded OpenAlma release")
     encoded_tag = urllib.parse.quote(tag, safe="")
-    return validate_manifest(_request_json(OPENALMA_RAW_URL.format(tag=encoded_tag)), root)
+    return validate_manifest(_request_json(OPENALMA_RAW_URL.format(tag=encoded_tag)), root, tag)
 
 
 def read_recorded_release(root: Path) -> str | None:
