@@ -2,21 +2,17 @@ name: Windows installer
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
   workflow_dispatch:
-    inputs:
-      release_tag:
-        description: Exact OpenAlma release tag
-        required: true
 
 jobs:
   build:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -29,15 +25,17 @@ jobs:
       - name: Build installer
         shell: pwsh
         run: |
-          $tag = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ inputs.release_tag }}" } else { "${{ github.ref_name }}" }
+          $tag = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "v0.0.0-dev" }
           if ($tag -notmatch '^v[A-Za-z0-9][A-Za-z0-9._-]{0,126}$') { throw "Invalid release tag: $tag" }
-          $manifest = Get-Content release-components.json | ConvertFrom-Json
-          $repositories = $manifest.services.psobject.Properties |
-            ForEach-Object { $_.Value.repositories } |
-            Where-Object { $_.ref -eq '$OPENALMA_RELEASE_TAG' }
-          foreach ($repository in $repositories) {
-            git ls-remote --exit-code --tags $repository.repository "refs/tags/$tag" | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "Missing $tag in $($repository.repository)" }
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $manifest = Get-Content release-components.json | ConvertFrom-Json
+            $repositories = $manifest.services.psobject.Properties |
+              ForEach-Object { $_.Value.repositories } |
+              Where-Object { $_.ref -eq '$OPENALMA_RELEASE_TAG' }
+            foreach ($repository in $repositories) {
+              git ls-remote --exit-code --tags $repository.repository "refs/tags/$tag" | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw "Missing $tag in $($repository.repository)" }
+            }
           }
           $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe" | Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $iscc) { throw "ISCC.exe was not installed" }
