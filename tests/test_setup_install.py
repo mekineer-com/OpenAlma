@@ -9,6 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "launcher"))
 
 import setup_install  # noqa: E402
+import process_flags  # noqa: E402
 
 
 def _manifest(**entry_changes):
@@ -80,6 +81,27 @@ def test_discover_release_rejects_prerelease(tmp_path, monkeypatch):
 
     with pytest.raises(setup_install.SetupError, match="No supported stable"):
         setup_install.discover_release(tmp_path)
+
+
+def test_windows_subprocesses_hide_console(monkeypatch):
+    monkeypatch.setattr(process_flags.os, "name", "nt")
+    monkeypatch.setattr(process_flags.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+
+    assert process_flags.hidden_process_kwargs() == {"creationflags": 0x08000000}
+
+
+def test_failed_core_install_is_a_visible_retry(tmp_path, monkeypatch):
+    operation = setup_install.InstallOperation(
+        service_name="memu-server", root=tmp_path, state="error", detail="Release unavailable",
+    )
+    monkeypatch.setattr(setup_install, "_OPERATION", operation)
+    monkeypatch.setattr(setup_install, "core_issue", lambda *_args, **_kwargs: "Missing core")
+    monkeypatch.setattr(setup_install, "_prerequisite_issue", lambda _root: "")
+
+    status = setup_install.setup_status(tmp_path)
+
+    assert status["detail"] == "Release unavailable"
+    assert status["action_label"] == "Retry"
 
 
 def test_iris_uses_its_independent_stable_release(tmp_path, monkeypatch):

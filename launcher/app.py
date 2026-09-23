@@ -6,7 +6,7 @@ import webbrowser
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -17,6 +17,7 @@ import settings
 import soul
 
 ROOT = Path(__file__).resolve().parent
+LAUNCHER_ID = "openalma-launcher"
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
 CONFIG_LABELS: dict[str, str] = {
@@ -26,6 +27,16 @@ CONFIG_LABELS: dict[str, str] = {
 
 app = FastAPI(title="OpenAlma")
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
+
+
+@app.get("/favicon.svg", include_in_schema=False)
+def favicon() -> FileResponse:
+    return FileResponse(ROOT.parent / "docs" / "favicon.svg", media_type="image/svg+xml")
+
+
+@app.get("/launcher/identity", include_in_schema=False)
+def launcher_identity() -> dict[str, str | int]:
+    return {"application": LAUNCHER_ID, "protocol": 1}
 
 
 def _editable_configs(apps_root: Path | None) -> dict[str, Path]:
@@ -255,6 +266,7 @@ def settings_page(request: Request) -> HTMLResponse:
             "apps_root_restart_required": candidate is not None and candidate != apps_root,
             "editable_configs": editable,
             "settings_path": str(settings.SETTINGS_PATH),
+            "launcher_log_path": str(settings.LAUNCHER_LOG_PATH),
             "iris": iris,
             "iris_setup": iris_setup,
             "iris_connection": iris_connection,
@@ -342,9 +354,13 @@ def launcher_quit(request: Request) -> dict[str, bool]:
 
 @app.get("/logs/{service_name}", response_class=HTMLResponse)
 def logs(request: Request, service_name: str, lines: int = 200) -> HTMLResponse:
-    spec = _find_service(service_name)
+    if service_name == "launcher":
+        label, log_path = "OpenAlma Launcher", settings.LAUNCHER_LOG_PATH
+    else:
+        spec = _find_service(service_name)
+        label, log_path = spec.label, spec.log_path
     try:
-        text = spec.log_path.read_text(encoding="utf-8", errors="replace")
+        text = log_path.read_text(encoding="utf-8", errors="replace")
     except FileNotFoundError:
         text = ""
     tail = "\n".join(text.splitlines()[-lines:])
@@ -352,9 +368,9 @@ def logs(request: Request, service_name: str, lines: int = 200) -> HTMLResponse:
         request,
         "logs.html",
         {
-            "service": spec.name,
-            "label": spec.label,
-            "log_path": str(spec.log_path),
+            "service": service_name,
+            "label": label,
+            "log_path": str(log_path),
             "content": tail,
             "lines": lines,
         },

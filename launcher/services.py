@@ -36,6 +36,7 @@ import psutil
 from settings import apps_root as _resolve_apps_root
 from settings import atomic_server_binary as _atomic_server_binary
 from settings import channels_home as _resolve_channels_home
+from process_flags import hidden_process_kwargs
 
 STATE_DIR = Path.home() / ".cache" / "openalma-launcher"
 MEMU_SERVER_PORT = 8099
@@ -427,6 +428,7 @@ def _spawn_background(spec: ServiceSpec, env: dict[str, str]) -> subprocess.Pope
         return subprocess.Popen(
             spec.cmd, cwd=str(spec.cwd), env=env,
             stdout=log, stderr=log, start_new_session=True,
+            **hidden_process_kwargs(),
         )
     finally:
         log.close()
@@ -735,7 +737,8 @@ def _iris_build_env(spec: ServiceSpec, target: dict[str, str] | None) -> dict[st
         backup.chmod(0o600)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as output:
-        os.fchmod(output.fileno(), 0o600)
+        if hasattr(os, "fchmod"):
+            os.fchmod(output.fileno(), 0o600)
         output.write("".join(f"{key}={json.dumps(value)}\n" for key, value in env.items()))
     return env
 
@@ -816,6 +819,7 @@ def host_prerequisites(root: Path | None, os_release_path: Path = Path("/etc/os-
             version = subprocess.run(
                 [str(root / venv_python), "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
                 capture_output=True, text=True, timeout=2, check=False,
+                **hidden_process_kwargs(),
             ).stdout.strip()
         except (OSError, subprocess.SubprocessError):
             version = ""

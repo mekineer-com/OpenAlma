@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import settings
+from process_flags import hidden_process_kwargs
 
 OPENALMA_RELEASE_URL = "https://api.github.com/repos/mekineer-com/OpenAlma/releases/latest"
 OPENALMA_RAW_URL = "https://raw.githubusercontent.com/mekineer-com/OpenAlma/{tag}/release-components.json"
@@ -216,13 +217,17 @@ def _run(command: list[str], *, cwd: Path | None, log: Any) -> None:
     printable = " ".join(command)
     log.write(f"\n$ {printable}\n")
     log.flush()
-    subprocess.run(command, cwd=cwd, stdout=log, stderr=subprocess.STDOUT, text=True, check=True)
+    subprocess.run(
+        command, cwd=cwd, stdout=log, stderr=subprocess.STDOUT, text=True, check=True,
+        **hidden_process_kwargs(),
+    )
 
 
 def _git_output(command: list[str], cwd: Path | None = None) -> str:
     try:
         return subprocess.run(
             command, cwd=cwd, capture_output=True, text=True, timeout=30, check=True,
+            **hidden_process_kwargs(),
         ).stdout.strip()
     except (OSError, subprocess.SubprocessError) as exc:
         raise SetupError(f"Git verification failed: {' '.join(command)}") from exc
@@ -329,10 +334,12 @@ def core_issue(root: Path, *, verify_runtime: bool = True) -> str:
                 "importlib.metadata.version('memu-server')",
             ],
             capture_output=True, text=True, timeout=10, check=True,
+            **hidden_process_kwargs(),
         )
         subprocess.run(
             [python, root / "memu" / "scripts" / "install-sqlite-vec.py", "--validate", _sqlite_extension(root)],
             capture_output=True, text=True, timeout=10, check=True,
+            **hidden_process_kwargs(),
         )
     except (OSError, subprocess.SubprocessError):
         return "Core Python packages or sqlite-vec validation failed"
@@ -759,7 +766,9 @@ def setup_status(
         "status_label": "Installation incomplete" if present else "Not installed",
         "detail": prerequisite or detail, "startable": False,
         "action_kind": None if prerequisite else "install",
-        "action_label": "Continue Install" if present else "Install",
+        "action_label": (
+            "Retry" if operation["state"] == "error" else ("Continue Install" if present else "Install")
+        ),
     }
 
 
@@ -815,7 +824,10 @@ def optional_setup_status(service_name: str, root: Path) -> dict[str, Any]:
         "detail": detail,
         "startable": startable,
         "action_kind": "install" if action else None,
-        "action_label": "Continue Install" if checkout_present else "Install",
+        "action_label": (
+            "Retry" if operation["state"] == "error"
+            else ("Continue Install" if checkout_present else "Install")
+        ),
     }
 
 

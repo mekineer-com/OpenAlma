@@ -71,6 +71,28 @@ def test_launcher_quit_uses_server_callback(monkeypatch):
     assert called == [True]
 
 
+def test_launcher_identity_and_favicon_are_available():
+    client = TestClient(app.app)
+
+    assert client.get("/launcher/identity").json() == {
+        "application": "openalma-launcher", "protocol": 1,
+    }
+    favicon = client.get("/favicon.svg")
+    assert favicon.status_code == 200
+    assert "<svg" in favicon.text
+
+
+def test_launcher_log_uses_launcher_log_path(tmp_path, monkeypatch):
+    log = tmp_path / "launcher.log"
+    log.write_text("launcher started\n", encoding="utf-8")
+    monkeypatch.setattr(app.settings, "LAUNCHER_LOG_PATH", log)
+
+    response = TestClient(app.app).get("/logs/launcher")
+
+    assert response.status_code == 200
+    assert "launcher started" in response.text
+
+
 def test_active_core_enables_optional_install_actions(tmp_path, monkeypatch):
     specs = services.services_for_root(tmp_path)
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)

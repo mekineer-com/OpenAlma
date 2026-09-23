@@ -2,16 +2,53 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import socket
 import subprocess
 import tempfile
 import threading
 import time
+import urllib.request
 
 import uvicorn
 
 import app as launcher_app
 import browser
+
+
+def _port_open(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def _existing_launcher(host: str, port: int) -> bool:
+    if not _port_open(host, port):
+        return False
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/launcher/identity", timeout=2) as response:
+            value = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"Port {port} is in use by another program") from exc
+    if value != {"application": launcher_app.LAUNCHER_ID, "protocol": 1}:
+        raise RuntimeError(f"Port {port} is in use by another program")
+    return True
+
+
+def stop_existing(host: str = "127.0.0.1", port: int = 8765, timeout: float = 10.0) -> None:
+    if not _existing_launcher(host, port):
+        return
+    request = urllib.request.Request(f"http://{host}:{port}/launcher/quit", data=b"", method="POST")
+    with urllib.request.urlopen(request, timeout=2):
+        pass
+    deadline = time.time() + timeout
+    while _port_open(host, port):
+        if time.time() >= deadline:
+            raise RuntimeError("OpenAlma did not exit; close it and retry the installer")
+        time.sleep(0.1)
 
 
 def _wait_for_port(host: str, port: int, timeout: float = 5.0) -> bool:
@@ -49,7 +86,7 @@ def _watch_browser_and_stop(
 def _open_browser_when_ready(host: str, port: int, url: str, server: uvicorn.Server) -> None:
     if not _wait_for_port(host, port):
         return
-    chromium = browser.find_chromium()
+    chromium = None if os.name == "nt" else browser.find_chromium()
     if chromium is None:
         browser.open_app(url)
         return
@@ -75,6 +112,10 @@ def main() -> None:
     args = parser.parse_args()
 
     url = f"http://{args.host}:{args.port}"
+
+    if _existing_launcher(args.host, args.port):
+        browser.open_app(url)
+        return
 
     config = uvicorn.Config(
         launcher_app.app, host=args.host, port=args.port, log_level="info", access_log=False

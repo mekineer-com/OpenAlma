@@ -22,6 +22,11 @@ from pathlib import Path
 
 LAUNCHER_DIR = Path(__file__).resolve().parent
 SETTINGS_PATH = Path.home() / ".config" / "openalma-launcher" / "paths.json"
+LAUNCHER_LOG_PATH = (
+    Path(os.environ["LOCALAPPDATA"]) / "OpenAlma" / "logs" / "launcher.log"
+    if os.name == "nt" and os.environ.get("LOCALAPPDATA")
+    else Path.home() / ".local" / "state" / "openalma" / "launcher.log"
+)
 _AUTODISCOVER_MARKER = "mcp-memu-server/run.py"
 
 

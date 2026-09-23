@@ -69,5 +69,5 @@ def open_app(
             ],
             start_new_session=True,
         )
-    webbrowser.open(url)
+    webbrowser.open_new(url)
     return None

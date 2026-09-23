@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>OpenAlma</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <style>
     :root { color-scheme: dark; font-size: 15px; }
     body {
@@ -86,6 +87,7 @@
     <h1>OpenAlma</h1>
     <span>
       <button class="btn" onclick="location.reload()" title="Refresh (F5)">&#x21bb; refresh</button>
+      <button class="btn" onclick="quitLauncher(this)">exit</button>
       <button class="btn" onclick="location.href='/settings'">&#x2699; settings</button>
     </span>
   </div>
@@ -141,7 +143,9 @@
           {% endif %}
         </td>
         <td class="svc-actions">
-          {% if s.state == "stopping" %}
+          {% if s.install_running %}
+            <span class="spinner" role="status" aria-label="Installing"></span>
+          {% elif s.state == "stopping" %}
             <span class="spinner" role="status" aria-label="Stopping"></span>
             {% if s.force_stoppable %}<button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>{% endif %}
           {% elif s.stop_blocked %}
@@ -181,7 +185,8 @@
       {% for s in not_installed_services %}
       <li class="muted">
         {{ s.label }}
-        {% if s.action_kind == "install" %}<form class="inline" method="post" action="/install/{{ s.name }}"><button class="btn" type="submit">Install</button></form>
+        {% if s.install_running %}<span class="spinner" role="status" aria-label="Installing"></span>
+        {% elif s.action_kind == "install" %}<form class="inline" method="post" action="/install/{{ s.name }}"><button class="btn" type="submit">{{ s.action_label or "Install" }}</button></form>
         {% elif s.action_kind == "settings" %}<a class="btn" href="/settings">Install</a>
         {% elif s.action_kind == "start" %}<button class="btn" onclick="svcAction('{{ s.name }}','start',this)">{{ s.action_label }}</button>
         {% else %}<button class="btn" disabled>Install</button>{% endif %}
@@ -443,6 +448,7 @@ async function svcAction(name, action, btn) {
 
 function actionHtml(name, data) {
   var open = data.running && data.open_url ? ' <a class="btn" href="' + esc(data.open_url) + '" target="_blank" rel="noopener">Open</a>' : '';
+  if (data.install_running) return '<span class="spinner" role="status" aria-label="Installing"></span>';
   if (data.state === 'stopping') {
     return '<span class="spinner" role="status" aria-label="Stopping"></span>' +
       (data.force_stoppable ? ' <button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'force-stop\',this)">Force Stop</button>' : '');
@@ -474,6 +480,18 @@ function actionHtml(name, data) {
     return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'start\',this)">Start</button>' + open;
   }
   return '<span class="muted">not startable</span>' + open;
+}
+
+async function quitLauncher(button) {
+  button.disabled = true;
+  try {
+    var response = await fetch('/launcher/quit', {method: 'POST'});
+    if (!response.ok) throw new Error('Exit failed');
+    document.body.innerHTML = '<main><h1>OpenAlma Launcher has exited.</h1><p>You may close this tab.</p></main>';
+  } catch (error) {
+    button.disabled = false;
+    alert(error.message);
+  }
 }
 
 function pollStatus(name) {
