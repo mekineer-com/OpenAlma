@@ -76,7 +76,9 @@ def main() -> None:
 
     url = f"http://{args.host}:{args.port}"
 
-    config = uvicorn.Config(launcher_app.app, host=args.host, port=args.port, log_level="info")
+    config = uvicorn.Config(
+        launcher_app.app, host=args.host, port=args.port, log_level="info", access_log=False
+    )
     server = uvicorn.Server(config)
     launcher_app.app.state.request_shutdown = lambda: setattr(server, "should_exit", True)
 
