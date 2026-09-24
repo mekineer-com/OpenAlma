@@ -219,7 +219,7 @@ begin
     else if ResultCode = 10 then
       IsUpgrade := True
     else if ResultCode = 2 then
-      Result := 'This installer is older than the installed OpenAlma release.';
+      Result := 'This installer is older than the installed OpenAlma release.'
     else if ResultCode = 3 then
       Result := 'The installed OpenAlma release metadata is damaged or conflicts with this installer.'
     else if ResultCode <> 0 then
