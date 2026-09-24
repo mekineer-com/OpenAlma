@@ -256,8 +256,6 @@
     <input id="soul-use-existing" type="hidden" name="use_existing" value="false">
   </form>
   {% endif %}
-  {% endif %}
-
   <h2>WhatsApp channel policy</h2>
   {% if chats %}
   <p class="muted">
@@ -320,6 +318,7 @@
   </form>
   {% else %}
     <p><em>No WhatsApp chats in <code>{{ channel_directory_path }}</code> yet.</em></p>
+  {% endif %}
   {% endif %}
 
   <script src="/static/soul-selector.js"></script>

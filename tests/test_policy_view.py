@@ -37,7 +37,8 @@ def test_excluded_whatsapp_chats_are_collapsed():
             },
         ],
         policies=("full", "listen_only", "excluded"),
-        active_soul="Siri",
+            active_soul="Siri",
+            channels_configured=True,
         soul_ids=["Siri"],
         editable_configs=[],
         apps_root="",
@@ -65,7 +66,8 @@ def test_empty_policy_view_shows_actual_channel_directory_path():
         excluded_chats=[],
         channel_directory_path="/tmp/hermes-channels/channel_directory.json",
         policies=("full", "listen_only", "excluded"),
-        active_soul="Siri",
+            active_soul="Siri",
+            channels_configured=True,
         soul_ids=["Siri"],
         editable_configs=[],
         apps_root="",
@@ -74,3 +76,16 @@ def test_empty_policy_view_shows_actual_channel_directory_path():
 
     assert "No WhatsApp chats in" in html
     assert "/tmp/hermes-channels/channel_directory.json" in html
+
+
+def test_virgin_setup_hides_both_channels_sections():
+    template_dir = Path(__file__).resolve().parents[1] / "launcher" / "templates"
+    html = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(template_dir), autoescape=True,
+    ).get_template("index.html").render(
+        services=[], chats=[], visible_chats=[], excluded_chats=[],
+        channels_configured=False, needs_setup=True, soul_ids=[],
+    )
+
+    assert "Hermes Channels Soul selector" not in html
+    assert "WhatsApp channel policy" not in html
