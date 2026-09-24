@@ -3,6 +3,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -107,6 +108,41 @@ def test_windows_subprocesses_hide_console(monkeypatch):
     assert process_flags.hidden_process_kwargs() == {"creationflags": 0x08000000}
 
 
+def test_launcher_update_requires_newer_same_channel_installer(monkeypatch):
+    releases = [
+        {
+            "tag_name": "v1.1.0-buildfix", "draft": False, "prerelease": True,
+            "assets": [{
+                "name": "OpenAlma-v1.1.0-buildfix-Windows.exe",
+                "browser_download_url": "https://example.invalid/update.exe",
+            }],
+        },
+        {"tag_name": "v1.0.0-buildfix", "draft": False, "prerelease": True, "assets": []},
+        {
+            "tag_name": "v2.0.0", "draft": False, "prerelease": False,
+            "assets": [{"name": "OpenAlma-v2.0.0-Windows.exe", "browser_download_url": "wrong-channel"}],
+        },
+    ]
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def read(self):
+            return json.dumps(releases).encode()
+
+    monkeypatch.setattr(setup_install, "read_packaged_release", lambda: "v1.0.0-buildfix")
+    monkeypatch.setattr(setup_install.urllib.request, "urlopen", lambda *_args, **_kwargs: Response())
+    monkeypatch.setattr(setup_install, "_LAUNCHER_UPDATE_CACHE", None)
+
+    assert setup_install.launcher_update() == {
+        "tag": "v1.1.0-buildfix", "url": "https://example.invalid/update.exe",
+    }
+
+
 def test_failed_core_install_is_a_visible_retry(tmp_path, monkeypatch):
     operation = setup_install.InstallOperation(
         service_name="memu-server", root=tmp_path, state="error", detail="Release unavailable",
@@ -148,16 +184,18 @@ def test_database_backup_restore_roundtrip(tmp_path):
         },
     }), encoding="utf-8")
     database = sqlite_dir / "FictionalSoul.db"
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection:
         connection.execute("CREATE TABLE value (text TEXT)")
         connection.execute("INSERT INTO value VALUES ('before')")
+        connection.commit()
 
     backup = setup_install._backup_databases(root, "v1.0.0", "v1.1.0")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection:
         connection.execute("UPDATE value SET text = 'after'")
+        connection.commit()
     setup_install._restore_databases(root, backup)
 
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection:
         assert connection.execute("SELECT text FROM value").fetchone() == ("before",)
 
 

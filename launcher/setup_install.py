@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -21,8 +22,10 @@ from typing import Any
 
 import settings
 from process_flags import hidden_process_kwargs
+from windows_install import release_version
 
 OPENALMA_RELEASE_URL = "https://api.github.com/repos/mekineer-com/OpenAlma/releases/latest"
+OPENALMA_RELEASES_URL = "https://api.github.com/repos/mekineer-com/OpenAlma/releases?per_page=20"
 OPENALMA_RAW_URL = "https://raw.githubusercontent.com/mekineer-com/OpenAlma/{tag}/release-components.json"
 IRIS_RELEASE_URL = "https://api.github.com/repos/mekineer-com/iris/releases/latest"
 RELEASE_TAG_FILE = ".openalma-release"
@@ -69,6 +72,7 @@ class InstallOperation:
 _LOCK = threading.RLock()
 _OPERATION: InstallOperation | None = None
 _RELEASE_ISSUE_CACHE: dict[tuple[str, str, str], tuple[float, str]] = {}
+_LAUNCHER_UPDATE_CACHE: tuple[float, dict[str, str] | None] | None = None
 INSTALL_LOCK = Path.home() / ".cache" / "openalma-launcher" / "install.lock"
 
 
@@ -193,6 +197,41 @@ def read_packaged_release() -> str | None:
         return settings.PACKAGED_VERSION_PATH.read_text(encoding="utf-8").strip() or None
     except OSError:
         return None
+
+
+def launcher_update() -> dict[str, str] | None:
+    global _LAUNCHER_UPDATE_CACHE
+    current = read_packaged_release()
+    if current is None or current.endswith("-dev"):
+        return None
+    if _LAUNCHER_UPDATE_CACHE and time.monotonic() - _LAUNCHER_UPDATE_CACHE[0] < 600:
+        return _LAUNCHER_UPDATE_CACHE[1]
+    update = None
+    try:
+        request = urllib.request.Request(OPENALMA_RELEASES_URL, headers=_HEADERS)
+        with urllib.request.urlopen(request, timeout=3) as response:
+            releases = json.loads(response.read().decode("utf-8"))
+        if not isinstance(releases, list):
+            raise ValueError("Invalid GitHub releases response")
+        installed = next(release for release in releases if release.get("tag_name") == current)
+        candidates = []
+        for release in releases:
+            tag = str(release.get("tag_name") or "")
+            if release.get("draft") or bool(release.get("prerelease")) != bool(installed.get("prerelease")):
+                continue
+            if release_version(tag) <= release_version(current):
+                continue
+            expected = f"OpenAlma-{tag}-Windows.exe"
+            asset = next((item for item in release.get("assets") or [] if item.get("name") == expected), None)
+            if asset and asset.get("browser_download_url"):
+                candidates.append((release_version(tag), tag, str(asset["browser_download_url"])))
+        if candidates:
+            _version, tag, url = max(candidates)
+            update = {"tag": tag, "url": url}
+    except (OSError, ValueError, StopIteration, TypeError):
+        update = None
+    _LAUNCHER_UPDATE_CACHE = (time.monotonic(), update)
+    return update
 
 
 def _read_release(root: Path, filename: str) -> str | None:

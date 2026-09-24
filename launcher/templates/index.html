@@ -93,6 +93,18 @@
   </div>
   <p class="muted">Start, stop, and configure the local stack.</p>
 
+  {% if launcher_update %}
+  <div class="banner">
+    <strong>OpenAlma {{ launcher_update.tag }} is available.</strong>
+    {% if services_active %}
+      Stop all OpenAlma services before updating.
+    {% else %}
+      <p>OpenAlma Launcher updates first. Installed services will show Update required and cannot start until their matching updates complete. Your settings and soul data are preserved.</p>
+      <a class="btn" href="{{ launcher_update.url }}">Download Update</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {% if owner_id %}
   <p>Welcome back, <strong>{{ owner_id }}</strong>.</p>
   {% if not soul_ids and not soul_error %}

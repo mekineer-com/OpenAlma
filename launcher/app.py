@@ -229,6 +229,8 @@ def index(request: Request) -> HTMLResponse:
             "needs_setup": apps_root is None,
             "owner_id": owner_id,
             "owner_error": owner_error,
+            "launcher_update": setup_install.launcher_update(),
+            "services_active": any(_runtime_active(row) for row in rows + not_installed),
         },
     )
 

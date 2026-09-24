@@ -15,7 +15,7 @@ RELEASE_FILE = ".openalma-release"
 PENDING_RELEASE_FILE = ".openalma-update-release"
 
 
-def _version(release_tag: str) -> tuple[int, int, int]:
+def release_version(release_tag: str) -> tuple[int, int, int]:
     match = _VERSION.fullmatch(release_tag)
     if match is None:
         raise ValueError("OpenAlma release tag must start with vMAJOR.MINOR.PATCH")
@@ -23,9 +23,9 @@ def _version(release_tag: str) -> tuple[int, int, int]:
 
 
 def compare_release(apps_root: Path, release_tag: str) -> int:
-    target = _version(release_tag)
+    target = release_version(release_tag)
     try:
-        installed = _version((apps_root / RELEASE_FILE).read_text(encoding="utf-8").strip())
+        installed = release_version((apps_root / RELEASE_FILE).read_text(encoding="utf-8").strip())
     except FileNotFoundError:
         return 0
     return (target > installed) - (target < installed)
