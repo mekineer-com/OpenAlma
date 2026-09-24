@@ -198,7 +198,8 @@ end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  AppsRoot, Marker, Owner: String;
+  AppsRoot, Marker: String;
+  Owner: AnsiString;
 begin
   if CurUninstallStep = usUninstall then
   begin
@@ -218,7 +219,7 @@ begin
   begin
     AppsRoot := ExpandConstant('{localappdata}\OpenAlma');
     Marker := AppsRoot + '\.openalma-installer-root';
-    if not LoadStringFromFile(Marker, Owner) or (CompareText(Trim(Owner), AppsRoot) <> 0) then
+    if (not LoadStringFromFile(Marker, Owner)) or (CompareText(Trim(Owner), AppsRoot) <> 0) then
       MsgBox('OpenAlma refused to remove an Apps root it does not own: ' + AppsRoot, mbError, MB_OK)
     else begin
       DelTree(AppsRoot, True, True, True);
