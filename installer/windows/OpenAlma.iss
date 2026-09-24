@@ -27,6 +27,7 @@ UninstallDisplayName=OpenAlma Launcher
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: checkedonce
 
 [Files]
+Source: "..\..\launcher\windows_stop.py"; Flags: dontcopy
 Source: "..\..\launcher\*"; DestDir: "{app}\launcher"; Excludes: ".venv\*,__pycache__\*,*.pyc"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\docs\favicon.svg"; DestDir: "{app}\docs"; Flags: ignoreversion; AfterInstall: PrepareLauncher
 Source: "..\..\release-components.json"; DestDir: "{app}"; Flags: ignoreversion
@@ -160,6 +161,29 @@ begin
       Result := 'OpenAlma is still running. Use Exit in OpenAlma, then click Retry.';
 end;
 
+function StopAnyLauncher(RequireUpdateReady: Boolean): String;
+var
+  Helper, Params: String;
+  ResultCode: Integer;
+begin
+  Result := '';
+  ExtractTemporaryFile('windows_stop.py');
+  Helper := ExpandConstant('{tmp}\windows_stop.py');
+  Params := '-3.12 "' + Helper + '"';
+  if RequireUpdateReady then
+    Params := Params + ' --require-update-ready';
+  if not RunHidden(PythonLauncher, Params, ResultCode) then
+    Result := 'Could not check the running OpenAlma Launcher.'
+  else if ResultCode = 11 then
+    Result := 'Stop all OpenAlma services, then click Retry.'
+  else if ResultCode = 12 then
+    Result := 'Port 8765 is occupied by a process that is not a verified OpenAlma Launcher.'
+  else if ResultCode = 13 then
+    Result := 'OpenAlma Launcher did not exit. Use Exit in OpenAlma, then click Retry.'
+  else if ResultCode <> 0 then
+    Result := 'Could not stop OpenAlma Launcher.';
+end;
+
 function CheckInstalledRelease(var IsUpgrade: Boolean): String;
 var
   Python, Helper, AppsRoot: String;
@@ -189,7 +213,9 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   IsUpgrade: Boolean;
 begin
-  Result := CheckInstalledRelease(IsUpgrade);
+  Result := EnsurePrerequisites();
+  if Result = '' then
+    Result := CheckInstalledRelease(IsUpgrade);
   if (Result = '') and IsUpgrade then
     if MsgBox(
       'OpenAlma Launcher updates first. Installed services will show Update required and cannot start until their matching updates complete.'#13#10#13#10 +
@@ -198,9 +224,7 @@ begin
     ) <> IDYES then
       Result := 'Update cancelled.';
   if Result = '' then
-    Result := StopInstalledLauncher(IsUpgrade);
-  if Result = '' then
-    Result := EnsurePrerequisites();
+    Result := StopAnyLauncher(IsUpgrade);
 end;
 
 procedure RunChecked(const Filename, Params, Failure: String);
