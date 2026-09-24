@@ -50,6 +50,14 @@ def test_memorize_gauge_under_threshold():
     assert "waiting for sleep-gap" not in html
 
 
+def test_launcher_heading_uses_accessible_spiral_mark():
+    html = _render({})
+
+    assert '<h1 aria-label="OpenAlma"><svg class="brand-mark"' in html
+    assert 'aria-hidden="true"' in html
+    assert "</svg>penAlma</h1>" in html
+
+
 def test_memorize_gauge_over_threshold_shows_sleep_gap_badge():
     html = _render({
         "summed_unmemorized_tokens": 12900,

@@ -9,6 +9,16 @@ import settings  # noqa: E402
 import windows_install  # noqa: E402
 
 
+def test_windows_installer_uses_openalma_icon_everywhere():
+    script = (
+        Path(__file__).resolve().parents[1] / "installer/windows/OpenAlma.iss"
+    ).read_text(encoding="utf-8")
+
+    assert "SetupIconFile=OpenAlma.ico" in script
+    assert "UninstallDisplayIcon={app}\\OpenAlma.ico" in script
+    assert script.count('IconFilename: "{app}\\OpenAlma.ico"') == 2
+
+
 def test_windows_configuration_preserves_release_and_other_settings(tmp_path, monkeypatch):
     apps_root = tmp_path / "OpenAlma"
     settings_path = tmp_path / "paths.json"
