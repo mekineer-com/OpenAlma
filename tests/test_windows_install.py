@@ -101,6 +101,20 @@ def test_windows_upgrade_before_core_updates_future_install_selection(tmp_path, 
     assert not (apps_root / windows_install.PENDING_RELEASE_FILE).exists()
 
 
+def test_windows_upgrade_keeps_partial_core_on_update_path(tmp_path, monkeypatch):
+    apps_root = tmp_path / "OpenAlma"
+    monkeypatch.setattr(settings, "SETTINGS_PATH", tmp_path / "paths.json")
+    monkeypatch.setattr(settings, "PACKAGED_VERSION_PATH", tmp_path / ".openalma-version")
+    windows_install.configure(apps_root, "v1.0.0")
+    (apps_root / "mcp-memu-server").mkdir()
+    (apps_root / "mcp-memu-server/run.py").touch()
+
+    windows_install.configure(apps_root, "v1.1.0")
+
+    assert (apps_root / windows_install.RELEASE_FILE).read_text(encoding="utf-8") == "v1.0.0\n"
+    assert (apps_root / windows_install.PENDING_RELEASE_FILE).read_text(encoding="utf-8") == "v1.1.0\n"
+
+
 def test_windows_upgrade_uses_saved_apps_root(tmp_path, monkeypatch):
     saved = tmp_path / "saved-root"
     monkeypatch.setattr(settings, "SETTINGS_PATH", tmp_path / "paths.json")

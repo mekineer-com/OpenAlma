@@ -72,7 +72,7 @@ def configure(apps_root: Path, release_tag: str) -> None:
     pending = apps_root / PENDING_RELEASE_FILE
     core_present = (
         (apps_root / "mcp-memu-server" / "run.py").exists()
-        and (apps_root / "memu" / "pyproject.toml").exists()
+        or (apps_root / "memu" / "pyproject.toml").exists()
     )
     comparison = compare_release(apps_root, release_tag)
     if comparison < 0:

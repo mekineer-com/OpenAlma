@@ -476,7 +476,8 @@ def _soul_databases(root: Path) -> list[Path]:
         raise SetupError("Cannot resolve the configured base database") from exc
     base = Path(raw).expanduser()
     if not base.is_absolute():
-        base = (config_path.parent / base).resolve()
+        base = config_path.parent / base
+    base = base.resolve()
     return sorted(
         path for path in _sqlite_directory(root).glob("*.db")
         if not path.name.startswith(".")
