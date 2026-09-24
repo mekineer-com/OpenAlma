@@ -43,9 +43,9 @@ cp memu-stack.desktop ~/.local/share/applications/
 update-desktop-database ~/.local/share/applications/ 2>/dev/null || true
 ```
 
-## Windows
+## Windows (unreleased)
 
-On Windows the launcher ships as a thin per-user installer (Inno Setup, compiled by the Windows CI workflow at release tags). Platform behavior beyond the shared Notes below:
+Windows support will ship as a thin per-user installer (Inno Setup, compiled by the Windows CI workflow at release tags). It is not published yet — it arrives with the next coordinated release. Platform behavior beyond the shared Notes below:
 
 - Terminal-free: launching never opens a console; no-console subprocess flags are shared with child services.
 - Exact single-instance identity — a second launch focuses the existing instance.
@@ -53,8 +53,6 @@ On Windows the launcher ships as a thin per-user installer (Inno Setup, compiled
 - A shared `.openalma-root` marker lets a packaged installer adopt a launcher-managed manual Apps root without guessing ownership.
 - Coordinated updates: numeric launcher upgrades with exact-tag matching; readiness requires every OpenAlma service stopped; the core (memU + mcp-memu-server) updates first with optional clients separate; a WAL-safe Soul backup (space/retention policy) precedes migration; rollback is database-first, and one Recover action restores the recorded backup and previous core commits if rollback cannot finish.
 - Branding: the 2-turn spiral icon (16–256 px) covers Setup, uninstall, Start Menu, and Desktop.
-
-Coordinated core-update acceptance waits for the first coordinated release tag.
 
 ## Notes
 
