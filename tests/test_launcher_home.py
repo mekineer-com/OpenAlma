@@ -82,6 +82,18 @@ def test_launcher_identity_and_favicon_are_available():
     assert "<svg" in favicon.text
 
 
+def test_update_readiness_names_active_services(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("atomic", "Atomic Mind Map", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(app.services, "all_services", lambda: [spec])
+    monkeypatch.setattr(app.services, "status", lambda _spec: {"running": True})
+
+    response = TestClient(app.app).get("/launcher/update-readiness")
+
+    assert response.json() == {
+        "application": "openalma-launcher", "active_services": ["Atomic Mind Map"],
+    }
+
+
 def test_launcher_log_uses_launcher_log_path(tmp_path, monkeypatch):
     log = tmp_path / "launcher.log"
     log.write_text("launcher started\n", encoding="utf-8")

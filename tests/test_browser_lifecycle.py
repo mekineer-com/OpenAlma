@@ -110,3 +110,22 @@ def test_installer_stop_waits_for_launcher_port_release(monkeypatch):
     run.stop_existing(timeout=1)
 
     assert requests[0].full_url.endswith("/launcher/quit")
+
+
+def test_update_preparation_refuses_active_services(monkeypatch):
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def read(self):
+            return b'{"application":"openalma-launcher","active_services":["memU Server"]}'
+
+    monkeypatch.setattr(run, "_existing_launcher", lambda *_args: True)
+    monkeypatch.setattr(run.urllib.request, "urlopen", lambda *_args, **_kwargs: Response())
+    monkeypatch.setattr(run, "stop_existing", lambda *_args: pytest.fail("active services must block update"))
+
+    with pytest.raises(RuntimeError, match="memU Server"):
+        run.prepare_update()

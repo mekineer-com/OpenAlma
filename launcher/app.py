@@ -39,6 +39,15 @@ def launcher_identity() -> dict[str, str | int]:
     return {"application": LAUNCHER_ID, "protocol": 1}
 
 
+@app.get("/launcher/update-readiness", include_in_schema=False)
+def launcher_update_readiness() -> dict[str, object]:
+    active = [
+        spec.label for spec in services.all_services()
+        if _runtime_active(services.status(spec))
+    ]
+    return {"application": LAUNCHER_ID, "active_services": active}
+
+
 def _editable_configs(apps_root: Path | None) -> dict[str, Path]:
     """Resolve user-facing config files against active process paths."""
     out = {"channels-config": settings.channels_home() / "config.json"}
@@ -87,10 +96,16 @@ def _setup_aware_status(spec: services.ServiceSpec, root: Path, *, verify_runtim
     runtime = services.status(spec)
     if spec.name == "memu-server":
         if _runtime_active(runtime):
+            update = setup_install.read_pending_release(root)
+            if update:
+                runtime["detail"] = "; ".join(filter(None, (
+                    runtime.get("detail"), f"Core release {update} ready; Stop before updating",
+                )))
             return runtime
         issue = setup_install.core_issue(root, verify_runtime=verify_runtime)
         setup = setup_install.setup_status(root, verify_runtime=verify_runtime, known_issue=issue)
-        return _row_with_setup(runtime, setup) if issue else runtime
+        release = setup_install.release_issue("memu-server", root)
+        return _row_with_setup(runtime, setup) if issue or setup_install.read_pending_release(root) or release else runtime
     setup = setup_install.optional_setup_status(spec.name, root)
     if not setup["ready"]:
         return _row_with_setup(runtime, setup)

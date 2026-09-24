@@ -21,6 +21,8 @@ import os
 from pathlib import Path
 
 LAUNCHER_DIR = Path(__file__).resolve().parent
+PACKAGED_VERSION_PATH = LAUNCHER_DIR.parent / ".openalma-version"
+PACKAGED_MANIFEST_PATH = LAUNCHER_DIR.parent / "release-components.json"
 SETTINGS_PATH = Path.home() / ".config" / "openalma-launcher" / "paths.json"
 LAUNCHER_LOG_PATH = (
     Path(os.environ["LOCALAPPDATA"]) / "OpenAlma" / "logs" / "launcher.log"

@@ -33,7 +33,9 @@ def main() -> None:
             os.chdir(settings.LAUNCHER_DIR)
             import run
 
-            if "--stop-existing" in sys.argv:
+            if "--prepare-update" in sys.argv:
+                run.prepare_update()
+            elif "--stop-existing" in sys.argv:
                 run.stop_existing()
             else:
                 run.main()

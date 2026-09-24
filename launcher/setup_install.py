@@ -5,6 +5,7 @@ import json
 import os
 import platform
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -12,6 +13,7 @@ import threading
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import UTC, datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -23,6 +25,9 @@ OPENALMA_RELEASE_URL = "https://api.github.com/repos/mekineer-com/OpenAlma/relea
 OPENALMA_RAW_URL = "https://raw.githubusercontent.com/mekineer-com/OpenAlma/{tag}/release-components.json"
 IRIS_RELEASE_URL = "https://api.github.com/repos/mekineer-com/iris/releases/latest"
 RELEASE_TAG_FILE = ".openalma-release"
+PENDING_RELEASE_TAG_FILE = ".openalma-update-release"
+RECOVERY_FILE = ".openalma-update-recovery.json"
+UPDATE_BACKUP_DIR = ".openalma-update-backups"
 IRIS_RELEASE_TAG_FILE = ".openalma-iris-release"
 KNOWN_SERVICES = {"memu-server", "iris-server", "atomic", "channels-daemon", "sillytavern"}
 OPTIONAL_SERVICES = KNOWN_SERVICES - {"memu-server"}
@@ -62,6 +67,7 @@ class InstallOperation:
 
 _LOCK = threading.RLock()
 _OPERATION: InstallOperation | None = None
+_RELEASE_ISSUE_CACHE: dict[tuple[str, str, str], tuple[float, str]] = {}
 INSTALL_LOCK = Path.home() / ".cache" / "openalma-launcher" / "install.lock"
 
 
@@ -177,6 +183,17 @@ def read_recorded_release(root: Path) -> str | None:
     return _read_release(root, RELEASE_TAG_FILE)
 
 
+def read_pending_release(root: Path) -> str | None:
+    return _read_release(root, PENDING_RELEASE_TAG_FILE)
+
+
+def read_packaged_release() -> str | None:
+    try:
+        return settings.PACKAGED_VERSION_PATH.read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
 def _read_release(root: Path, filename: str) -> str | None:
     try:
         tag = (root / filename).read_text(encoding="utf-8").strip()
@@ -264,6 +281,60 @@ def _matching_checkout(destination: Path, repository: str, ref: str) -> bool:
     return _normalized_repository(origin) == _normalized_repository(repository) and head == _remote_commit(repository, ref)
 
 
+def _local_matching_checkout(destination: Path, repository: str, ref: str) -> bool:
+    if not (destination / ".git").is_dir():
+        return False
+    try:
+        origin = _git_output(["git", "remote", "get-url", "origin"], destination)
+        head = _git_output(["git", "rev-parse", "HEAD"], destination)
+        tagged = _git_output(["git", "rev-list", "-n", "1", ref], destination)
+        dirty = _git_output(["git", "status", "--porcelain", "--untracked-files=no"], destination)
+    except SetupError:
+        return False
+    return _normalized_repository(origin) == _normalized_repository(repository) and head == tagged and not dirty
+
+
+def packaged_manifest(root: Path) -> dict[str, list[dict[str, str]]] | None:
+    tag = read_packaged_release()
+    if tag is None:
+        return None
+    try:
+        value = json.loads(settings.PACKAGED_MANIFEST_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise SetupError("Packaged OpenAlma release manifest is unavailable") from exc
+    return validate_manifest(value, root, tag)
+
+
+def release_issue(service_name: str, root: Path, *, refresh: bool = False) -> str:
+    manifest = packaged_manifest(root)
+    if manifest is None or service_name == "iris-server" or service_name not in manifest:
+        return ""
+    packaged = read_packaged_release() or ""
+    cache_key = (service_name, str(root.resolve()), packaged)
+    cached = _RELEASE_ISSUE_CACHE.get(cache_key)
+    if not refresh and cached and time.monotonic() - cached[0] < 10:
+        return cached[1]
+    if (root / RECOVERY_FILE).exists():
+        return "Core update recovery is required; view the installation log"
+    core_mismatch = any(
+        (root / entry["destination"]).exists()
+        and not _local_matching_checkout(root / entry["destination"], entry["repository"], entry["ref"])
+        for entry in manifest["memu-server"]
+    )
+    if service_name != "memu-server" and core_mismatch:
+        issue = "Core update required before this client can start"
+    else:
+        mismatched = [
+            Path(entry["destination"]).name
+            for entry in manifest[service_name]
+            if (root / entry["destination"]).exists()
+            and not _local_matching_checkout(root / entry["destination"], entry["repository"], entry["ref"])
+        ]
+        issue = f"Update required: {', '.join(mismatched)}" if mismatched else ""
+    _RELEASE_ISSUE_CACHE[cache_key] = (time.monotonic(), issue)
+    return issue
+
+
 def _clone(entry: dict[str, str], root: Path, log: Any) -> None:
     destination = root / entry["destination"]
     repository = entry["repository"]
@@ -287,6 +358,178 @@ def _clone(entry: dict[str, str], root: Path, log: Any) -> None:
     except BaseException:
         shutil.rmtree(temporary, ignore_errors=True)
         raise
+
+
+def _managed_checkout_state(entry: dict[str, str], root: Path) -> tuple[Path, str]:
+    destination = root / entry["destination"]
+    if not (destination / ".git").is_dir():
+        raise SetupError(f"Managed checkout is missing: {destination}")
+    origin = _git_output(["git", "remote", "get-url", "origin"], destination)
+    if _normalized_repository(origin) != _normalized_repository(entry["repository"]):
+        raise SetupError(f"Repository origin does not match: {destination}. Nothing was changed.")
+    if _git_output(["git", "status", "--porcelain", "--untracked-files=no"], destination):
+        raise SetupError(f"Repository has tracked edits: {destination}. Nothing was changed.")
+    return destination, _git_output(["git", "rev-parse", "HEAD"], destination)
+
+
+def _checkout_release(entry: dict[str, str], destination: Path, log: Any) -> None:
+    ref = entry["ref"]
+    _run(["git", "fetch", "--depth", "1", "origin", "tag", ref], cwd=destination, log=log)
+    _run(["git", "checkout", "--detach", ref], cwd=destination, log=log)
+    if not _local_matching_checkout(destination, entry["repository"], ref):
+        raise SetupError(f"Checkout did not reach release {ref}: {destination}")
+
+
+def _sqlite_directory(root: Path) -> Path:
+    config_path = root / "mcp-memu-server" / "config.json"
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        storage = config["storage"]
+        raw = str(storage.get("sqlite_dir") or "").strip()
+        if not raw:
+            raw = str((storage.get("metadata_store") or {}).get("dsn") or "")
+            raw = raw.removeprefix("sqlite:///")
+            raw = str(Path(raw).parent)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise SetupError("Cannot resolve the configured SQLite directory") from exc
+    path = Path(raw).expanduser()
+    return path.resolve() if path.is_absolute() else (config_path.parent / path).resolve()
+
+
+def _backup_databases(root: Path, old_tag: str, new_tag: str) -> Path:
+    databases = sorted(_sqlite_directory(root).glob("*.db"))
+    if not databases:
+        raise SetupError("No soul databases found to back up")
+    required = sum(
+        path.stat().st_size + sum(
+            sidecar.stat().st_size for suffix in ("-wal", "-shm")
+            if (sidecar := Path(str(path) + suffix)).exists()
+        )
+        for path in databases
+    )
+    parent = root / UPDATE_BACKUP_DIR
+    parent.mkdir(parents=True, exist_ok=True)
+    reserve = max(64 * 1024 * 1024, required // 10)
+    if shutil.disk_usage(parent).free < required + reserve:
+        raise SetupError("Not enough free space for the pre-update database backup")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    backup = parent / f"{old_tag}-to-{new_tag}-{timestamp}"
+    backup.mkdir()
+    for database in databases:
+        with sqlite3.connect(database) as source, sqlite3.connect(backup / database.name) as target:
+            source.backup(target)
+    return backup
+
+
+def _restore_databases(root: Path, backup: Path) -> None:
+    sqlite_dir = _sqlite_directory(root)
+    for source_path in sorted(backup.glob("*.db")):
+        destination = sqlite_dir / source_path.name
+        temporary = destination.with_name(f".{destination.name}.restore.tmp")
+        temporary.unlink(missing_ok=True)
+        try:
+            with sqlite3.connect(source_path) as source, sqlite3.connect(temporary) as target:
+                source.backup(target)
+            temporary.replace(destination)
+            for suffix in ("-wal", "-shm"):
+                Path(str(destination) + suffix).unlink(missing_ok=True)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def _refresh_core(root: Path, log: Any) -> None:
+    python = str(_venv_python(root))
+    _run([
+        python, "-m", "pip", "install", "--disable-pip-version-check",
+        "-e", str(root / "mcp-memu-server"), "-e", str(root / "memu"),
+    ], cwd=None, log=log)
+    _run([python, "scripts/install-sqlite-vec.py"], cwd=root / "memu", log=log)
+
+
+def _prune_update_backups(root: Path) -> None:
+    successful = sorted(
+        (path for path in (root / UPDATE_BACKUP_DIR).iterdir() if (path / "SUCCESS").exists()),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for old in successful[3:]:
+        shutil.rmtree(old)
+
+
+def _update_core(
+    operation: InstallOperation,
+    tag: str,
+    manifest: dict[str, list[dict[str, str]]],
+    log: Any,
+) -> None:
+    old_tag = read_recorded_release(operation.root)
+    if old_tag is None:
+        raise SetupError("Installed core release is not recorded")
+    entries = manifest["memu-server"]
+    states = [_managed_checkout_state(entry, operation.root) for entry in entries]
+    backup = _backup_databases(operation.root, old_tag, tag)
+    recovery = operation.root / RECOVERY_FILE
+    recovery.write_text(json.dumps({
+        "from": old_tag,
+        "to": tag,
+        "backup": str(backup),
+        "commits": {entry["destination"]: head for entry, (_path, head) in zip(entries, states)},
+    }, indent=2) + "\n", encoding="utf-8")
+    migration_started = False
+    committed = False
+    try:
+        for entry, (destination, _head) in zip(entries, states):
+            _set_operation(operation, step=f"Updating {entry['destination']}")
+            _checkout_release(entry, destination, log)
+        _set_operation(operation, step="Refreshing core Python packages")
+        _refresh_core(operation.root, log)
+        _set_operation(operation, step="Migrating soul databases")
+        migration_started = True
+        _run(
+            [str(_venv_python(operation.root)), "migrate_release.py"],
+            cwd=operation.root / "mcp-memu-server", log=log,
+        )
+        issue = core_issue(operation.root)
+        if issue:
+            raise SetupError(issue)
+        _write_recorded_release(operation.root, tag)
+        committed = True
+        recovery.unlink()
+        (operation.root / PENDING_RELEASE_TAG_FILE).unlink(missing_ok=True)
+        _RELEASE_ISSUE_CACHE.clear()
+        (backup / "SUCCESS").write_text("ok\n", encoding="utf-8")
+        try:
+            _prune_update_backups(operation.root)
+        except OSError:
+            pass
+    except Exception as update_error:
+        if committed:
+            raise SetupError(
+                f"Core updated but final state cleanup failed; retry before starting: {update_error}"
+            ) from update_error
+        rollback_errors = []
+        if migration_started:
+            try:
+                _restore_databases(operation.root, backup)
+            except Exception as exc:
+                rollback_errors.append(f"database restore failed: {exc}")
+        if not rollback_errors:
+            for entry, (destination, head) in zip(entries, states):
+                try:
+                    _run(["git", "checkout", "--detach", head], cwd=destination, log=log)
+                except Exception as exc:
+                    rollback_errors.append(f"code restore failed for {entry['destination']}: {exc}")
+            if not rollback_errors:
+                try:
+                    _refresh_core(operation.root, log)
+                except Exception as exc:
+                    rollback_errors.append(f"environment restore failed: {exc}")
+        if not rollback_errors:
+            recovery.unlink(missing_ok=True)
+        detail = f"Core update failed: {update_error}"
+        if rollback_errors:
+            detail += "; recovery required: " + "; ".join(rollback_errors)
+        raise SetupError(detail) from update_error
 
 
 def _venv_python(root: Path) -> Path:
@@ -393,8 +636,20 @@ def _install_core(operation: InstallOperation) -> None:
             _set_operation(operation, step="Finding supported release")
             paths = settings.read_paths()
             tag = read_recorded_release(operation.root)
+            pending_tag = read_pending_release(operation.root)
+            if pending_tag is not None:
+                manifest = packaged_manifest(operation.root)
+                if manifest is None or read_packaged_release() != pending_tag:
+                    raise SetupError("Pending core update does not match the packaged launcher")
+                _update_core(operation, pending_tag, manifest, log)
+                paths["apps_root"] = str(operation.root)
+                settings.write_paths(paths)
+                _set_operation(
+                    operation, state="ready", step="Core updated", detail="Start memU Server when ready",
+                )
+                return
             if tag is not None:
-                manifest = recorded_manifest(operation.root)
+                manifest = packaged_manifest(operation.root) or recorded_manifest(operation.root)
             else:
                 tag, manifest = discover_release(operation.root)
                 _write_recorded_release(operation.root, tag)
@@ -538,6 +793,8 @@ def start_issue(service_name: str, root: Path) -> str:
         return f"{service_name} installation is still running"
     if _active_install_owner() == (service_name, str(root.resolve())):
         return f"{service_name} installation is still running"
+    if issue := release_issue(service_name, root, refresh=True):
+        return issue
     if service_name == "memu-server":
         return core_issue(root)
     if service_name == "sillytavern":
@@ -583,6 +840,8 @@ def _optional_tool_issue(service_name: str) -> str:
 
 
 def _install_optional(operation: InstallOperation) -> None:
+    states: list[tuple[Path, str]] = []
+    entries: list[dict[str, str]] = []
     try:
         log_path = install_log_path(operation.service_name)
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -592,9 +851,19 @@ def _install_optional(operation: InstallOperation) -> None:
                 _optional_entries(operation.service_name, operation.root),
                 key=lambda entry: len(Path(entry["destination"]).parts),
             )
+            states = [
+                _managed_checkout_state(entry, operation.root)
+                for entry in entries if (operation.root / entry["destination"]).exists()
+            ]
+            state_by_path = {path: head for path, head in states}
             for entry in entries:
                 _set_operation(operation, step=f"Installing {entry['destination']}")
-                _clone(entry, operation.root, log)
+                destination = operation.root / entry["destination"]
+                if destination in state_by_path:
+                    if not _local_matching_checkout(destination, entry["repository"], entry["ref"]):
+                        _checkout_release(entry, destination, log)
+                else:
+                    _clone(entry, operation.root, log)
             issue = _optional_tool_issue(operation.service_name)
             if issue:
                 raise SetupError(issue)
@@ -607,9 +876,19 @@ def _install_optional(operation: InstallOperation) -> None:
             if issue and operation.service_name != "atomic":
                 raise SetupError(issue)
         detail = optional_issue(operation.service_name, operation.root)
+        _RELEASE_ISSUE_CACHE.clear()
         _set_operation(operation, state="ready", step="Installation complete", detail=detail)
     except Exception as exc:
-        _set_operation(operation, state="error", step="Installation failed", detail=str(exc))
+        rollback_errors = []
+        for destination, head in states:
+            try:
+                _run(["git", "checkout", "--detach", head], cwd=destination, log=log)
+            except Exception as rollback_error:
+                rollback_errors.append(str(rollback_error))
+        detail = str(exc)
+        if rollback_errors:
+            detail += "; rollback failed: " + "; ".join(rollback_errors)
+        _set_operation(operation, state="error", step="Installation failed", detail=detail)
 
 
 def _lock_handle(handle: Any) -> None:
@@ -758,6 +1037,30 @@ def setup_status(
             "status_label": "Installing core", "detail": operation["step"],
             "startable": False, "install_running": True,
         }
+    present = (root / "mcp-memu-server" / "run.py").exists()
+    if (root / RECOVERY_FILE).exists():
+        return {
+            "state": "blocked", "install_setup": True,
+            "status_label": "Recovery required",
+            "detail": operation["detail"] or "View the core installation log",
+            "startable": False, "action_kind": None,
+        }
+    pending = read_pending_release(root)
+    if pending is not None and present:
+        return {
+            "state": "update", "install_setup": True,
+            "status_label": "Update required",
+            "detail": operation["detail"] if operation["state"] == "error" else f"Core release {pending} is ready",
+            "startable": False, "action_kind": "install",
+            "action_label": "Retry" if operation["state"] == "error" else "Update",
+        }
+    if present and release_issue("memu-server", root):
+        return {
+            "state": "blocked", "install_setup": True,
+            "status_label": "Update state incomplete",
+            "detail": "Re-run the matching OpenAlma installer",
+            "startable": False, "action_kind": None,
+        }
     issue = known_issue if known_issue is not None else core_issue(root, verify_runtime=verify_runtime)
     if not issue:
         return {
@@ -766,7 +1069,6 @@ def setup_status(
             "startable": False, "restart_required": True,
         }
     detail = operation["detail"] if operation["state"] == "error" else issue
-    present = (root / "mcp-memu-server" / "run.py").exists()
     prerequisite = _prerequisite_issue(root)
     return {
         "state": "setup", "install_setup": True,
@@ -801,6 +1103,15 @@ def optional_setup_status(service_name: str, root: Path) -> dict[str, Any]:
         return {
             "ready": False, "state": "setup", "install_setup": True, "status_label": "Installing",
             "detail": operation["step"], "startable": False, "install_running": True,
+        }
+    if update_issue := release_issue(service_name, root):
+        core_blocked = update_issue.startswith("Core update required")
+        return {
+            "ready": False, "state": "update", "install_setup": True,
+            "status_label": "Waiting for core update" if core_blocked else "Update required",
+            "detail": operation["detail"] if operation["state"] == "error" else update_issue,
+            "startable": False, "action_kind": None if core_blocked else "install",
+            "action_label": "" if core_blocked else ("Retry" if operation["state"] == "error" else "Update"),
         }
     issue = optional_issue(service_name, root)
     if not issue:

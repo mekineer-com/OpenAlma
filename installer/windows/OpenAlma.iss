@@ -29,6 +29,7 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 [Files]
 Source: "..\..\launcher\*"; DestDir: "{app}\launcher"; Excludes: ".venv\*,__pycache__\*,*.pyc"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\docs\favicon.svg"; DestDir: "{app}\docs"; Flags: ignoreversion; AfterInstall: PrepareLauncher
+Source: "..\..\release-components.json"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\OpenAlma"; Filename: "{app}\launcher\.venv\Scripts\pythonw.exe"; Parameters: """{app}\launcher\windows_start.pyw"""; WorkingDir: "{app}\launcher"
@@ -142,22 +143,62 @@ begin
   end;
 end;
 
-function StopInstalledLauncher(): String;
+function StopInstalledLauncher(RequireUpdateReady: Boolean): String;
 var
-  Python, Script: String;
+  Python, Script, Argument: String;
   ResultCode: Integer;
 begin
   Result := '';
   Python := ExpandConstant('{app}\launcher\.venv\Scripts\pythonw.exe');
   Script := ExpandConstant('{app}\launcher\windows_start.pyw');
+  if RequireUpdateReady then
+    Argument := '--prepare-update'
+  else
+    Argument := '--stop-existing';
   if FileExists(Python) and FileExists(Script) then
-    if not RunHidden(Python, '"' + Script + '" --stop-existing', ResultCode) or (ResultCode <> 0) then
+    if not RunHidden(Python, '"' + Script + '" ' + Argument, ResultCode) or (ResultCode <> 0) then
       Result := 'OpenAlma is still running. Use Exit in OpenAlma, then click Retry.';
 end;
 
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+function CheckInstalledRelease(var IsUpgrade: Boolean): String;
+var
+  Python, Helper, AppsRoot: String;
+  ResultCode: Integer;
 begin
-  Result := StopInstalledLauncher();
+  Result := '';
+  IsUpgrade := False;
+  Python := ExpandConstant('{app}\launcher\.venv\Scripts\python.exe');
+  Helper := ExpandConstant('{app}\launcher\windows_install.py');
+  AppsRoot := ExpandConstant('{localappdata}\OpenAlma');
+  if FileExists(Python) and FileExists(Helper) then
+  begin
+    if not RunHidden(
+      Python,
+      '"' + Helper + '" --apps-root "' + AppsRoot + '" --release-tag "{#MyAppVersion}" --compare-release',
+      ResultCode
+    ) then
+      Result := 'Could not verify the installed OpenAlma release.'
+    else if ResultCode = 10 then
+      IsUpgrade := True
+    else if ResultCode <> 0 then
+      Result := 'This installer is older than the installed OpenAlma release.';
+  end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  IsUpgrade: Boolean;
+begin
+  Result := CheckInstalledRelease(IsUpgrade);
+  if (Result = '') and IsUpgrade then
+    if MsgBox(
+      'OpenAlma Launcher updates first. Installed services will show Update required and cannot start until their matching updates complete.'#13#10#13#10 +
+      'Your settings and soul data are preserved. Continue?',
+      mbConfirmation, MB_YESNO
+    ) <> IDYES then
+      Result := 'Update cancelled.';
+  if Result = '' then
+    Result := StopInstalledLauncher(IsUpgrade);
   if Result = '' then
     Result := EnsurePrerequisites();
 end;
@@ -191,7 +232,7 @@ end;
 
 function InitializeUninstall(): Boolean;
 begin
-  Result := StopInstalledLauncher() = '';
+  Result := StopInstalledLauncher(False) = '';
   if not Result then
     MsgBox('OpenAlma is still running. Use Exit in OpenAlma, then retry uninstall.', mbError, MB_OK);
 end;

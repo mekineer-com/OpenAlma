@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -118,6 +119,91 @@ def test_failed_core_install_is_a_visible_retry(tmp_path, monkeypatch):
 
     assert status["detail"] == "Release unavailable"
     assert status["action_label"] == "Retry"
+
+
+def test_pending_core_update_is_visible_and_blocks_start(tmp_path, monkeypatch):
+    (tmp_path / "mcp-memu-server").mkdir()
+    (tmp_path / "mcp-memu-server/run.py").touch()
+    (tmp_path / setup_install.PENDING_RELEASE_TAG_FILE).write_text("v2.0.0-buildfix\n", encoding="utf-8")
+    monkeypatch.setattr(setup_install, "core_issue", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(setup_install, "release_issue", lambda *_args, **_kwargs: "Update required: memu")
+
+    status = setup_install.setup_status(tmp_path)
+
+    assert status["status_label"] == "Update required"
+    assert status["action_label"] == "Update"
+    assert setup_install.start_issue("memu-server", tmp_path) == "Update required: memu"
+
+
+def test_database_backup_restore_roundtrip(tmp_path):
+    root = tmp_path / "apps"
+    server = root / "mcp-memu-server"
+    sqlite_dir = root / "memu/sqlite"
+    server.mkdir(parents=True)
+    sqlite_dir.mkdir(parents=True)
+    (server / "config.json").write_text(json.dumps({
+        "storage": {
+            "sqlite_dir": "../memu/sqlite",
+            "metadata_store": {"dsn": "../memu/sqlite/memu.db"},
+        },
+    }), encoding="utf-8")
+    database = sqlite_dir / "FictionalSoul.db"
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE value (text TEXT)")
+        connection.execute("INSERT INTO value VALUES ('before')")
+
+    backup = setup_install._backup_databases(root, "v1.0.0", "v1.1.0")
+    with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE value SET text = 'after'")
+    setup_install._restore_databases(root, backup)
+
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT text FROM value").fetchone() == ("before",)
+
+
+def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatch):
+    operation = setup_install.InstallOperation("memu-server", tmp_path)
+    entries = [
+        {
+            "repository": "https://github.com/example/mcp.git",
+            "ref": "v2.0.0",
+            "destination": "mcp-memu-server",
+        },
+        {
+            "repository": "https://github.com/example/memu.git",
+            "ref": "v2.0.0",
+            "destination": "memu",
+        },
+    ]
+    for entry in entries:
+        (tmp_path / entry["destination"]).mkdir()
+    (tmp_path / setup_install.RELEASE_TAG_FILE).write_text("v1.0.0\n", encoding="utf-8")
+    backup = tmp_path / "backup"
+    backup.mkdir()
+    events = []
+
+    monkeypatch.setattr(
+        setup_install, "_managed_checkout_state",
+        lambda entry, root: (root / entry["destination"], "old-" + entry["destination"]),
+    )
+    monkeypatch.setattr(setup_install, "_backup_databases", lambda *_args: backup)
+    monkeypatch.setattr(setup_install, "_checkout_release", lambda *_args: events.append("new-code"))
+    monkeypatch.setattr(setup_install, "_refresh_core", lambda *_args: events.append("environment"))
+    monkeypatch.setattr(setup_install, "_restore_databases", lambda *_args: events.append("databases"))
+
+    def run(command, **_kwargs):
+        if "migrate_release.py" in command:
+            raise RuntimeError("migration failed")
+        if command[:3] == ["git", "checkout", "--detach"]:
+            events.append("old-code")
+
+    monkeypatch.setattr(setup_install, "_run", run)
+
+    with pytest.raises(setup_install.SetupError, match="migration failed"):
+        setup_install._update_core(operation, "v2.0.0", {"memu-server": entries}, None)
+
+    assert events.index("databases") < events.index("old-code")
+    assert not (tmp_path / setup_install.RECOVERY_FILE).exists()
 
 
 def test_iris_uses_its_independent_stable_release(tmp_path, monkeypatch):
