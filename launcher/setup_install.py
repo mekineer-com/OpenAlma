@@ -13,8 +13,9 @@ import threading
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import UTC, datetime
+from contextlib import closing
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -416,7 +417,10 @@ def _backup_databases(root: Path, old_tag: str, new_tag: str) -> Path:
     backup = parent / f"{old_tag}-to-{new_tag}-{timestamp}"
     backup.mkdir()
     for database in databases:
-        with sqlite3.connect(database) as source, sqlite3.connect(backup / database.name) as target:
+        with (
+            closing(sqlite3.connect(database)) as source,
+            closing(sqlite3.connect(backup / database.name)) as target,
+        ):
             source.backup(target)
     return backup
 
@@ -428,7 +432,10 @@ def _restore_databases(root: Path, backup: Path) -> None:
         temporary = destination.with_name(f".{destination.name}.restore.tmp")
         temporary.unlink(missing_ok=True)
         try:
-            with sqlite3.connect(source_path) as source, sqlite3.connect(temporary) as target:
+            with (
+                closing(sqlite3.connect(source_path)) as source,
+                closing(sqlite3.connect(temporary)) as target,
+            ):
                 source.backup(target)
             temporary.replace(destination)
             for suffix in ("-wal", "-shm"):
