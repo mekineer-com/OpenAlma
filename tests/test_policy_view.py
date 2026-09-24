@@ -51,6 +51,8 @@ def test_excluded_whatsapp_chats_are_collapsed():
     assert "Hidden" not in main_table
     assert "<summary>Excluded (1)</summary>" in excluded_section
     assert "Hidden" in excluded_section
+    assert "New rows default to" in html
+    assert '<option value="excluded" selected>excluded</option>' in html
 
 
 def test_empty_policy_view_shows_actual_channel_directory_path():
@@ -76,6 +78,7 @@ def test_empty_policy_view_shows_actual_channel_directory_path():
 
     assert "No WhatsApp chats in" in html
     assert "/tmp/hermes-channels/channel_directory.json" in html
+    assert "New rows default to" in html
 
 
 def test_virgin_setup_hides_both_channels_sections():

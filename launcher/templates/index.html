@@ -260,6 +260,15 @@
   </form>
   {% endif %}
   <h2>WhatsApp channel policy</h2>
+  <form method="post" action="/policy">
+    <p>
+      <label for="default-channel-policy">New rows default to</label>
+      <select id="default-channel-policy" name="default_policy">
+        {% for p in policies %}
+          <option value="{{ p }}" {% if (default_policy|default('excluded')) == p %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </p>
   {% if chats %}
   <p class="muted">
     Legend:<br>
@@ -268,7 +277,6 @@
     <strong>excluded</strong> — Hermes Channels drops the message entirely.<br>
     <strong>Mem</strong> — include this chat in memory extraction; unchecked chats stay as context-only during memorize.
   </p>
-  <form method="post" action="/policy">
     {% macro chat_row(c) -%}
     <tr>
       <td>{{ c.name or '(unnamed)' }}</td>
@@ -317,11 +325,11 @@
         </table>
       </details>
     {% endif %}
-    <p><button class="btn" type="submit">Save policies</button></p>
-  </form>
   {% else %}
     <p><em>No WhatsApp chats in <code>{{ channel_directory_path }}</code> yet.</em></p>
   {% endif %}
+    <p><button class="btn" type="submit">Save policies</button></p>
+  </form>
   {% endif %}
 
   <script src="/static/soul-selector.js"></script>

@@ -298,11 +298,43 @@ def _default_memorize_for_policy(policy: Policy) -> bool:
     return policy != "excluded"
 
 
-def read_channel_settings() -> dict[str, dict[str, bool | str]]:
+def _read_policy_data() -> dict:
     try:
         data = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_policy_data(data: dict) -> None:
+    POLICY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    POLICY_PATH.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def _configured_default_policy() -> Policy | None:
+    whatsapp = _read_policy_data().get("whatsapp")
+    value = whatsapp.get("default_policy") if isinstance(whatsapp, dict) else None
+    return value if value in ALL_POLICIES else None  # type: ignore[return-value]
+
+
+def read_default_policy() -> Policy:
+    return _configured_default_policy() or "excluded"
+
+
+def write_default_policy(value: str) -> None:
+    if value not in ALL_POLICIES:
+        return
+    data = _read_policy_data()
+    whatsapp = data.setdefault("whatsapp", {})
+    if not isinstance(whatsapp, dict):
+        whatsapp = {}
+        data["whatsapp"] = whatsapp
+    whatsapp["default_policy"] = value
+    _write_policy_data(data)
+
+
+def read_channel_settings() -> dict[str, dict[str, bool | str]]:
+    data = _read_policy_data()
     whatsapp = data.get("whatsapp") if isinstance(data, dict) else None
     channels = whatsapp.get("channels") if isinstance(whatsapp, dict) else None
     if not isinstance(channels, dict):
@@ -327,12 +359,7 @@ def read_channel_settings() -> dict[str, dict[str, bool | str]]:
 
 def write_channel_settings(updates: dict[str, dict[str, bool | str]]) -> None:
     """Apply per-chat policy + memorize settings to CHANNELS_HOME/memu.json."""
-    try:
-        data = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        data = {}
-    if not isinstance(data, dict):
-        data = {}
+    data = _read_policy_data()
     whatsapp = data.setdefault("whatsapp", {})
     if not isinstance(whatsapp, dict):
         whatsapp = {}
@@ -371,7 +398,7 @@ def write_channel_settings(updates: dict[str, dict[str, bool | str]]) -> None:
             if key not in {"policy", "memorize"} and value not in (None, "", [], {})
         }
 
-        if p == "full" and memorize and not metadata:
+        if whatsapp.get("default_policy") not in ALL_POLICIES and p == "full" and memorize and not metadata:
             # Default behavior: no row needed.
             channels.pop(store_key, None)
             continue
@@ -379,8 +406,32 @@ def write_channel_settings(updates: dict[str, dict[str, bool | str]]) -> None:
         row["memorize"] = memorize
         channels[store_key] = row
 
-    POLICY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    POLICY_PATH.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    _write_policy_data(data)
+
+
+def ensure_channel_settings(chats: list[dict]) -> tuple[dict[str, dict[str, bool | str]], Policy]:
+    """Persist each discovered chat once, using the then-current default."""
+    configured = _configured_default_policy()
+    default = configured or "excluded"
+    current = read_channel_settings()
+    seed_policy: Policy = "full" if configured is None else default
+    if not chats:
+        return current, default
+    missing = {
+        str(chat.get("id") or ""): {
+            "policy": seed_policy,
+            "memorize": _default_memorize_for_policy(seed_policy),
+        }
+        for chat in chats
+        if str(chat.get("id") or "")
+        and not settings_for_chat(str(chat.get("id") or ""), current)
+    }
+    if configured is None:
+        write_default_policy(default)
+    if missing:
+        write_channel_settings(missing)
+        current = read_channel_settings()
+    return current, default
 
 
 def read_policies() -> dict[str, Policy]:

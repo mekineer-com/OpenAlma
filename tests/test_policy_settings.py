@@ -92,3 +92,34 @@ def test_write_channel_settings_removes_pure_default_policy_row(tmp_path, monkey
 
     data = json.loads(policy_path.read_text(encoding="utf-8"))
     assert data["whatsapp"]["channels"] == {}
+
+
+def test_existing_chats_are_frozen_full_when_new_default_is_introduced(tmp_path, monkeypatch):
+    policy_path = tmp_path / "memu.json"
+    policy_path.write_text('{"whatsapp":{"channels":{}}}', encoding="utf-8")
+    monkeypatch.setattr(policy, "POLICY_PATH", policy_path)
+
+    settings, default = policy.ensure_channel_settings([
+        {"id": "existing@s.whatsapp.net"},
+    ])
+
+    assert default == "excluded"
+    assert settings["existing@s.whatsapp.net"] == {"policy": "full", "memorize": True}
+    data = json.loads(policy_path.read_text(encoding="utf-8"))
+    assert data["whatsapp"]["default_policy"] == "excluded"
+
+
+def test_new_chat_is_frozen_to_selected_default(tmp_path, monkeypatch):
+    policy_path = tmp_path / "memu.json"
+    policy_path.write_text(
+        '{"whatsapp":{"default_policy":"listen_only","channels":{}}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(policy, "POLICY_PATH", policy_path)
+
+    settings, default = policy.ensure_channel_settings([{"id": "new@g.us"}])
+    policy.write_default_policy("full")
+
+    assert default == "listen_only"
+    assert settings["new@g.us"] == {"policy": "listen_only", "memorize": True}
+    assert policy.read_channel_settings()["new@g.us"]["policy"] == "listen_only"

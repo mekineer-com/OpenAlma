@@ -60,6 +60,7 @@ Windows support will ship as a thin per-user installer (Inno Setup, compiled by 
 - Changing Apps root is saved for the next launcher start; active service and Channels paths do not switch mid-run.
 - Settings separates application setup gaps from runtime tools. Optional-client requirements appear only for clients whose checkout is present; Iris installation remains unavailable until its current `node`, `bun`, and `ip` release path can run.
 - Stop Hermes Channels before selecting another Soul; restart it to load the new exact selection.
+- WhatsApp Channel Policy stores a default for newly discovered rows (initially `excluded`). Existing legacy chats are first frozen as explicit `full` rows, and changing the selector later affects only chats discovered afterward.
 - Graceful Stop never force-kills. If a service is still stopping after 30 seconds, the separately confirmed Force Stop action becomes available as manual recovery.
 - Packaged repair, update, and uninstall require every OpenAlma service to be stopped, even when the launcher window is already closed. The installer refuses rather than force-killing a service or deleting around locked data. If damaged launcher files prevent verification, only normal data-preserving uninstall remains available; Remove Everything stays disabled.
 - If a core update cannot finish rolling back, the launcher exposes one Recover action. It restores the recorded Soul backup and previous core commits, validates them, and leaves Update for a separate retry; package restoration may require internet access.

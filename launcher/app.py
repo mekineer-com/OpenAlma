@@ -165,8 +165,13 @@ def index(request: Request) -> HTMLResponse:
             if not services.is_installed(spec) and spec.name != "memu-server":
                 setup = setup_install.optional_setup_status(spec.name, setup_root)
                 not_installed.append({"name": spec.name, "label": spec.label} | setup)
+    channels_configured = soul.CHANNELS_CONFIG_PATH.exists()
     chats = policy.list_whatsapp_chats()
-    current = policy.read_channel_settings()
+    current, default_policy = (
+        policy.ensure_channel_settings(chats)
+        if channels_configured
+        else (policy.read_channel_settings(), policy.read_default_policy())
+    )
     chat_rows = []
     for c in chats:
         chat_id = str(c.get("id", ""))
@@ -176,8 +181,8 @@ def index(request: Request) -> HTMLResponse:
                 "id": chat_id,
                 "name": str(c.get("name", "")),
                 "type": str(c.get("type", "")),
-                "policy": str(saved.get("policy") or "full"),
-                "memorize": bool(saved.get("memorize", True)),
+                "policy": str(saved.get("policy") or default_policy),
+                "memorize": bool(saved.get("memorize", default_policy != "excluded")),
             }
         )
     visible_chats = [c for c in chat_rows if c["policy"] != "excluded"]
@@ -188,7 +193,6 @@ def index(request: Request) -> HTMLResponse:
         owner_id = services.read_owner()
     except services.OwnerServiceUnavailable as exc:
         owner_error = str(exc)
-    channels_configured = soul.CHANNELS_CONFIG_PATH.exists()
     active_soul = ""
     channels_error = ""
     if channels_configured:
@@ -219,6 +223,7 @@ def index(request: Request) -> HTMLResponse:
             "excluded_chats": excluded_chats,
             "channel_directory_path": str(policy.DIRECTORY_PATH),
             "policies": policy.ALL_POLICIES,
+            "default_policy": default_policy,
             "active_soul": active_soul,
             "channels_configured": channels_configured,
             "channels_error": channels_error,
@@ -518,6 +523,9 @@ def whatsapp_pair_status() -> dict:
 @app.post("/policy")
 async def policy_save(request: Request) -> RedirectResponse:
     form = await request.form()
+    default_policy = form.get("default_policy")
+    if isinstance(default_policy, str) and default_policy in policy.ALL_POLICIES:
+        policy.write_default_policy(default_policy)
     updates: dict[str, dict[str, bool | str]] = {}
     for key, val in form.items():
         if isinstance(key, str) and key.startswith("policy[") and key.endswith("]"):
