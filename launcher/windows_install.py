@@ -10,7 +10,7 @@ import settings
 
 _TAG = re.compile(r"v[A-Za-z0-9][A-Za-z0-9._-]{0,126}")
 _VERSION = re.compile(r"v(\d+)\.(\d+)\.(\d+)(?:[-.][A-Za-z0-9._-]+)?")
-OWNER_FILE = ".openalma-installer-root"
+OWNER_FILE = ".openalma-root"
 RELEASE_FILE = ".openalma-release"
 PENDING_RELEASE_FILE = ".openalma-update-release"
 

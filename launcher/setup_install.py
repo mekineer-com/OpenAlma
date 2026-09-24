@@ -29,6 +29,7 @@ OPENALMA_RELEASES_URL = "https://api.github.com/repos/mekineer-com/OpenAlma/rele
 OPENALMA_RAW_URL = "https://raw.githubusercontent.com/mekineer-com/OpenAlma/{tag}/release-components.json"
 IRIS_RELEASE_URL = "https://api.github.com/repos/mekineer-com/iris/releases/latest"
 RELEASE_TAG_FILE = ".openalma-release"
+ROOT_MARKER_FILE = ".openalma-root"
 PENDING_RELEASE_TAG_FILE = ".openalma-update-release"
 RECOVERY_FILE = ".openalma-update-recovery.json"
 UPDATE_BACKUP_DIR = ".openalma-update-backups"
@@ -248,6 +249,10 @@ def _read_release(root: Path, filename: str) -> str | None:
 
 def _write_recorded_release(root: Path, tag: str) -> None:
     _write_release(root, RELEASE_TAG_FILE, tag)
+
+
+def _write_root_marker(root: Path) -> None:
+    _write_release(root, ROOT_MARKER_FILE, str(root.resolve()))
 
 
 def _write_release(root: Path, filename: str, tag: str) -> None:
@@ -699,6 +704,7 @@ def _install_core(operation: InstallOperation) -> None:
             else:
                 tag, manifest = discover_release(operation.root)
                 _write_recorded_release(operation.root, tag)
+            _write_root_marker(operation.root)
             paths["apps_root"] = str(operation.root)
             paths.pop("openalma_release_tag", None)
             settings.write_paths(paths)

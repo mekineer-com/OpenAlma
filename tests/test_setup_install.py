@@ -459,6 +459,12 @@ def test_release_selection_belongs_to_each_apps_root(tmp_path):
     assert setup_install.read_recorded_release(second) is None
 
 
+def test_manual_launcher_setup_marks_its_apps_root(tmp_path):
+    setup_install._write_root_marker(tmp_path)
+
+    assert (tmp_path / setup_install.ROOT_MARKER_FILE).read_text(encoding="utf-8") == str(tmp_path) + "\n"
+
+
 def test_windows_package_shim_uses_comspec(monkeypatch):
     monkeypatch.setattr(setup_install.shutil, "which", lambda _tool: r"C:\Tools\bun.cmd")
     monkeypatch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")

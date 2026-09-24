@@ -283,7 +283,7 @@ begin
   if (CurUninstallStep = usPostUninstall) and RemoveEverything then
   begin
     AppsRoot := ExpandConstant('{localappdata}\OpenAlma');
-    Marker := AppsRoot + '\.openalma-installer-root';
+    Marker := AppsRoot + '\.openalma-root';
     if (not LoadStringFromFile(Marker, Owner)) or (CompareText(Trim(Owner), AppsRoot) <> 0) then
       MsgBox('OpenAlma refused to remove an Apps root it does not own: ' + AppsRoot, mbError, MB_OK)
     else begin
