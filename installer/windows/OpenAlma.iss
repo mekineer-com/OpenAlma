@@ -44,6 +44,7 @@ Filename: "{app}\launcher\.venv\Scripts\pythonw.exe"; Parameters: """{app}\launc
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\launcher\.venv"
+Type: filesandordirs; Name: "{app}\launcher\__pycache__"
 Type: files; Name: "{app}\.openalma-version"
 
 [Code]
@@ -161,13 +162,17 @@ begin
   Result := '';
   Python := ExpandConstant('{app}\launcher\.venv\Scripts\pythonw.exe');
   Script := ExpandConstant('{app}\launcher\windows_start.pyw');
+  if not FileExists(Python) then
+    Python := PythonLauncher;
   if RequireUpdateReady then
     Argument := '--prepare-update'
   else
     Argument := '--stop-existing';
-  if FileExists(Python) and FileExists(Script) then
+  if (Python <> '') and FileExists(Python) and FileExists(Script) then
     if not RunHidden(Python, '"' + Script + '" ' + Argument, ResultCode) or (ResultCode <> 0) then
-      Result := 'OpenAlma is still running. Use Exit in OpenAlma, then click Retry.';
+      Result := 'OpenAlma could not verify that all services are stopped. Open it, stop every service, then click Retry.';
+  if (Result = '') and DirExists(ExpandConstant('{app}')) and not FileExists(Script) then
+    Result := 'OpenAlma launcher files are incomplete, so running services cannot be verified.';
 end;
 
 function StopAnyLauncher(RequireUpdateReady: Boolean): String;
@@ -213,8 +218,12 @@ begin
       Result := 'Could not verify the installed OpenAlma release.'
     else if ResultCode = 10 then
       IsUpgrade := True
-    else if ResultCode <> 0 then
+    else if ResultCode = 2 then
       Result := 'This installer is older than the installed OpenAlma release.';
+    else if ResultCode = 3 then
+      Result := 'The installed OpenAlma release metadata is damaged or conflicts with this installer.'
+    else if ResultCode <> 0 then
+      Result := 'Could not verify the installed OpenAlma release.';
   end;
 end;
 
@@ -233,7 +242,9 @@ begin
     ) <> IDYES then
       Result := 'Update cancelled.';
   if Result = '' then
-    Result := StopAnyLauncher(IsUpgrade);
+    Result := StopInstalledLauncher(True);
+  if Result = '' then
+    Result := StopAnyLauncher(True);
 end;
 
 procedure RunChecked(const Filename, Params, Failure: String);
@@ -265,15 +276,16 @@ end;
 
 function InitializeUninstall(): Boolean;
 begin
-  Result := StopInstalledLauncher(False) = '';
+  PythonLauncher := FindPythonLauncher();
+  Result := StopInstalledLauncher(True) = '';
   if not Result then
-    MsgBox('OpenAlma is still running. Use Exit in OpenAlma, then retry uninstall.', mbError, MB_OK);
+    MsgBox('Open OpenAlma, stop every service, then retry uninstall.', mbError, MB_OK);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  AppsRoot, Marker: String;
-  Owner: AnsiString;
+  Python, Script: String;
+  ResultCode: Integer;
 begin
   if CurUninstallStep = usUninstall then
   begin
@@ -284,20 +296,16 @@ begin
     ) = IDNO;
     if RemoveEverything then
       RemoveEverything := MsgBox(
-        'Remove EVERYTHING in ' + ExpandConstant('{localappdata}\OpenAlma') + '?'#13#10 +
-        'This permanently deletes installed components and soul data.',
+        'Remove EVERYTHING in the recorded OpenAlma Apps root?'#13#10 +
+        'This permanently deletes installed components, settings, logs, and soul data.',
         mbError, MB_YESNO
       ) = IDYES;
-  end;
-  if (CurUninstallStep = usPostUninstall) and RemoveEverything then
-  begin
-    AppsRoot := ExpandConstant('{localappdata}\OpenAlma');
-    Marker := AppsRoot + '\.openalma-root';
-    if (not LoadStringFromFile(Marker, Owner)) or (CompareText(Trim(Owner), AppsRoot) <> 0) then
-      MsgBox('OpenAlma refused to remove an Apps root it does not own: ' + AppsRoot, mbError, MB_OK)
-    else begin
-      DelTree(AppsRoot, True, True, True);
-      DelTree(ExpandConstant('{userprofile}\.config\openalma-launcher'), True, True, True);
+    if RemoveEverything then
+    begin
+      Python := ExpandConstant('{app}\launcher\.venv\Scripts\python.exe');
+      Script := ExpandConstant('{app}\launcher\windows_remove.py');
+      if not RunHidden(Python, '"' + Script + '"', ResultCode) or (ResultCode <> 0) then
+        RaiseException('Remove Everything could not complete. OpenAlma data was not intentionally removed by the uninstaller.');
     end;
   end;
 end;

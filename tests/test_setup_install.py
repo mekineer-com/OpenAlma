@@ -208,15 +208,20 @@ def test_database_backup_ignores_base_hidden_and_accepts_no_souls(tmp_path):
     (server / "config.json").write_text(json.dumps({
         "storage": {
             "sqlite_dir": "../memu/sqlite",
-            "metadata_store": {"dsn": "../memu/sqlite/memu.db"},
+            "metadata_store": {"dsn": "sqlite:///../memu/sqlite/memu.db?mode=rwc"},
         },
+        "procedural": {"db_path": "../memu/sqlite/procedural.db"},
     }), encoding="utf-8")
     (sqlite_dir / "memu.db").touch()
+    (sqlite_dir / "procedural.db").touch()
     (sqlite_dir / ".replacement.db").touch()
+    stale_failed = root / setup_install.UPDATE_BACKUP_DIR / "stale-failed"
+    stale_failed.mkdir(parents=True)
 
     backup = setup_install._backup_databases(root, "v1.0.0", "v1.1.0")
 
     assert list(backup.glob("*.db")) == []
+    assert not stale_failed.exists()
 
 
 def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatch):
@@ -236,8 +241,8 @@ def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatc
     for entry in entries:
         (tmp_path / entry["destination"]).mkdir()
     (tmp_path / setup_install.RELEASE_TAG_FILE).write_text("v1.0.0\n", encoding="utf-8")
-    backup = tmp_path / "backup"
-    backup.mkdir()
+    backup = tmp_path / setup_install.UPDATE_BACKUP_DIR / "backup"
+    backup.mkdir(parents=True)
     events = []
 
     monkeypatch.setattr(
@@ -248,6 +253,7 @@ def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatc
     monkeypatch.setattr(setup_install, "_checkout_release", lambda *_args: events.append("new-code"))
     monkeypatch.setattr(setup_install, "_refresh_core", lambda *_args: events.append("environment"))
     monkeypatch.setattr(setup_install, "_restore_databases", lambda *_args: events.append("databases"))
+    monkeypatch.setattr(setup_install, "core_issue", lambda *_args, **_kwargs: "")
 
     def run(command, **_kwargs):
         if "migrate_release.py" in command:
@@ -270,6 +276,51 @@ def test_recovery_marker_blocks_stale_update_request(tmp_path, monkeypatch):
 
     with pytest.raises(setup_install.SetupError, match="recovery is required"):
         setup_install.begin_core_install(tmp_path)
+
+
+def test_core_recovery_restores_database_before_code_and_clears_marker(tmp_path, monkeypatch):
+    backup = tmp_path / setup_install.UPDATE_BACKUP_DIR / "failed"
+    backup.mkdir(parents=True)
+    state = {
+        "from": "v1.0.0-buildfix",
+        "to": "v1.1.0-buildfix",
+        "backup": str(backup),
+        "commits": {"mcp-memu-server": "old-mcp", "memu": "old-memu"},
+    }
+    (tmp_path / setup_install.RECOVERY_FILE).write_text(json.dumps(state), encoding="utf-8")
+    for destination in setup_install.CORE_DESTINATIONS:
+        (tmp_path / destination).mkdir()
+    events = []
+    operation = setup_install.InstallOperation("memu-server", tmp_path)
+    monkeypatch.setattr(setup_install, "_OPERATION", operation)
+    monkeypatch.setattr(setup_install, "install_log_path", lambda _name: tmp_path / "install.log")
+    monkeypatch.setattr(setup_install, "_restore_databases", lambda *_args: events.append("databases"))
+    monkeypatch.setattr(
+        setup_install, "_run",
+        lambda command, **_kwargs: events.append("code") if command[:3] == ["git", "checkout", "--detach"] else None,
+    )
+    monkeypatch.setattr(setup_install, "_refresh_core", lambda *_args: events.append("packages"))
+    monkeypatch.setattr(setup_install, "core_issue", lambda *_args, **_kwargs: "")
+
+    setup_install._recover_core(operation)
+
+    assert events[0] == "databases"
+    assert events.count("code") == 2
+    assert events[-1] == "packages"
+    assert not (tmp_path / setup_install.RECOVERY_FILE).exists()
+    assert not backup.exists()
+    assert (tmp_path / setup_install.RELEASE_TAG_FILE).read_text(encoding="utf-8") == "v1.0.0-buildfix\n"
+
+
+def test_recovery_status_exposes_only_recover(tmp_path, monkeypatch):
+    (tmp_path / setup_install.RECOVERY_FILE).write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(setup_install, "operation_status", lambda *_args: {"state": "idle", "step": "", "detail": ""})
+
+    status = setup_install.setup_status(tmp_path)
+
+    assert status["action_kind"] == "recover"
+    assert status["action_label"] == "Recover"
+    assert status["startable"] is False
 
 
 def test_iris_uses_its_independent_stable_release(tmp_path, monkeypatch):
@@ -361,7 +412,7 @@ def test_clone_failure_removes_only_current_staging_directory(tmp_path, monkeypa
     assert not (tmp_path / "memu").exists()
 
 
-def test_clone_reports_crash_left_staging_without_deleting_it(tmp_path):
+def test_clone_removes_launcher_owned_crash_staging(tmp_path, monkeypatch):
     leftover = tmp_path / ".openalma-memu-old"
     leftover.mkdir()
     entry = {
@@ -370,10 +421,15 @@ def test_clone_reports_crash_left_staging_without_deleting_it(tmp_path):
         "destination": "memu",
     }
 
-    with pytest.raises(setup_install.SetupError, match="Inspect and remove"):
+    monkeypatch.setattr(
+        setup_install, "_run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("clone stopped")),
+    )
+
+    with pytest.raises(RuntimeError, match="clone stopped"):
         setup_install._clone(entry, tmp_path, None)
 
-    assert leftover.exists()
+    assert not leftover.exists()
 
 
 def test_clone_publishes_and_reuses_exact_tagged_checkout(tmp_path):

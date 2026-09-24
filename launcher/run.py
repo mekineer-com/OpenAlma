@@ -52,16 +52,19 @@ def stop_existing(host: str = "127.0.0.1", port: int = 8765, timeout: float = 10
 
 
 def prepare_update(host: str = "127.0.0.1", port: int = 8765) -> None:
-    if not _existing_launcher(host, port):
-        return
-    with urllib.request.urlopen(f"http://{host}:{port}/launcher/update-readiness", timeout=5) as response:
-        value = json.loads(response.read().decode("utf-8"))
+    running = _existing_launcher(host, port)
+    if running:
+        with urllib.request.urlopen(f"http://{host}:{port}/launcher/update-readiness", timeout=5) as response:
+            value = json.loads(response.read().decode("utf-8"))
+    else:
+        value = launcher_app.launcher_update_readiness()
     if value.get("application") != launcher_app.LAUNCHER_ID:
         raise RuntimeError("The running process is not OpenAlma Launcher")
     active = value.get("active_services")
     if active:
         raise RuntimeError("Stop these OpenAlma services before updating: " + ", ".join(active))
-    stop_existing(host, port)
+    if running:
+        stop_existing(host, port)
 
 
 def _wait_for_port(host: str, port: int, timeout: float = 30.0) -> bool:

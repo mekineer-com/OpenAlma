@@ -9,45 +9,42 @@ from pathlib import Path
 import settings
 
 _TAG = re.compile(r"v[A-Za-z0-9][A-Za-z0-9._-]{0,126}")
-_VERSION = re.compile(r"v(\d+)\.(\d+)\.(\d+)(?:[-.]([A-Za-z0-9][A-Za-z0-9._-]*))?")
+_VERSION = re.compile(r"v(\d+)\.(\d+)\.(\d+)(?:[-.][A-Za-z0-9][A-Za-z0-9._-]*)?")
 OWNER_FILE = ".openalma-root"
 RELEASE_FILE = ".openalma-release"
 PENDING_RELEASE_FILE = ".openalma-update-release"
 
 
-def release_version(release_tag: str) -> tuple:
+def release_version(release_tag: str) -> tuple[int, int, int]:
     match = _VERSION.fullmatch(release_tag)
     if match is None:
         raise ValueError("OpenAlma release tag must start with vMAJOR.MINOR.PATCH")
-    major, minor, patch, suffix = match.groups()
-    prerelease = tuple(
-        (0, int(part)) if part.isdigit() else (1, part.casefold())
-        for part in re.split(r"[._-]", suffix or "")
-        if part
-    )
-    return int(major), int(minor), int(patch), suffix is None, prerelease
+    return tuple(map(int, match.groups()))
 
 
-def _known_versions(apps_root: Path) -> list[tuple]:
-    versions = []
+def _known_releases(apps_root: Path) -> list[tuple[tuple[int, int, int], str]]:
+    releases = []
     for path in (
         apps_root / RELEASE_FILE,
         apps_root / PENDING_RELEASE_FILE,
         settings.PACKAGED_VERSION_PATH,
     ):
         try:
-            versions.append(release_version(path.read_text(encoding="utf-8").strip()))
+            tag = path.read_text(encoding="utf-8").strip()
+            releases.append((release_version(tag), tag))
         except FileNotFoundError:
             pass
-    return versions
+    return releases
 
 
 def compare_release(apps_root: Path, release_tag: str) -> int:
     target = release_version(release_tag)
-    installed = _known_versions(apps_root)
+    installed = _known_releases(apps_root)
     if not installed:
         return 0
-    current = max(installed)
+    current, current_tag = max(installed)
+    if target == current and release_tag != current_tag:
+        raise ValueError("OpenAlma release tags with the same version must match exactly")
     return (target > current) - (target < current)
 
 
@@ -70,14 +67,15 @@ def configure(apps_root: Path, release_tag: str) -> None:
     marker.write_text(str(apps_root) + "\n", encoding="utf-8")
     release = apps_root / RELEASE_FILE
     pending = apps_root / PENDING_RELEASE_FILE
-    core_present = (
+    core_complete = (
         (apps_root / "mcp-memu-server" / "run.py").exists()
-        or (apps_root / "memu" / "pyproject.toml").exists()
+        and (apps_root / "memu" / "pyproject.toml").exists()
+        and (apps_root / "mcp-memu-server" / "config.json").exists()
     )
     comparison = compare_release(apps_root, release_tag)
     if comparison < 0:
         raise ValueError("OpenAlma cannot downgrade an installed release")
-    if not release.exists() or not core_present:
+    if not release.exists() or not core_complete:
         release.write_text(release_tag + "\n", encoding="utf-8")
         pending.unlink(missing_ok=True)
     else:
@@ -105,7 +103,11 @@ def main() -> None:
     args = parser.parse_args()
     apps_root = selected_apps_root(args.apps_root)
     if args.compare_release:
-        comparison = compare_release(apps_root, args.release_tag)
+        try:
+            comparison = compare_release(apps_root, args.release_tag)
+        except (OSError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            raise SystemExit(3) from None
         if comparison < 0:
             print("OpenAlma cannot downgrade an installed release", file=sys.stderr)
             raise SystemExit(2)

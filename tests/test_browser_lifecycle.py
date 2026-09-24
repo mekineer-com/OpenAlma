@@ -140,3 +140,15 @@ def test_update_preparation_refuses_active_services(monkeypatch):
 
     with pytest.raises(RuntimeError, match="memU Server"):
         run.prepare_update()
+
+
+def test_update_preparation_reuses_local_readiness_when_launcher_is_closed(monkeypatch):
+    monkeypatch.setattr(run, "_existing_launcher", lambda *_args: False)
+    monkeypatch.setattr(
+        run.launcher_app, "launcher_update_readiness",
+        lambda: {"application": run.launcher_app.LAUNCHER_ID, "active_services": ["Hermes Channels"]},
+    )
+    monkeypatch.setattr(run, "stop_existing", lambda *_args: pytest.fail("closed launcher needs no stop"))
+
+    with pytest.raises(RuntimeError, match="Hermes Channels"):
+        run.prepare_update()

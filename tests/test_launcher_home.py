@@ -307,6 +307,21 @@ def test_install_conflict_returns_http_409(tmp_path, monkeypatch):
     assert response.status_code == 409
 
 
+def test_recovery_route_reuses_update_readiness(tmp_path, monkeypatch):
+    begun = []
+    monkeypatch.setattr(app.settings, "setup_apps_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        app, "launcher_update_readiness",
+        lambda: {"application": app.LAUNCHER_ID, "active_services": []},
+    )
+    monkeypatch.setattr(app.setup_install, "begin_core_recovery", lambda root: begun.append(root))
+
+    response = TestClient(app.app).post("/install/memu-server/recover", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert begun == [tmp_path]
+
+
 def test_runtime_to_install_poll_reloads_the_page():
     template = Path(__file__).resolve().parents[1] / "launcher/templates/index.html"
     text = template.read_text(encoding="utf-8")

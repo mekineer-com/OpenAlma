@@ -326,6 +326,22 @@ def install_service(service_name: str) -> RedirectResponse:
     return RedirectResponse("/", status_code=303)
 
 
+@app.post("/install/memu-server/recover")
+def recover_core() -> RedirectResponse:
+    root = settings.setup_apps_root()
+    if root is None:
+        raise HTTPException(status_code=400, detail="OpenAlma Apps root is unavailable")
+    if active := launcher_update_readiness()["active_services"]:
+        raise HTTPException(status_code=409, detail="Stop all OpenAlma services before recovery: " + ", ".join(active))
+    try:
+        setup_install.begin_core_recovery(root)
+    except setup_install.SetupConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except setup_install.SetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse("/", status_code=303)
+
+
 @app.get("/install/{service_name}/status")
 def install_service_status(service_name: str) -> dict:
     root = settings.setup_apps_root() if service_name == "memu-server" else settings.apps_root()

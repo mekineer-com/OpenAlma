@@ -6,6 +6,7 @@ import os
 import platform
 import shutil
 import sqlite3
+import stat
 import subprocess
 import sys
 import tempfile
@@ -392,8 +393,8 @@ def _clone(entry: dict[str, str], root: Path, log: Any) -> None:
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     leftovers = sorted(destination.parent.glob(f".openalma-{destination.name}-*"))
-    if leftovers:
-        raise SetupError(f"Inspect and remove the previous temporary checkout: {leftovers[0]}")
+    for leftover in leftovers:
+        shutil.rmtree(leftover, onexc=_clear_readonly_and_retry)
     temporary = Path(tempfile.mkdtemp(prefix=f".openalma-{destination.name}-", dir=destination.parent))
     try:
         _run(["git", "clone", "--depth", "1", "--branch", ref, repository, str(temporary)], cwd=None, log=log)
@@ -403,6 +404,11 @@ def _clone(entry: dict[str, str], root: Path, log: Any) -> None:
     except BaseException:
         shutil.rmtree(temporary, ignore_errors=True)
         raise
+
+
+def _clear_readonly_and_retry(function: Any, path: str, _error: BaseException) -> None:
+    os.chmod(path, stat.S_IWRITE)
+    function(path)
 
 
 def _managed_checkout_state(entry: dict[str, str], root: Path) -> tuple[Path, str]:
@@ -432,8 +438,8 @@ def _sqlite_directory(root: Path) -> Path:
         storage = config["storage"]
         raw = str(storage.get("sqlite_dir") or "").strip()
         if not raw:
-            raw = str((storage.get("metadata_store") or {}).get("dsn") or "")
-            raw = raw.removeprefix("sqlite:///")
+            raw = str((storage.get("metadata_store") or {}).get("dsn") or "../memu/sqlite/memu.db")
+            raw = raw.split("?", 1)[0].removeprefix("sqlite:///")
             raw = str(Path(raw).parent)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise SetupError("Cannot resolve the configured SQLite directory") from exc
@@ -452,6 +458,9 @@ def _backup_databases(root: Path, old_tag: str, new_tag: str) -> Path:
     )
     parent = root / UPDATE_BACKUP_DIR
     parent.mkdir(parents=True, exist_ok=True)
+    for old in parent.iterdir():
+        if old.is_dir() and not (old / "SUCCESS").exists():
+            shutil.rmtree(old)
     reserve = max(64 * 1024 * 1024, required // 10)
     if shutil.disk_usage(parent).free < required + reserve:
         raise SetupError("Not enough free space for the pre-update database backup")
@@ -471,19 +480,31 @@ def _soul_databases(root: Path) -> list[Path]:
     config_path = root / "mcp-memu-server" / "config.json"
     try:
         config = json.loads(config_path.read_text(encoding="utf-8"))
-        raw = str(config["storage"]["metadata_store"]["dsn"]).removeprefix("sqlite:///")
+        raw = str(
+            (config["storage"].get("metadata_store") or {}).get("dsn")
+            or "../memu/sqlite/memu.db"
+        ).split("?", 1)[0].removeprefix("sqlite:///")
+        procedural_raw = str(
+            (config.get("procedural") or {}).get("db_path")
+            or "../memu/sqlite/procedural.db"
+        )
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise SetupError("Cannot resolve the configured base database") from exc
     base = Path(raw).expanduser()
     if not base.is_absolute():
         base = config_path.parent / base
     base = base.resolve()
+    procedural = Path(procedural_raw).expanduser()
+    if not procedural.is_absolute():
+        procedural = config_path.parent / procedural
+    procedural = procedural.resolve()
     return sorted(
         path for path in _sqlite_directory(root).glob("*.db")
         if not path.name.startswith(".")
         and not path.is_symlink()
         and path.is_file()
         and path.resolve() != base
+        and path.resolve() != procedural
     )
 
 
@@ -525,6 +546,55 @@ def _prune_update_backups(root: Path) -> None:
         shutil.rmtree(old)
 
 
+def _recovery_state(root: Path) -> tuple[dict[str, Any], Path]:
+    try:
+        state = json.loads((root / RECOVERY_FILE).read_text(encoding="utf-8"))
+        commits = state["commits"]
+        backup = Path(state["backup"]).resolve()
+        release_version(state["from"])
+        if set(commits) != CORE_DESTINATIONS or not all(isinstance(value, str) and value for value in commits.values()):
+            raise ValueError
+        if backup.parent != (root / UPDATE_BACKUP_DIR).resolve() or not backup.is_dir():
+            raise ValueError
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise SetupError("Core recovery state is invalid; view the installation log") from exc
+    return state, backup
+
+
+def _restore_previous_core(root: Path, state: dict[str, Any], backup: Path, log: Any) -> None:
+    _restore_databases(root, backup)
+    for destination in sorted(CORE_DESTINATIONS):
+        _run(
+            ["git", "checkout", "--detach", state["commits"][destination]],
+            cwd=root / destination, log=log,
+        )
+    try:
+        _refresh_core(root, log)
+    except Exception as exc:
+        raise SetupError(
+            "Could not restore the previous core packages. Connect to the internet if needed, then Recover again."
+        ) from exc
+    if issue := core_issue(root):
+        raise SetupError(f"Recovered core did not validate: {issue}")
+    _write_recorded_release(root, state["from"])
+    _RELEASE_ISSUE_CACHE.clear()
+
+
+def _recover_core(operation: InstallOperation) -> None:
+    log_path = install_log_path(operation.service_name)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as log:
+        log.write("\nRecovering previous core release\n")
+        state, backup = _recovery_state(operation.root)
+        _set_operation(operation, step="Restoring soul databases")
+        _restore_previous_core(operation.root, state, backup, log)
+        (operation.root / RECOVERY_FILE).unlink()
+        shutil.rmtree(backup)
+    _set_operation(
+        operation, state="ready", step="Recovery complete", detail="Retry Update when ready",
+    )
+
+
 def _update_core(
     operation: InstallOperation,
     tag: str,
@@ -544,7 +614,6 @@ def _update_core(
         "backup": str(backup),
         "commits": {entry["destination"]: head for entry, (_path, head) in zip(entries, states)},
     }, indent=2) + "\n", encoding="utf-8")
-    migration_started = False
     committed = False
     try:
         for entry, (destination, _head) in zip(entries, states):
@@ -553,7 +622,6 @@ def _update_core(
         _set_operation(operation, step="Refreshing core Python packages")
         _refresh_core(operation.root, log)
         _set_operation(operation, step="Migrating soul databases")
-        migration_started = True
         _run(
             [str(_venv_python(operation.root)), "migrate_release.py"],
             cwd=operation.root / "mcp-memu-server", log=log,
@@ -576,25 +644,14 @@ def _update_core(
             raise SetupError(
                 f"Core updated but final state cleanup failed; retry before starting: {update_error}"
             ) from update_error
-        rollback_errors = []
-        if migration_started:
-            try:
-                _restore_databases(operation.root, backup)
-            except Exception as exc:
-                rollback_errors.append(f"database restore failed: {exc}")
-        if not rollback_errors:
-            for entry, (destination, head) in zip(entries, states):
-                try:
-                    _run(["git", "checkout", "--detach", head], cwd=destination, log=log)
-                except Exception as exc:
-                    rollback_errors.append(f"code restore failed for {entry['destination']}: {exc}")
-            if not rollback_errors:
-                try:
-                    _refresh_core(operation.root, log)
-                except Exception as exc:
-                    rollback_errors.append(f"environment restore failed: {exc}")
-        if not rollback_errors:
+        try:
+            state, recovery_backup = _recovery_state(operation.root)
+            _restore_previous_core(operation.root, state, recovery_backup, log)
             recovery.unlink(missing_ok=True)
+            shutil.rmtree(recovery_backup)
+            rollback_errors = []
+        except Exception as exc:
+            rollback_errors = [str(exc)]
         detail = f"Core update failed: {update_error}"
         if rollback_errors:
             detail += "; recovery required: " + "; ".join(rollback_errors)
@@ -1082,6 +1139,13 @@ def begin_core_install(root: Path) -> dict[str, Any]:
     return _begin_operation("memu-server", root, _install_core)
 
 
+def begin_core_recovery(root: Path) -> dict[str, Any]:
+    root = root.resolve()
+    if not (root / RECOVERY_FILE).exists():
+        raise SetupError("Core recovery is not required")
+    return _begin_operation("memu-server", root, _recover_core)
+
+
 def begin_optional_install(service_name: str, root: Path) -> dict[str, Any]:
     if service_name not in OPTIONAL_SERVICES:
         raise SetupError(f"Unknown optional service: {service_name}")
@@ -1114,8 +1178,8 @@ def setup_status(
         return {
             "state": "blocked", "install_setup": True,
             "status_label": "Recovery required",
-            "detail": operation["detail"] or "View the core installation log",
-            "startable": False, "action_kind": None,
+            "detail": operation["detail"] or "Restore the previous core; an internet connection may be needed",
+            "startable": False, "action_kind": "recover", "action_label": "Recover",
         }
     pending = read_pending_release(root)
     if pending is not None and present:

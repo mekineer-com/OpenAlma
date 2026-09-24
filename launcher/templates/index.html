@@ -174,6 +174,8 @@
           {% elif s.action_kind == "install" %}
             <form method="post" action="/install/{{ s.name }}"><button class="btn" type="submit">{{ s.action_label }}</button></form>
             {% if s.startable %}<button class="btn" onclick="svcAction('{{ s.name }}','start',this)">Start</button>{% endif %}
+          {% elif s.action_kind == "recover" %}
+            <form method="post" action="/install/memu-server/recover"><button class="btn" type="submit">Recover</button></form>
           {% elif s.restart_required %}
             <form method="post" action="/launcher/quit"><button class="btn" type="submit">Quit launcher</button></form>
           {% elif s.action_kind is defined %}
@@ -476,6 +478,9 @@ function actionHtml(name, data) {
     var start = data.startable ? ' <button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'start\',this)">Start</button>' : '';
     return '<form class="inline" method="post" action="/install/' + esc(name) + '"><button class="btn" type="submit">' +
       esc(data.action_label || 'Continue Install') + '</button></form>' + start;
+  }
+  if (data.action_kind === 'recover') {
+    return '<form class="inline" method="post" action="/install/memu-server/recover"><button class="btn" type="submit">Recover</button></form>';
   }
   if (data.action_kind === 'start' || data.action_kind === 'stop') {
     return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'' + data.action_kind + '\',this)">' + esc(data.action_label) + '</button>';
