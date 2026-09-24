@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 
 import settings
+from setup_install import _clear_readonly_and_retry
 
 
 def remove_everything() -> None:
@@ -21,11 +22,15 @@ def remove_everything() -> None:
     if os.path.normcase(owner) != os.path.normcase(str(root)):
         raise RuntimeError("OpenAlma Apps-root ownership marker does not match")
 
-    shutil.rmtree(root)
+    shutil.rmtree(root, onexc=_clear_readonly_and_retry)
     shutil.rmtree(settings.SETTINGS_PATH.parent, ignore_errors=True)
-    state_dir = settings.LAUNCHER_LOG_PATH.parent.parent
-    if state_dir != root:
-        shutil.rmtree(state_dir, ignore_errors=True)
+    if not settings.LAUNCHER_LOG_PATH.is_relative_to(root):
+        settings.LAUNCHER_LOG_PATH.unlink(missing_ok=True)
+        for directory in (settings.LAUNCHER_LOG_PATH.parent, settings.LAUNCHER_LOG_PATH.parent.parent):
+            try:
+                directory.rmdir()
+            except OSError:
+                break
 
 
 if __name__ == "__main__":

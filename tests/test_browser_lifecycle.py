@@ -79,6 +79,8 @@ def test_windows_wrapper_reports_uvicorn_system_exit():
 
     assert "except (Exception, SystemExit)" in wrapper
     assert "OpenAlma could not start" in wrapper
+    assert '{"--prepare-update", "--stop-existing"}.intersection(sys.argv)' in wrapper
+    assert "raise SystemExit(11)" in wrapper
 
 
 def test_existing_launcher_requires_exact_identity(monkeypatch):

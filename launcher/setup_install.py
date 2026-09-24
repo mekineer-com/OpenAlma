@@ -448,7 +448,10 @@ def _sqlite_directory(root: Path) -> Path:
 
 
 def _backup_databases(root: Path, old_tag: str, new_tag: str) -> Path:
-    databases = _soul_databases(root)
+    databases = sorted(
+        path for path in _sqlite_directory(root).glob("*.db")
+        if not path.name.startswith(".") and not path.is_symlink() and path.is_file()
+    )
     required = sum(
         path.stat().st_size + sum(
             sidecar.stat().st_size for suffix in ("-wal", "-shm")
@@ -474,38 +477,6 @@ def _backup_databases(root: Path, old_tag: str, new_tag: str) -> Path:
         ):
             source.backup(target)
     return backup
-
-
-def _soul_databases(root: Path) -> list[Path]:
-    config_path = root / "mcp-memu-server" / "config.json"
-    try:
-        config = json.loads(config_path.read_text(encoding="utf-8"))
-        raw = str(
-            (config["storage"].get("metadata_store") or {}).get("dsn")
-            or "../memu/sqlite/memu.db"
-        ).split("?", 1)[0].removeprefix("sqlite:///")
-        procedural_raw = str(
-            (config.get("procedural") or {}).get("db_path")
-            or "../memu/sqlite/procedural.db"
-        )
-    except (OSError, ValueError, KeyError, TypeError) as exc:
-        raise SetupError("Cannot resolve the configured base database") from exc
-    base = Path(raw).expanduser()
-    if not base.is_absolute():
-        base = config_path.parent / base
-    base = base.resolve()
-    procedural = Path(procedural_raw).expanduser()
-    if not procedural.is_absolute():
-        procedural = config_path.parent / procedural
-    procedural = procedural.resolve()
-    return sorted(
-        path for path in _sqlite_directory(root).glob("*.db")
-        if not path.name.startswith(".")
-        and not path.is_symlink()
-        and path.is_file()
-        and path.resolve() != base
-        and path.resolve() != procedural
-    )
 
 
 def _restore_databases(root: Path, backup: Path) -> None:

@@ -17,6 +17,10 @@ import app as launcher_app
 import browser
 
 
+class ActiveServicesError(RuntimeError):
+    pass
+
+
 def _port_open(host: str, port: int) -> bool:
     try:
         with socket.create_connection((host, port), timeout=0.5):
@@ -62,7 +66,7 @@ def prepare_update(host: str = "127.0.0.1", port: int = 8765) -> None:
         raise RuntimeError("The running process is not OpenAlma Launcher")
     active = value.get("active_services")
     if active:
-        raise RuntimeError("Stop these OpenAlma services before updating: " + ", ".join(active))
+        raise ActiveServicesError("Stop these OpenAlma services before updating: " + ", ".join(active))
     if running:
         stop_existing(host, port)
 

@@ -26,6 +26,9 @@ def test_windows_installer_uses_openalma_icon_everywhere():
     assert "Result := StopInstalledLauncher(True)" in script
     assert "Python := PythonLauncher" in script
     assert "windows_remove.py" in script
+    assert "ServicesVerified := FileExists(Python) and FileExists(Script)" in script
+    assert "Remove Everything will be unavailable" in script
+    assert "LastLauncherCheckCode = 11" in script
 
 
 def test_windows_configuration_preserves_release_and_other_settings(tmp_path, monkeypatch):
@@ -140,6 +143,14 @@ def test_remove_everything_accepts_utf8_recorded_root(tmp_path, monkeypatch):
     settings_path.write_text(json.dumps({"apps_root": str(root)}) + "\n", encoding="utf-8")
     state_dir = tmp_path / "state" / "logs"
     state_dir.mkdir(parents=True)
+    unrelated = state_dir.parent / "old-default-data.db"
+    unrelated.touch()
+    calls = []
+    real_rmtree = windows_remove.shutil.rmtree
+    monkeypatch.setattr(
+        windows_remove.shutil, "rmtree",
+        lambda path, *args, **kwargs: calls.append((Path(path), kwargs)) or real_rmtree(path, *args, **kwargs),
+    )
     monkeypatch.setattr(settings, "SETTINGS_PATH", settings_path)
     monkeypatch.setattr(settings, "LAUNCHER_LOG_PATH", state_dir / "launcher.log")
 
@@ -147,6 +158,8 @@ def test_remove_everything_accepts_utf8_recorded_root(tmp_path, monkeypatch):
 
     assert not root.exists()
     assert not settings_path.parent.exists()
+    assert calls[0][1]["onexc"] is not None
+    assert unrelated.exists()
 
 
 def test_remove_everything_rejects_changed_owner_without_deleting(tmp_path, monkeypatch):

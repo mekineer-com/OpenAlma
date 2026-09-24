@@ -199,7 +199,7 @@ def test_database_backup_restore_roundtrip(tmp_path):
         assert connection.execute("SELECT text FROM value").fetchone() == ("before",)
 
 
-def test_database_backup_ignores_base_hidden_and_accepts_no_souls(tmp_path):
+def test_database_backup_copies_all_regular_databases_and_ignores_hidden(tmp_path):
     root = tmp_path / "apps"
     server = root / "mcp-memu-server"
     sqlite_dir = root / "memu/sqlite"
@@ -220,7 +220,7 @@ def test_database_backup_ignores_base_hidden_and_accepts_no_souls(tmp_path):
 
     backup = setup_install._backup_databases(root, "v1.0.0", "v1.1.0")
 
-    assert list(backup.glob("*.db")) == []
+    assert [path.name for path in sorted(backup.glob("*.db"))] == ["memu.db", "procedural.db"]
     assert not stale_failed.exists()
 
 

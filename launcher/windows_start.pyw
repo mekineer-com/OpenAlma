@@ -46,7 +46,10 @@ def main() -> None:
             message = str(exc) if not isinstance(exc, SystemExit) else (
                 "OpenAlma could not start. See the launcher log in Settings for details."
             )
-            ctypes.windll.user32.MessageBoxW(None, message, "OpenAlma", 0x10)
+            if not {"--prepare-update", "--stop-existing"}.intersection(sys.argv):
+                ctypes.windll.user32.MessageBoxW(None, message, "OpenAlma", 0x10)
+            if "--prepare-update" in sys.argv and isinstance(exc, run.ActiveServicesError):
+                raise SystemExit(11) from exc
             raise
 
 

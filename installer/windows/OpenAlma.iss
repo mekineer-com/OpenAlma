@@ -51,6 +51,8 @@ Type: files; Name: "{app}\.openalma-version"
 var
   PythonLauncher: String;
   RemoveEverything: Boolean;
+  ServicesVerified: Boolean;
+  LastLauncherCheckCode: Integer;
 
 function FindOnPath(const Filename: String): String;
 begin
@@ -113,6 +115,8 @@ var
   ResultCode: Integer;
 begin
   Result := '';
+  LastLauncherCheckCode := 0;
+  ResultCode := -1;
   PythonLauncher := FindPythonLauncher();
   if (PythonLauncher = '') or not RunHidden(PythonLauncher, '-3.12 --version', ResultCode) or (ResultCode <> 0) then
   begin
@@ -170,7 +174,13 @@ begin
     Argument := '--stop-existing';
   if (Python <> '') and FileExists(Python) and FileExists(Script) then
     if not RunHidden(Python, '"' + Script + '" ' + Argument, ResultCode) or (ResultCode <> 0) then
-      Result := 'OpenAlma could not verify that all services are stopped. Open it, stop every service, then click Retry.';
+    begin
+      LastLauncherCheckCode := ResultCode;
+      if ResultCode = 11 then
+        Result := 'Stop every OpenAlma service, then click Retry.'
+      else
+        Result := 'OpenAlma could not verify that all services are stopped.';
+    end;
   if (Result = '') and DirExists(ExpandConstant('{app}')) and not FileExists(Script) then
     Result := 'OpenAlma launcher files are incomplete, so running services cannot be verified.';
 end;
@@ -275,11 +285,39 @@ begin
 end;
 
 function InitializeUninstall(): Boolean;
+var
+  Python, Script: String;
 begin
   PythonLauncher := FindPythonLauncher();
+  Python := ExpandConstant('{app}\launcher\.venv\Scripts\pythonw.exe');
+  Script := ExpandConstant('{app}\launcher\windows_start.pyw');
+  ServicesVerified := FileExists(Python) and FileExists(Script);
+  if not ServicesVerified then
+  begin
+    MsgBox(
+      'OpenAlma cannot verify running services because its launcher files are incomplete.'#13#10#13#10 +
+      'Normal uninstall may continue and will preserve components and data. Remove Everything will be unavailable.',
+      mbInformation, MB_OK
+    );
+    Result := True;
+    Exit;
+  end;
   Result := StopInstalledLauncher(True) = '';
+  ServicesVerified := Result;
   if not Result then
-    MsgBox('Open OpenAlma, stop every service, then retry uninstall.', mbError, MB_OK);
+  begin
+    if LastLauncherCheckCode = 11 then
+      MsgBox('Open OpenAlma, stop every service, then retry uninstall.', mbError, MB_OK)
+    else begin
+      ServicesVerified := False;
+      MsgBox(
+        'OpenAlma could not verify running services because its launcher is damaged.'#13#10#13#10 +
+        'Normal uninstall may continue and will preserve components and data. Remove Everything will be unavailable.',
+        mbInformation, MB_OK
+      );
+      Result := True;
+    end;
+  end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
@@ -289,17 +327,21 @@ var
 begin
   if CurUninstallStep = usUninstall then
   begin
-    RemoveEverything := MsgBox(
-      'Keep installed components, settings, and soul data?'#13#10#13#10 +
-      'Choose Yes to keep them (recommended), or No to consider removing everything.',
-      mbConfirmation, MB_YESNO
-    ) = IDNO;
-    if RemoveEverything then
+    RemoveEverything := False;
+    if ServicesVerified then
+    begin
       RemoveEverything := MsgBox(
-        'Remove EVERYTHING in the recorded OpenAlma Apps root?'#13#10 +
-        'This permanently deletes installed components, settings, logs, and soul data.',
-        mbError, MB_YESNO
-      ) = IDYES;
+        'Keep installed components, settings, and soul data?'#13#10#13#10 +
+        'Choose Yes to keep them (recommended), or No to consider removing everything.',
+        mbConfirmation, MB_YESNO
+      ) = IDNO;
+      if RemoveEverything then
+        RemoveEverything := MsgBox(
+          'Remove EVERYTHING in the recorded OpenAlma Apps root?'#13#10 +
+          'This permanently deletes installed components, settings, logs, and soul data.',
+          mbError, MB_YESNO
+        ) = IDYES;
+    end;
     if RemoveEverything then
     begin
       Python := ExpandConstant('{app}\launcher\.venv\Scripts\python.exe');
