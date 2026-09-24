@@ -43,6 +43,19 @@ cp memu-stack.desktop ~/.local/share/applications/
 update-desktop-database ~/.local/share/applications/ 2>/dev/null || true
 ```
 
+## Windows
+
+On Windows the launcher ships as a thin per-user installer (Inno Setup, compiled by the Windows CI workflow at release tags; dev artifacts land in `_exports/openalma-windows-installer*/`). Platform behavior beyond the shared Notes below:
+
+- Terminal-free: launching never opens a console; no-console subprocess flags are shared with child services.
+- Exact single-instance identity — a second launch focuses the existing instance.
+- Asks the default browser to open OpenAlma in a new window; an explicit Exit action; favicon/log access from the UI.
+- A shared `.openalma-root` marker lets a packaged installer adopt a launcher-managed manual Apps root without guessing ownership.
+- Coordinated updates: numeric launcher upgrades with exact-tag matching; readiness requires every OpenAlma service stopped; the core (memU + mcp-memu-server) updates first with optional clients separate; a WAL-safe Soul backup (space/retention policy) precedes migration; rollback is database-first, and one Recover action restores the recorded backup and previous core commits if rollback cannot finish.
+- Branding: the 2-turn spiral icon (16–256 px) covers Setup, uninstall, Start Menu, and Desktop.
+
+Installer UX is accepted on a real Windows machine (`v0.0.0-dev` artifacts); coordinated core-update acceptance waits for the first coordinated release tag. Plan: `PLAN_openalma_windows_installer.md`.
+
 ## Notes
 
 - On first use, confirm your name and, when no Souls exist, the first Soul's name together. If only the owner is saved, the launcher resumes at the unfinished Soul step.
