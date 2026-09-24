@@ -199,6 +199,26 @@ def test_database_backup_restore_roundtrip(tmp_path):
         assert connection.execute("SELECT text FROM value").fetchone() == ("before",)
 
 
+def test_database_backup_ignores_base_hidden_and_accepts_no_souls(tmp_path):
+    root = tmp_path / "apps"
+    server = root / "mcp-memu-server"
+    sqlite_dir = root / "memu/sqlite"
+    server.mkdir(parents=True)
+    sqlite_dir.mkdir(parents=True)
+    (server / "config.json").write_text(json.dumps({
+        "storage": {
+            "sqlite_dir": "../memu/sqlite",
+            "metadata_store": {"dsn": "../memu/sqlite/memu.db"},
+        },
+    }), encoding="utf-8")
+    (sqlite_dir / "memu.db").touch()
+    (sqlite_dir / ".replacement.db").touch()
+
+    backup = setup_install._backup_databases(root, "v1.0.0", "v1.1.0")
+
+    assert list(backup.glob("*.db")) == []
+
+
 def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatch):
     operation = setup_install.InstallOperation("memu-server", tmp_path)
     entries = [
@@ -242,6 +262,14 @@ def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatc
 
     assert events.index("databases") < events.index("old-code")
     assert not (tmp_path / setup_install.RECOVERY_FILE).exists()
+
+
+def test_recovery_marker_blocks_stale_update_request(tmp_path, monkeypatch):
+    (tmp_path / setup_install.RECOVERY_FILE).write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(setup_install, "_begin_operation", lambda *_args: pytest.fail("must not start"))
+
+    with pytest.raises(setup_install.SetupError, match="recovery is required"):
+        setup_install.begin_core_install(tmp_path)
 
 
 def test_iris_uses_its_independent_stable_release(tmp_path, monkeypatch):

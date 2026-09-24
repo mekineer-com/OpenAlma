@@ -442,9 +442,7 @@ def _sqlite_directory(root: Path) -> Path:
 
 
 def _backup_databases(root: Path, old_tag: str, new_tag: str) -> Path:
-    databases = sorted(_sqlite_directory(root).glob("*.db"))
-    if not databases:
-        raise SetupError("No soul databases found to back up")
+    databases = _soul_databases(root)
     required = sum(
         path.stat().st_size + sum(
             sidecar.stat().st_size for suffix in ("-wal", "-shm")
@@ -467,6 +465,25 @@ def _backup_databases(root: Path, old_tag: str, new_tag: str) -> Path:
         ):
             source.backup(target)
     return backup
+
+
+def _soul_databases(root: Path) -> list[Path]:
+    config_path = root / "mcp-memu-server" / "config.json"
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        raw = str(config["storage"]["metadata_store"]["dsn"]).removeprefix("sqlite:///")
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise SetupError("Cannot resolve the configured base database") from exc
+    base = Path(raw).expanduser()
+    if not base.is_absolute():
+        base = (config_path.parent / base).resolve()
+    return sorted(
+        path for path in _sqlite_directory(root).glob("*.db")
+        if not path.name.startswith(".")
+        and not path.is_symlink()
+        and path.is_file()
+        and path.resolve() != base
+    )
 
 
 def _restore_databases(root: Path, backup: Path) -> None:
@@ -1056,6 +1073,8 @@ def _begin_operation(service_name: str, root: Path, target: Any) -> dict[str, An
 
 def begin_core_install(root: Path) -> dict[str, Any]:
     root = root.resolve()
+    if (root / RECOVERY_FILE).exists():
+        raise SetupError("Core update recovery is required; view the installation log")
     issue = _prerequisite_issue(root)
     if issue:
         raise SetupError(issue)

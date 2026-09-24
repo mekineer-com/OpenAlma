@@ -64,7 +64,7 @@ def prepare_update(host: str = "127.0.0.1", port: int = 8765) -> None:
     stop_existing(host, port)
 
 
-def _wait_for_port(host: str, port: int, timeout: float = 5.0) -> bool:
+def _wait_for_port(host: str, port: int, timeout: float = 30.0) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
         with socket.socket() as s:

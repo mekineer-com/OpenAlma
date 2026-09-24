@@ -70,6 +70,17 @@ def test_windows_uses_default_browser_even_when_chromium_is_available(monkeypatc
     assert opened == ["http://127.0.0.1:8765"]
 
 
+def test_cold_start_waits_up_to_thirty_seconds():
+    assert run._wait_for_port.__defaults__ == (30.0,)
+
+
+def test_windows_wrapper_reports_uvicorn_system_exit():
+    wrapper = (Path(__file__).resolve().parents[1] / "launcher/windows_start.pyw").read_text(encoding="utf-8")
+
+    assert "except (Exception, SystemExit)" in wrapper
+    assert "OpenAlma could not start" in wrapper
+
+
 def test_existing_launcher_requires_exact_identity(monkeypatch):
     class Response:
         def __enter__(self):

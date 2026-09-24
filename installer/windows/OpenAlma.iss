@@ -42,6 +42,10 @@ Name: "{autodesktop}\OpenAlma"; Filename: "{app}\launcher\.venv\Scripts\pythonw.
 [Run]
 Filename: "{app}\launcher\.venv\Scripts\pythonw.exe"; Parameters: """{app}\launcher\windows_start.pyw"""; Description: "Launch OpenAlma"; Flags: nowait postinstall skipifsilent
 
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}\launcher\.venv"
+Type: files; Name: "{app}\.openalma-version"
+
 [Code]
 var
   PythonLauncher: String;
@@ -66,8 +70,10 @@ begin
   Result := FindOnPath('git.exe');
   if (Result = '') and FileExists(ExpandConstant('{localappdata}\Programs\Git\cmd\git.exe')) then
     Result := ExpandConstant('{localappdata}\Programs\Git\cmd\git.exe');
-  if (Result = '') and FileExists(ExpandConstant('{pf}\Git\cmd\git.exe')) then
-    Result := ExpandConstant('{pf}\Git\cmd\git.exe');
+  if (Result = '') and FileExists(ExpandConstant('{pf64}\Git\cmd\git.exe')) then
+    Result := ExpandConstant('{pf64}\Git\cmd\git.exe');
+  if (Result = '') and FileExists(ExpandConstant('{pf32}\Git\cmd\git.exe')) then
+    Result := ExpandConstant('{pf32}\Git\cmd\git.exe');
 end;
 
 function FindWinget(): String;

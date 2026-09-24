@@ -39,11 +39,14 @@ def main() -> None:
                 run.stop_existing()
             else:
                 run.main()
-        except Exception as exc:
+        except (Exception, SystemExit) as exc:
             traceback.print_exc()
             import ctypes
 
-            ctypes.windll.user32.MessageBoxW(None, str(exc), "OpenAlma", 0x10)
+            message = str(exc) if not isinstance(exc, SystemExit) else (
+                "OpenAlma could not start. See the launcher log in Settings for details."
+            )
+            ctypes.windll.user32.MessageBoxW(None, message, "OpenAlma", 0x10)
             raise
 
 
