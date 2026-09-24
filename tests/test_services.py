@@ -77,7 +77,7 @@ def test_iris_server_is_managed_by_launcher(tmp_path, monkeypatch):
 
     assert spec.cwd == root / "mentra-os" / "miniapps" / "openalma"
     assert spec.cmd[-1] == "scripts/release-private.mjs"
-    assert spec.env["PATH"].split(":", 1)[0].endswith("/.bun/bin")
+    assert Path(spec.env["PATH"].split(services.os.pathsep, 1)[0]).parts[-2:] == (".bun", "bin")
     assert spec.port == 6789
     assert channels.env["CHANNELS_HOME"] == str(tmp_path / "channels_data")
 
@@ -100,7 +100,11 @@ def test_host_prerequisites_ignore_uninstalled_optional_clients(tmp_path, monkey
     ):
         (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / path).touch()
-    venv_python = tmp_path / "mcp-memu-server/.venv/bin/python3"
+    venv_python = tmp_path / (
+        "mcp-memu-server/.venv/Scripts/python.exe"
+        if services.os.name == "nt"
+        else "mcp-memu-server/.venv/bin/python3"
+    )
     venv_python.parent.mkdir(parents=True)
     venv_python.symlink_to(sys.executable)
     monkeypatch.setattr(services.shutil, "which", lambda command: f"/usr/bin/{command}")
@@ -132,12 +136,12 @@ def test_atomic_service_is_managed_by_launcher(tmp_path, monkeypatch):
     assert spec.port == 1420
     assert spec.open_url == "http://127.0.0.1:1420"
     assert spec.cmd[-2:] == ["scripts/dev-server.js", "--production"]
-    assert spec.env["ATOMIC_SERVER_BIN"].endswith("target/server/atomic-server")
+    assert Path(spec.env["ATOMIC_SERVER_BIN"]) == services._atomic_server_binary(root)
 
 
 def test_atomic_service_uses_existing_debug_binary(tmp_path, monkeypatch):
     root = tmp_path / "apps"
-    debug = root / "atomic/target/debug/atomic-server"
+    debug = root / "atomic/target/debug" / ("atomic-server.exe" if services.os.name == "nt" else "atomic-server")
     debug.parent.mkdir(parents=True)
     debug.touch()
     monkeypatch.setattr(services, "_resolve_apps_root", lambda: root)
@@ -551,6 +555,7 @@ def test_stop_signals_service_owners_and_waits_in_background(tmp_path, monkeypat
     monkeypatch.setattr(services, "_verified_pid_candidates", verified)
     monkeypatch.setattr(services.os, "kill", lambda pid, sig: signaled.append((pid, sig)))
     monkeypatch.setattr(services, "_is_alive", lambda _pid: False)
+    monkeypatch.setattr(services.os, "name", "posix")
 
     services.stop(spec)
 
@@ -578,7 +583,8 @@ def test_start_reports_active_stop_cleanup(tmp_path, monkeypatch):
             services._STOP_THREADS.pop(spec.name, None)
 
 
-def test_stop_status_shows_force_only_with_failure_evidence(tmp_path):
+def test_stop_status_shows_force_only_with_failure_evidence(tmp_path, monkeypatch):
+    monkeypatch.setattr(services.os, "name", "posix")
     spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
     with services._STOP_LOCK:
         services._STOP_THREADS[spec.name] = services.threading.current_thread()

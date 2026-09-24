@@ -365,7 +365,8 @@ def test_optional_status_accepts_atomic_debug_binary(tmp_path, monkeypatch):
     (atomic / "node_modules/vite").mkdir(parents=True)
     (atomic / "node_modules/vite/package.json").write_text("{}", encoding="utf-8")
     (atomic / "package.json").write_text(json.dumps({"devDependencies": {"vite": "1"}}), encoding="utf-8")
-    debug = atomic / "target/debug/atomic-server"
+    suffix = ".exe" if setup_install.os.name == "nt" else ""
+    debug = atomic / "target/debug" / f"atomic-server{suffix}"
     debug.parent.mkdir(parents=True)
     debug.touch()
     monkeypatch.setattr(setup_install, "_OPERATION", None)

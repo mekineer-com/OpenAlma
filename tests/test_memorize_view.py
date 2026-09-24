@@ -111,6 +111,8 @@ def test_force_stop_only_renders_with_failure_evidence():
     specialized = {**service, "state": "running", "force_stoppable": True, "action_kind": "settings"}
     assert "Force Stop" in _render({}, services=[specialized])
 
-    template = (Path(__file__).resolve().parents[1] / "launcher" / "templates" / "index.html").read_text()
+    template = (
+        Path(__file__).resolve().parents[1] / "launcher" / "templates" / "index.html"
+    ).read_text(encoding="utf-8")
     action_html = template.split("function actionHtml", 1)[1]
     assert action_html.index("if (data.force_stoppable)") < action_html.index("if (data.action_kind")

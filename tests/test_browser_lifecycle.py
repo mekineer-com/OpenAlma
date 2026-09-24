@@ -30,6 +30,7 @@ def test_chromium_profile_lives_until_browser_exit(tmp_path, monkeypatch):
         return chrome
 
     monkeypatch.setattr(run, "_wait_for_port", lambda *_args: True)
+    monkeypatch.setattr(run.os, "name", "posix")
     monkeypatch.setattr(run.browser, "find_chromium", lambda: "chromium")
     monkeypatch.setattr(run.tempfile, "TemporaryDirectory", lambda **_kwargs: profile)
     monkeypatch.setattr(run.browser, "open_app", open_app)

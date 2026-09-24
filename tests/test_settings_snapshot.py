@@ -50,8 +50,9 @@ def test_setup_apps_root_accepts_existing_directory_before_core(tmp_path, monkey
 
 
 def test_atomic_binary_prefers_production_then_debug(tmp_path):
-    debug = tmp_path / "atomic/target/debug/atomic-server"
-    production = tmp_path / "atomic/target/server/atomic-server"
+    suffix = ".exe" if settings.os.name == "nt" else ""
+    debug = tmp_path / "atomic/target/debug" / f"atomic-server{suffix}"
+    production = tmp_path / "atomic/target/server" / f"atomic-server{suffix}"
     debug.parent.mkdir(parents=True)
     debug.touch()
 
