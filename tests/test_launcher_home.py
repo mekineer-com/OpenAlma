@@ -12,6 +12,11 @@ import app  # noqa: E402
 import services  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _no_live_memorize_status(monkeypatch):
+    monkeypatch.setattr(app.services, "memorize_pending", lambda *_args, **_kwargs: {})
+
+
 def test_malformed_channels_config_keeps_home_available(tmp_path, monkeypatch):
     config = tmp_path / "config.json"
     config.write_text("{broken", encoding="utf-8")
