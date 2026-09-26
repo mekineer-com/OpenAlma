@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -83,33 +84,93 @@ def test_memorize_gauge_over_threshold_with_gap_detected():
     assert "waiting for sleep-gap" not in html
 
 
-def test_memorize_gauge_shows_stalled_consolidation():
+def test_memorize_gauge_shows_failed_consolidation_retry():
     html = _render({
         "summed_unmemorized_tokens": 2000,
         "threshold": 8000,
         "pct": 25,
         "sleep_gap_ready": False,
         "pending_consolidation_segments": 2,
-        "consolidation_stalled": True,
+        "consolidation_state": "error",
         "consolidation_age_days": 103.5,
         "last_consolidation_error": "RuntimeError: reflection failed",
         "computed_at": "2026-09-26T10:00:00+00:00",
     })
 
-    assert "Memory consolidation needs attention: 2 memory batches are waiting" in html
-    assert "last completed 103.5 days ago" in html
-    assert "Do not import or add more history until this is looked at" in html
+    assert "Memory consolidation failed; 2 memory batches are still waiting" in html
+    assert "Review the error below, correct the cause, then Retry" in html
     assert "RuntimeError: reflection failed" in html
+    assert ">Retry</button>" in html
 
 
-def test_memorize_poll_renderer_preserves_consolidation_warning():
+def test_memorize_gauge_distinguishes_overdue_and_running():
+    base = {
+        "summed_unmemorized_tokens": 2000,
+        "threshold": 8000,
+        "pct": 25,
+        "pending_consolidation_segments": 2,
+        "computed_at": "2026-09-26T10:00:00+00:00",
+    }
+
+    overdue = _render({**base, "consolidation_state": "overdue"})
+    running = _render({**base, "consolidation_state": "running"})
+
+    assert "Continue a conversation to trigger another attempt" in overdue
+    assert ">Retry</button>" not in overdue
+    assert "Memory consolidation is running" in running
+    assert ">Retry</button>" not in running
+
+
+def test_memorize_poll_renderer_supports_consolidation_states_and_retry():
     template = (
         Path(__file__).resolve().parents[1] / "launcher" / "templates" / "index.html"
     ).read_text(encoding="utf-8")
 
-    assert "if (data.consolidation_stalled)" in template
+    assert "if (data.consolidation_state === 'error')" in template
+    assert "data.consolidation_state === 'overdue'" in template
+    assert "data.consolidation_state === 'running'" in template
     assert "data.pending_consolidation_segments" in template
     assert "data.last_consolidation_error" in template
+    assert "fetch('/memorize/retry', { method: 'POST' })" in template
+
+
+def test_memorize_poll_renderer_executes_all_consolidation_states():
+    template = Path(__file__).resolve().parents[1] / "launcher" / "templates" / "index.html"
+    subprocess.run(
+        [
+            "node",
+            "-e",
+            r"""
+const fs = require('fs'), vm = require('vm'), assert = require('assert');
+const text = fs.readFileSync(process.argv[1], 'utf8');
+const script = text.slice(text.indexOf('function fmt(n)'), text.indexOf("document.querySelectorAll('.snapshot-time')"));
+const box = {innerHTML: ''};
+const context = {
+  console, Date, Number, Math,
+  document: {getElementById: () => box},
+  window: {alert: () => {}},
+  fetch: async () => ({ok: true, json: async () => ({})}),
+  esc: value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
+  pollMemorize: () => {},
+};
+vm.createContext(context);
+vm.runInContext(script, context);
+const base = {threshold: 8000, pending_consolidation_segments: 2, computed_at: '2026-09-26T10:00:00Z'};
+context.renderMemorize({...base, consolidation_state: 'error', last_consolidation_error: '<bad>'});
+assert.match(box.innerHTML, /Retry<\/button>/);
+assert.match(box.innerHTML, /&lt;bad&gt;/);
+assert.doesNotMatch(box.innerHTML, /<bad>/);
+context.renderMemorize({...base, consolidation_state: 'overdue'});
+assert.match(box.innerHTML, /Continue a conversation/);
+assert.doesNotMatch(box.innerHTML, /Retry<\/button>/);
+context.renderMemorize({...base, consolidation_state: 'running'});
+assert.match(box.innerHTML, /is running/);
+assert.doesNotMatch(box.innerHTML, /Retry<\/button>/);
+""",
+            str(template),
+        ],
+        check=True,
+    )
 
 
 def test_memorize_gauge_empty_state():

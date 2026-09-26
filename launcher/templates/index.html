@@ -231,10 +231,15 @@
         {% endif %}
       </p>
       <div class="meter"><div class="meter-fill" style="width: {{ [memorize.pct, 100]|min }}%"></div></div>
-      {% if memorize.consolidation_stalled %}
+      {% if memorize.consolidation_state == "error" %}
         <p class="consolidation-warning" role="alert">
-          Memory consolidation needs attention: {{ memorize.pending_consolidation_segments }} memory {{ "batch is" if memorize.pending_consolidation_segments == 1 else "batches are" }} waiting{% if memorize.consolidation_age_days is not none %}; last completed {{ memorize.consolidation_age_days }} days ago{% endif %}. Do not import or add more history until this is looked at.{% if memorize.last_consolidation_error %} Error: {{ memorize.last_consolidation_error }}{% endif %}
+          Memory consolidation failed; {{ memorize.pending_consolidation_segments }} memory {{ "batch is" if memorize.pending_consolidation_segments == 1 else "batches are" }} still waiting. Review the error below, correct the cause, then Retry.{% if memorize.last_consolidation_error %}<br>Error: {{ memorize.last_consolidation_error }}{% endif %}
+          <button type="button" class="btn" onclick="retryConsolidation(this)">Retry</button>
         </p>
+      {% elif memorize.consolidation_state == "overdue" %}
+        <p class="consolidation-warning" role="status">{{ memorize.pending_consolidation_segments }} memory {{ "batch is" if memorize.pending_consolidation_segments == 1 else "batches are" }} waiting. Continue a conversation to trigger another attempt.</p>
+      {% elif memorize.consolidation_state == "running" %}
+        <p class="muted" role="status">Memory consolidation is running.</p>
       {% endif %}
       <p class="muted">Memorize-eligible at {{ "{:,}".format(memorize.threshold) }} tokens; a sleep-gap releases it. Snapshot <span class="snapshot-time" data-timestamp="{{ memorize.computed_at }}">{{ memorize.computed_at }}</span>.</p>
     {% else %}
@@ -599,20 +604,40 @@ function renderMemorize(data) {
   }
   html += '</p>';
   html += '<div class="meter"><div class="meter-fill" style="width: ' + Math.min(pct, 100) + '%"></div></div>';
-  if (data.consolidation_stalled) {
+  if (data.consolidation_state === 'error') {
     var pendingSegments = Number(data.pending_consolidation_segments || 0);
-    html += '<p class="consolidation-warning" role="alert">Memory consolidation needs attention: ' + fmt(pendingSegments) + ' memory ' + (pendingSegments === 1 ? 'batch is' : 'batches are') + ' waiting';
-    if (data.consolidation_age_days !== null && data.consolidation_age_days !== undefined) {
-      html += '; last completed ' + esc(data.consolidation_age_days) + ' days ago';
-    }
-    html += '. Do not import or add more history until this is looked at.';
+    html += '<p class="consolidation-warning" role="alert">Memory consolidation failed; ' + fmt(pendingSegments) + ' memory ' + (pendingSegments === 1 ? 'batch is' : 'batches are') + ' still waiting. Review the error below, correct the cause, then Retry.';
     if (data.last_consolidation_error) {
-      html += ' Error: ' + esc(data.last_consolidation_error);
+      html += '<br>Error: ' + esc(data.last_consolidation_error);
     }
+    html += ' <button type="button" class="btn" onclick="retryConsolidation(this)">Retry</button>';
     html += '</p>';
+  } else if (data.consolidation_state === 'overdue') {
+    var overdueSegments = Number(data.pending_consolidation_segments || 0);
+    html += '<p class="consolidation-warning" role="status">' + fmt(overdueSegments) + ' memory ' + (overdueSegments === 1 ? 'batch is' : 'batches are') + ' waiting. Continue a conversation to trigger another attempt.</p>';
+  } else if (data.consolidation_state === 'running') {
+    html += '<p class="muted" role="status">Memory consolidation is running.</p>';
   }
   html += '<p class="muted">Memorize-eligible at ' + fmt(threshold) + ' tokens; a sleep-gap releases it. Snapshot ' + esc(fmtSnapshot(data.computed_at)) + '.</p>';
   box.innerHTML = html;
+}
+
+function retryConsolidation(button) {
+  button.disabled = true;
+  button.textContent = 'Retrying...';
+  fetch('/memorize/retry', { method: 'POST' })
+    .then(function(response) {
+      if (response.ok) return response.json();
+      return response.json().then(function(data) {
+        throw new Error(data.detail || 'Retry failed');
+      });
+    })
+    .then(pollMemorize)
+    .catch(function(error) {
+      button.disabled = false;
+      button.textContent = 'Retry';
+      window.alert(error.message);
+    });
 }
 
 document.querySelectorAll('.snapshot-time').forEach(function(element) {

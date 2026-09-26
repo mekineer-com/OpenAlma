@@ -251,6 +251,22 @@ def memorize_status() -> dict:
     return services.memorize_pending(active_soul, owner_id) if owner_id else {}
 
 
+@app.post("/memorize/retry")
+def memorize_retry() -> dict:
+    active_soul = soul.read_active_soul_id()
+    owner_id = services.read_owner()
+    status = services.memorize_pending(active_soul, owner_id)
+    conversation_id = str(status.get("retry_conversation_id") or "").strip()
+    if not active_soul or not owner_id or not conversation_id:
+        raise HTTPException(status_code=409, detail="No failed consolidation is ready to retry")
+    try:
+        return services.retry_consolidation(conversation_id, active_soul, owner_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request) -> HTMLResponse:
     apps_root = settings.apps_root()

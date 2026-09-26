@@ -180,6 +180,26 @@ def test_memorize_pending_surfaces_owner_conflict(monkeypatch):
     assert services.memorize_pending("Fictional Soul") == {"error": "OpenAlma owner mismatch"}
 
 
+def test_retry_consolidation_uses_encoded_owner_and_scope(monkeypatch):
+    seen = {}
+
+    def fake_request(path, payload=None):
+        seen.update(path=path, payload=payload)
+        return {"status": "accepted"}
+
+    monkeypatch.setattr(services, "_mcp_request", fake_request)
+
+    assert services.retry_consolidation(
+        "chat:fictional/one", "Fictional Soul", "Fictional User"
+    ) == {"status": "accepted"}
+    assert seen == {
+        "path": "/conversation/chat%3Afictional%2Fone/consolidation/retry",
+        "payload": {
+            "user": {"user_id": "Fictional User", "soul_id": "Fictional Soul"}
+        },
+    }
+
+
 def test_owner_request_uses_shared_mcp_transport(monkeypatch):
     seen = {}
 
@@ -220,6 +240,37 @@ def test_memorize_status_uses_active_soul_and_shared_owner(tmp_path, monkeypatch
 
     assert launcher_app.memorize_status() == {"threshold": 6000}
     assert ("Fictional Soul", "Fictional Owner") in seen
+
+
+def test_memorize_retry_uses_diagnostic_conversation(monkeypatch):
+    pytest.importorskip("fastapi")
+    import app as launcher_app  # noqa: PLC0415
+
+    seen = {}
+    monkeypatch.setattr(launcher_app.soul, "read_active_soul_id", lambda: "Fictional Soul")
+    monkeypatch.setattr(launcher_app.services, "read_owner", lambda: "Fictional Owner")
+    monkeypatch.setattr(
+        launcher_app.services,
+        "memorize_pending",
+        lambda *_args: {"retry_conversation_id": "fictional:chat"},
+    )
+    monkeypatch.setattr(
+        launcher_app.services,
+        "retry_consolidation",
+        lambda conversation_id, soul_id, user_id: seen.update(
+            conversation_id=conversation_id,
+            soul_id=soul_id,
+            user_id=user_id,
+        )
+        or {"status": "accepted"},
+    )
+
+    assert launcher_app.memorize_retry() == {"status": "accepted"}
+    assert seen == {
+        "conversation_id": "fictional:chat",
+        "soul_id": "Fictional Soul",
+        "user_id": "Fictional Owner",
+    }
 
 
 def test_service_action_spinner_confirmation_and_error_display():

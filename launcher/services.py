@@ -576,6 +576,25 @@ def memorize_pending(soul_id: str, user_id: str = "") -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def retry_consolidation(conversation_id: str, soul_id: str, user_id: str) -> dict:
+    path = (
+        f"/conversation/{urllib.parse.quote(conversation_id, safe='')}/"
+        "consolidation/retry"
+    )
+    try:
+        return _mcp_request(
+            path,
+            {"user": {"user_id": user_id, "soul_id": soul_id}},
+        )
+    except urllib.error.HTTPError as exc:
+        detail = _http_error_detail(exc)
+        raise ValueError(
+            detail if isinstance(detail, str) else f"memU returned HTTP {exc.code}"
+        ) from exc
+    except OSError as exc:
+        raise RuntimeError("memU Server is unavailable") from exc
+
+
 def _mcp_request(path: str, payload: dict | None = None) -> dict:
     request = urllib.request.Request(
         f"http://127.0.0.1:{MEMU_SERVER_PORT}{path}",
