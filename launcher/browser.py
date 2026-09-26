@@ -1,6 +1,7 @@
 """Browser detection for chromeless app windows."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -21,6 +22,15 @@ CHROMIUM_FAMILY = [
     "vivaldi-stable",
 ]
 
+_WINDOWS_CHROMIUM_PATHS = (
+    ("LOCALAPPDATA", "Google/Chrome/Application/chrome.exe"),
+    ("LOCALAPPDATA", "Microsoft/Edge/Application/msedge.exe"),
+    ("LOCALAPPDATA", "BraveSoftware/Brave-Browser/Application/brave.exe"),
+    ("PROGRAMFILES", "Google/Chrome/Application/chrome.exe"),
+    ("PROGRAMFILES", "Microsoft/Edge/Application/msedge.exe"),
+    ("PROGRAMFILES(X86)", "Microsoft/Edge/Application/msedge.exe"),
+)
+
 _DEFAULT_DEVICE_SCALE_FACTOR = 0.85
 _CHROMIUM_LOW_OVERHEAD_FLAGS = [
     "--disable-extensions",
@@ -37,6 +47,17 @@ def find_chromium() -> str | None:
     for name in CHROMIUM_FAMILY:
         if shutil.which(name):
             return name
+    if os.name == "nt":
+        return _find_windows_chromium()
+    return None
+
+
+def _find_windows_chromium() -> str | None:
+    for env_name, relative_path in _WINDOWS_CHROMIUM_PATHS:
+        root = os.environ.get(env_name)
+        candidate = Path(root, relative_path) if root else None
+        if candidate is not None and candidate.is_file():
+            return str(candidate)
     return None
 
 

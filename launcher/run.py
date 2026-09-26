@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import socket
 import subprocess
 import tempfile
@@ -106,7 +105,7 @@ def _watch_browser_and_stop(
 def _open_browser_when_ready(host: str, port: int, url: str, server: uvicorn.Server) -> None:
     if not _wait_for_port(host, port):
         return
-    chromium = None if os.name == "nt" else browser.find_chromium()
+    chromium = browser.find_chromium()
     if chromium is None:
         browser.open_app(url)
         return
@@ -124,6 +123,17 @@ def _open_browser_when_ready(host: str, port: int, url: str, server: uvicorn.Ser
         ).start()
 
 
+def _open_existing_launcher(url: str) -> None:
+    chromium = browser.find_chromium()
+    if chromium is None:
+        browser.open_app(url)
+        return
+    with tempfile.TemporaryDirectory(prefix="openalma-browser-") as profile:
+        chrome = browser.open_app(url, chromium, profile)
+        if chrome is not None:
+            chrome.wait()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="OpenAlma launcher")
     parser.add_argument("--host", default="127.0.0.1")
@@ -134,7 +144,7 @@ def main() -> None:
     url = f"http://{args.host}:{args.port}"
 
     if _existing_launcher(args.host, args.port):
-        browser.open_app(url)
+        _open_existing_launcher(url)
         return
 
     config = uvicorn.Config(

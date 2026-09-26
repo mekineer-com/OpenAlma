@@ -30,7 +30,6 @@ def test_chromium_profile_lives_until_browser_exit(tmp_path, monkeypatch):
         return chrome
 
     monkeypatch.setattr(run, "_wait_for_port", lambda *_args: True)
-    monkeypatch.setattr(run.os, "name", "posix")
     monkeypatch.setattr(run.browser, "find_chromium", lambda: "chromium")
     monkeypatch.setattr(run.tempfile, "TemporaryDirectory", lambda **_kwargs: profile)
     monkeypatch.setattr(run.browser, "open_app", open_app)
@@ -58,16 +57,60 @@ def test_browser_launch_includes_isolated_profile(tmp_path, monkeypatch):
     assert launched["kwargs"]["start_new_session"] is True
 
 
-def test_windows_uses_default_browser_even_when_chromium_is_available(monkeypatch):
+def test_find_chromium_uses_standard_windows_install_path(tmp_path, monkeypatch):
+    chrome = tmp_path / "Google/Chrome/Application/chrome.exe"
+    chrome.parent.mkdir(parents=True)
+    chrome.touch()
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.delenv("PROGRAMFILES", raising=False)
+    monkeypatch.delenv("PROGRAMFILES(X86)", raising=False)
+
+    assert browser._find_windows_chromium() == str(chrome)
+
+
+def test_default_browser_is_fallback_when_chromium_is_unavailable(monkeypatch):
     opened = []
     monkeypatch.setattr(run, "_wait_for_port", lambda *_args: True)
-    monkeypatch.setattr(run.os, "name", "nt")
-    monkeypatch.setattr(run.browser, "find_chromium", lambda: pytest.fail("Windows must respect the default browser"))
+    monkeypatch.setattr(run.browser, "find_chromium", lambda: None)
     monkeypatch.setattr(run.browser, "open_app", lambda url: opened.append(url))
 
     run._open_browser_when_ready("127.0.0.1", 8765, "http://127.0.0.1:8765", object())
 
     assert opened == ["http://127.0.0.1:8765"]
+
+
+def test_existing_launcher_still_uses_chromium_app_mode(tmp_path, monkeypatch):
+    launched = {}
+    chrome = SimpleNamespace(wait=lambda: launched.setdefault("waited", True))
+
+    class FakeTemporaryDirectory:
+        def __enter__(self):
+            return str(tmp_path / "profile")
+
+        def __exit__(self, *_args):
+            pass
+
+    monkeypatch.setattr(run.browser, "find_chromium", lambda: "chromium")
+    monkeypatch.setattr(
+        run.browser,
+        "open_app",
+        lambda *args: launched.setdefault("args", args) and chrome,
+    )
+    monkeypatch.setattr(
+        run.tempfile,
+        "TemporaryDirectory",
+        lambda **_kwargs: FakeTemporaryDirectory(),
+    )
+
+    run._open_existing_launcher("http://127.0.0.1:8765")
+
+    assert launched["args"] == (
+        "http://127.0.0.1:8765",
+        "chromium",
+        str(tmp_path / "profile"),
+    )
+    assert launched["waited"] is True
 
 
 def test_cold_start_waits_up_to_thirty_seconds():
