@@ -65,6 +65,8 @@
     .meter-fill { height: 100%; background: #6aa9ff; }
     .badge { display: inline-block; margin-left: 0.4rem; padding: 0.1rem 0.45rem; border-radius: 3px;
              background: #3a2415; color: #f5c084; border: 1px solid #6b3a16; font-size: 0.78rem; }
+    .consolidation-warning { padding: 0.45rem 0.6rem; margin: 0.65rem 0; border-radius: 3px;
+                             background: #3a2415; color: #f5c084; border: 1px solid #6b3a16; }
     .top-row { display: flex; justify-content: space-between; align-items: baseline; }
     .top-row span { display: flex; align-items: baseline; gap: 1rem; }
     .top-row .btn { font-size: 0.82rem; }
@@ -230,8 +232,8 @@
       </p>
       <div class="meter"><div class="meter-fill" style="width: {{ [memorize.pct, 100]|min }}%"></div></div>
       {% if memorize.consolidation_stalled %}
-        <p class="error" role="alert">
-          Consolidation stalled: {{ memorize.pending_consolidation_segments }} pending {{ "segment" if memorize.pending_consolidation_segments == 1 else "segments" }}{% if memorize.consolidation_age_days is not none %}; last completed {{ memorize.consolidation_age_days }} days ago{% endif %}{% if memorize.last_consolidation_error %}. {{ memorize.last_consolidation_error }}{% endif %}
+        <p class="consolidation-warning" role="alert">
+          Memory consolidation needs attention: {{ memorize.pending_consolidation_segments }} memory {{ "batch is" if memorize.pending_consolidation_segments == 1 else "batches are" }} waiting{% if memorize.consolidation_age_days is not none %}; last completed {{ memorize.consolidation_age_days }} days ago{% endif %}. Check the memU Server log before importing or adding more history.{% if memorize.last_consolidation_error %} Error: {{ memorize.last_consolidation_error }}{% endif %}
         </p>
       {% endif %}
       <p class="muted">Memorize-eligible at {{ "{:,}".format(memorize.threshold) }} tokens; a sleep-gap releases it. Snapshot <span class="snapshot-time" data-timestamp="{{ memorize.computed_at }}">{{ memorize.computed_at }}</span>.</p>
@@ -599,12 +601,13 @@ function renderMemorize(data) {
   html += '<div class="meter"><div class="meter-fill" style="width: ' + Math.min(pct, 100) + '%"></div></div>';
   if (data.consolidation_stalled) {
     var pendingSegments = Number(data.pending_consolidation_segments || 0);
-    html += '<p class="error" role="alert">Consolidation stalled: ' + fmt(pendingSegments) + ' pending ' + (pendingSegments === 1 ? 'segment' : 'segments');
+    html += '<p class="consolidation-warning" role="alert">Memory consolidation needs attention: ' + fmt(pendingSegments) + ' memory ' + (pendingSegments === 1 ? 'batch is' : 'batches are') + ' waiting';
     if (data.consolidation_age_days !== null && data.consolidation_age_days !== undefined) {
       html += '; last completed ' + esc(data.consolidation_age_days) + ' days ago';
     }
+    html += '. Check the memU Server log before importing or adding more history.';
     if (data.last_consolidation_error) {
-      html += '. ' + esc(data.last_consolidation_error);
+      html += ' Error: ' + esc(data.last_consolidation_error);
     }
     html += '</p>';
   }

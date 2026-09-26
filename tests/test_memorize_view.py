@@ -96,8 +96,9 @@ def test_memorize_gauge_shows_stalled_consolidation():
         "computed_at": "2026-09-26T10:00:00+00:00",
     })
 
-    assert "Consolidation stalled: 2 pending segments" in html
+    assert "Memory consolidation needs attention: 2 memory batches are waiting" in html
     assert "last completed 103.5 days ago" in html
+    assert "Check the memU Server log before importing or adding more history" in html
     assert "RuntimeError: reflection failed" in html
 
 
