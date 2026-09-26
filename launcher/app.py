@@ -255,9 +255,11 @@ def memorize_status() -> dict:
 def memorize_retry() -> dict:
     active_soul = soul.read_active_soul_id()
     owner_id = services.read_owner()
+    if not active_soul or not owner_id:
+        raise HTTPException(status_code=409, detail="No failed consolidation is ready to retry")
     status = services.memorize_pending(active_soul, owner_id)
     conversation_id = str(status.get("retry_conversation_id") or "").strip()
-    if not active_soul or not owner_id or not conversation_id:
+    if status.get("consolidation_state") != "error" or not conversation_id:
         raise HTTPException(status_code=409, detail="No failed consolidation is ready to retry")
     try:
         return services.retry_consolidation(conversation_id, active_soul, owner_id)

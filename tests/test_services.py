@@ -252,7 +252,10 @@ def test_memorize_retry_uses_diagnostic_conversation(monkeypatch):
     monkeypatch.setattr(
         launcher_app.services,
         "memorize_pending",
-        lambda *_args: {"retry_conversation_id": "fictional:chat"},
+        lambda *_args: {
+            "consolidation_state": "error",
+            "retry_conversation_id": "fictional:chat",
+        },
     )
     monkeypatch.setattr(
         launcher_app.services,
@@ -271,6 +274,25 @@ def test_memorize_retry_uses_diagnostic_conversation(monkeypatch):
         "soul_id": "Fictional Soul",
         "user_id": "Fictional Owner",
     }
+
+
+def test_memorize_retry_rejects_non_error_state(monkeypatch):
+    pytest.importorskip("fastapi")
+    import app as launcher_app  # noqa: PLC0415
+
+    monkeypatch.setattr(launcher_app.soul, "read_active_soul_id", lambda: "Fictional Soul")
+    monkeypatch.setattr(launcher_app.services, "read_owner", lambda: "Fictional Owner")
+    monkeypatch.setattr(
+        launcher_app.services,
+        "memorize_pending",
+        lambda *_args: {
+            "consolidation_state": "overdue",
+            "retry_conversation_id": "fictional:chat",
+        },
+    )
+
+    with pytest.raises(launcher_app.HTTPException, match="ready to retry"):
+        launcher_app.memorize_retry()
 
 
 def test_service_action_spinner_confirmation_and_error_display():
