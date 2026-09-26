@@ -98,7 +98,7 @@ def test_memorize_gauge_shows_stalled_consolidation():
 
     assert "Memory consolidation needs attention: 2 memory batches are waiting" in html
     assert "last completed 103.5 days ago" in html
-    assert "Check the memU Server log before importing or adding more history" in html
+    assert "Do not import or add more history until this is looked at" in html
     assert "RuntimeError: reflection failed" in html
 
 
