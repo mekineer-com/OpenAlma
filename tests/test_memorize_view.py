@@ -97,8 +97,8 @@ def test_memorize_gauge_shows_failed_consolidation_retry():
         "computed_at": "2026-09-26T10:00:00+00:00",
     })
 
-    assert "Memory consolidation failed; 2 memory batches are still waiting" in html
-    assert "Review the error below, correct the cause, then Retry" in html
+    assert "Memory consolidation stopped; 2 memory batches are still waiting" in html
+    assert "Retry only after the issue has been fixed" in html
     assert "RuntimeError: reflection failed" in html
     assert ">Retry</button>" in html
 
@@ -143,18 +143,20 @@ def test_memorize_poll_renderer_executes_all_consolidation_states():
             r"""
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const text = fs.readFileSync(process.argv[1], 'utf8');
-const script = text.slice(text.indexOf('function fmt(n)'), text.indexOf("document.querySelectorAll('.snapshot-time')"));
+const script = text.slice(text.indexOf('function esc(text)'), text.indexOf('function syncMemorize'))
+  + text.slice(text.indexOf('function fmt(n)'), text.indexOf("document.querySelectorAll('.snapshot-time')"));
 const box = {innerHTML: ''};
+const fetches = []; let polls = 0;
 const context = {
   console, Date, Number, Math,
   document: {getElementById: () => box},
   window: {alert: () => {}},
-  fetch: async () => ({ok: true, json: async () => ({})}),
-  esc: value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
-  pollMemorize: () => {},
+  fetch: async (url, options) => { fetches.push({url, options}); return {ok: true, json: async () => ({})}; },
+  pollMemorize: () => { polls++; },
 };
 vm.createContext(context);
 vm.runInContext(script, context);
+(async () => {
 const base = {threshold: 8000, pending_consolidation_segments: 2, computed_at: '2026-09-26T10:00:00Z'};
 context.renderMemorize({...base, consolidation_state: 'error', last_consolidation_error: '<bad>'});
 assert.match(box.innerHTML, /Retry<\/button>/);
@@ -166,6 +168,14 @@ assert.doesNotMatch(box.innerHTML, /Retry<\/button>/);
 context.renderMemorize({...base, consolidation_state: 'running'});
 assert.match(box.innerHTML, /is running/);
 assert.doesNotMatch(box.innerHTML, /Retry<\/button>/);
+const button = {disabled: false, textContent: 'Retry'};
+context.retryConsolidation(button);
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(button.disabled, true);
+assert.equal(button.textContent, 'Retrying...');
+assert.deepEqual(fetches, [{url: '/memorize/retry', options: {method: 'POST'}}]);
+assert.equal(polls, 1);
+})().catch(error => { console.error(error); process.exitCode = 1; });
 """,
             str(template),
         ],
