@@ -237,7 +237,7 @@
           <button type="button" class="btn" onclick="retryConsolidation(this)">Retry</button>
         </p>
       {% elif memorize.consolidation_state == "overdue" %}
-        <p class="consolidation-warning" role="status">{{ memorize.pending_consolidation_segments }} memory {{ "batch is" if memorize.pending_consolidation_segments == 1 else "batches are" }} waiting. Continue a conversation to trigger another attempt.</p>
+        <p class="consolidation-warning" role="status">Weekly reflection will occur after the coming Memorize. {{ memorize.pending_consolidation_segments }} memorized {{ "segment" if memorize.pending_consolidation_segments == 1 else "segments" }} already in queue.</p>
       {% elif memorize.consolidation_state == "running" %}
         <p class="muted" role="status">Memory consolidation is running.</p>
       {% endif %}
@@ -614,7 +614,7 @@ function renderMemorize(data) {
     html += '</p>';
   } else if (data.consolidation_state === 'overdue') {
     var overdueSegments = Number(data.pending_consolidation_segments || 0);
-    html += '<p class="consolidation-warning" role="status">' + fmt(overdueSegments) + ' memory ' + (overdueSegments === 1 ? 'batch is' : 'batches are') + ' waiting. Continue a conversation to trigger another attempt.</p>';
+    html += '<p class="consolidation-warning" role="status">Weekly reflection will occur after the coming Memorize. ' + fmt(overdueSegments) + ' memorized ' + (overdueSegments === 1 ? 'segment' : 'segments') + ' already in queue.</p>';
   } else if (data.consolidation_state === 'running') {
     html += '<p class="muted" role="status">Memory consolidation is running.</p>';
   }
