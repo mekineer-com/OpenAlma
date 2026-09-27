@@ -1183,6 +1183,7 @@ def _iris_product_status(
         "update_available": mismatch,
         "automatic_host": automatic_host,
         "repair_available": repair_available,
+        "installation_known": not bool(readiness and readiness.get("step") == "server"),
         "open_not_installed": bool(
             not installed_package
             and automatic_host

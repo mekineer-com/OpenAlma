@@ -757,6 +757,29 @@ class MentraStatusTest(TestCase):
                 home = client.get("/").text
                 self.assertIn("Not installed (1)", home)
                 self.assertIn("Iris", home)
+                services._MENTRA_READINESS_CACHE.clear()
+                with (
+                    patch.object(
+                        services,
+                        "mentra_readiness",
+                        return_value={
+                            "enabled": True,
+                            "ready": False,
+                            "step": "server",
+                            "reason": "Start memU Server",
+                            "rows": [],
+                        },
+                    ),
+                    patch.object(
+                        app.setup_install,
+                        "optional_setup_status",
+                        return_value={"ready": True, "guidance": ""},
+                    ),
+                ):
+                    unknown_home = client.get("/").text
+                services._MENTRA_READINESS_CACHE.clear()
+                self.assertNotIn("Not installed (1)", unknown_home)
+                self.assertIn("waiting for memU Server", unknown_home)
                 with patch.object(
                     services, "_runtime_state", return_value=services.RuntimeState(running=True, port_pid=41)
                 ):

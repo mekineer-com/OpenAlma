@@ -153,7 +153,11 @@ def index(request: Request) -> HTMLResponse:
                 iris = {"name": spec.name, "label": spec.label} | _setup_aware_status(
                     spec, setup_root, verify_runtime=not install_in_progress,
                 )
-                (rows if iris.get("installed_package") or iris.get("running") else not_installed).append(iris)
+                (
+                    rows
+                    if iris.get("installed_package") or iris.get("running") or not iris.get("installation_known", True)
+                    else not_installed
+                ).append(iris)
                 continue
             if services.is_installed(spec):
                 rows.append(
