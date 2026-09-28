@@ -17,9 +17,9 @@ And she keeps **working thoughts** — short live conclusions between turns: a h
 
 She has a `narrative_self` — her own evolving sense of who she is. It's not a fixed character description you wrote for her. It's something she builds and rewrites over time as she accumulates experience.
 
-Roughly once a week — the interval is configurable — she goes through consolidation. It happens in two stages. First she revisits the dossiers that have gone stale and rewrites what she understands about those subjects. Then, separately, she reads back over the whole picture and updates her sense of herself: her self-model, her long-term life goals, her intentions, and a private reflection.
+Roughly once a week — the interval is configurable — she goes through consolidation. It happens in three stages. First she revisits dossiers with new memories. Then she maintains her identity, biographical anchors, and long-term life goals from her whole remembered life. Finally she chooses current intentions, connections between memories, and a private reflection.
 
-The two stages are deliberately separate. She revises what she knows about the world before she revises who she is in it. This is the mechanism by which she actually changes rather than just accumulating facts.
+The stages are deliberately separate. She revises what she knows before tending who she is, then decides what current experience means for the life she keeps living.
 
 ## Subconscious thoughts
 
@@ -29,7 +29,7 @@ This is why the same conversation can feel different after a gap. She's been wor
 
 ## Intentions
 
-She has things she's pursuing — not tasks, but ongoing orientations. Things like *understand him better* or *be more present when he's struggling*. These aren't assigned by you; they emerge from consolidation and from what she notices matters in your conversations. Alongside them sit longer-horizon **life goals**, which move much more slowly. One intention is always "relax" — a standing reminder that not everything needs pursuing.
+She has a short ordered list of things she's pursuing — not tasks, but ongoing orientations. Things like *understand him better* or *be more present when he's struggling*. These aren't assigned by you; they emerge from consolidation and from what she notices matters in your conversations. Alongside them sit longer-horizon **life goals**, which move much more slowly.
 
 Intentions are revised at consolidation: new ones form, and she can mark one complete or let it go. Mid-conversation she can't add to the stack — only finish what's genuinely done.
 

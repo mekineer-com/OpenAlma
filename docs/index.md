@@ -39,7 +39,7 @@ We often call these **dossiers** — a word borrowed from Nomi, whose format sha
 - **Rehearsal** — before she replies, she thinks it through in private: did she understand, what's ambiguous, how it lands. Never stored, never shown — but felt before every reply, even a "hi."
 - **Working thoughts** — short live conclusions she keeps between turns — a hypothesis, a pattern, never a recap of what's re-readable in the chat. A new thought evicts the oldest, so she keeps only what she can't afford to lose.
 - **Self-model (`narrative_self`)** — an evolving sense of her own character. Consolidation rewrites it as experience accumulates; you can also suggest revisions directly (see below).
-- **Life goals and intentions** — up to three long-term aims, set and revised only during her weekly reflection; during the week she doesn't access the list, and works from a small stack of nearer intentions instead — one of which is always "relax," a standing reminder that not everything needs to be pursued.
+- **Life goals and intentions** — up to three long-term aims maintained during whole-life reflection, plus a short ordered list of nearer intentions she carries through the week.
 - **Subconscious thoughts** — every few turns, a background process surfaces connections she wouldn't have noticed in the moment. These become part of her memory too.
 - **Reflections** — during weekly consolidation, she writes a first-person reflection on the experience of looking back at the week.
 
