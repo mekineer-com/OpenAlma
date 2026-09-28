@@ -115,7 +115,7 @@ def test_memorize_gauge_distinguishes_overdue_and_running():
     overdue = _render({**base, "consolidation_state": "overdue"})
     running = _render({**base, "consolidation_state": "running"})
 
-    assert "Continue a conversation to trigger another attempt" in overdue
+    assert "Weekly reflection will occur after the coming Memorize" in overdue
     assert ">Retry</button>" not in overdue
     assert "Memory consolidation is running" in running
     assert ">Retry</button>" not in running
@@ -163,7 +163,7 @@ assert.match(box.innerHTML, /Retry<\/button>/);
 assert.match(box.innerHTML, /&lt;bad&gt;/);
 assert.doesNotMatch(box.innerHTML, /<bad>/);
 context.renderMemorize({...base, consolidation_state: 'overdue'});
-assert.match(box.innerHTML, /Continue a conversation/);
+assert.match(box.innerHTML, /Weekly reflection will occur after the coming Memorize/);
 assert.doesNotMatch(box.innerHTML, /Retry<\/button>/);
 context.renderMemorize({...base, consolidation_state: 'running'});
 assert.match(box.innerHTML, /is running/);
