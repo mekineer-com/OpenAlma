@@ -48,6 +48,14 @@ def launcher_update_readiness() -> dict[str, object]:
     return {"application": LAUNCHER_ID, "active_services": active}
 
 
+@app.post("/launcher/window-position", include_in_schema=False)
+def launcher_window_position(x: int, y: int) -> dict[str, bool]:
+    paths = settings.read_paths()
+    paths["window_position"] = {"x": x, "y": y}
+    settings.write_paths(paths)
+    return {"ok": True}
+
+
 def _editable_configs(apps_root: Path | None) -> dict[str, Path]:
     """Resolve user-facing config files against active process paths."""
     out = {"channels-config": settings.channels_home() / "config.json"}
@@ -456,6 +464,16 @@ def service_start(service_name: str, soul_id: str = "", device_session_id: str =
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, **services.status(spec)}
+
+
+@app.post("/service/{service_name}/open")
+def service_open(service_name: str) -> dict[str, bool]:
+    spec = _find_service(service_name)
+    if not spec.open_url:
+        raise HTTPException(status_code=404, detail=f"{spec.label} has no page to open")
+    if not webbrowser.open_new_tab(spec.open_url):
+        raise HTTPException(status_code=503, detail="The default browser could not be opened")
+    return {"ok": True}
 
 
 @app.post("/iris/install")

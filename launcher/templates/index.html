@@ -188,7 +188,7 @@
           {% else %}
             <span class="muted">not startable</span>
           {% endif %}
-          {% if s.running and s.open_url %}<a class="btn" href="{{ s.open_url }}" target="_blank" rel="noopener">Open</a>{% endif %}
+          {% if s.running and s.open_url %}<button class="btn" onclick="openService('{{ s.name }}')">Open</button>{% endif %}
         </td>
         <td><a href="{{ '/install/' ~ s.name ~ '/logs' if s.install_setup else '/logs/' ~ s.name }}">view</a></td>
       </tr>
@@ -481,7 +481,7 @@ async function svcAction(name, action, btn) {
 }
 
 function actionHtml(name, data) {
-  var open = data.running && data.open_url ? ' <a class="btn" href="' + esc(data.open_url) + '" target="_blank" rel="noopener">Open</a>' : '';
+  var open = data.running && data.open_url ? ' <button class="btn" onclick="openService(\'' + esc(name) + '\')">Open</button>' : '';
   if (data.install_running) return '<span class="spinner" role="status" aria-label="Installing"></span>';
   if (data.state === 'stopping') {
     return '<span class="spinner" role="status" aria-label="Stopping"></span>' +
@@ -517,6 +517,14 @@ function actionHtml(name, data) {
     return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'start\',this)">Start</button>' + open;
   }
   return '<span class="muted">not startable</span>' + open;
+}
+
+async function openService(name) {
+  var response = await fetch('/service/' + name + '/open', {method: 'POST'});
+  if (!response.ok) {
+    var result = await response.json();
+    alert(result.detail || 'Browser could not be opened');
+  }
 }
 
 async function quitLauncher(button) {
@@ -665,6 +673,6 @@ setInterval(function() {
 {% endif %}
 setInterval(pollMemorize, 10000);
 </script>
-  <script src="/static/window-state.js"></script>
+  <script src="/static/window-position.js"></script>
 </body>
 </html>

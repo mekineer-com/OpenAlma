@@ -138,11 +138,34 @@ def _activate_existing_browser(url: str) -> bool:
         return False
 
 
+def _window_position() -> tuple[int, int] | None:
+    position = settings.read_paths().get("window_position")
+    if not isinstance(position, dict):
+        return None
+    try:
+        return int(position["x"]), int(position["y"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _window_size() -> tuple[int, int] | None:
+    size = settings.read_paths().get("window_size")
+    if not isinstance(size, dict):
+        return None
+    try:
+        return int(size["width"]), int(size["height"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def _open_chromium(url: str, chromium: str) -> subprocess.Popen | None:
+    size = _window_size()
     return browser.open_app(
         f"{url.rstrip('/')}/?openalma_app=1",
         chromium,
         _browser_profile(),
+        **({"width": size[0], "height": size[1]} if size else {}),
+        position=_window_position(),
     )
 
 

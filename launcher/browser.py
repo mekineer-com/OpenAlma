@@ -68,6 +68,7 @@ def open_app(
     *,
     width: int = 600,
     height: int = 740,
+    position: tuple[int, int] | None = None,
 ) -> subprocess.Popen | None:
     """Open the launcher UI in a chromeless app window sized to the column.
 
@@ -85,6 +86,7 @@ def open_app(
             "--remote-debugging-address=127.0.0.1",
             "--remote-debugging-port=0",
             f"--window-size={int(width)},{int(height)}",
+            *([f"--window-position={position[0]},{position[1]}"] if position else []),
             "--no-default-browser-check",
             *_CHROMIUM_LOW_OVERHEAD_FLAGS,
         ]

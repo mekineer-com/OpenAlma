@@ -87,6 +87,15 @@ def test_launcher_identity_and_favicon_are_available():
     assert "<svg" in favicon.text
 
 
+def test_launcher_saves_window_position(tmp_path, monkeypatch):
+    monkeypatch.setattr(app.settings, "SETTINGS_PATH", tmp_path / "paths.json")
+
+    response = TestClient(app.app).post("/launcher/window-position?x=321&y=123")
+
+    assert response.json() == {"ok": True}
+    assert app.settings.read_paths()["window_position"] == {"x": 321, "y": 123}
+
+
 def test_update_readiness_names_active_services(tmp_path, monkeypatch):
     spec = services.ServiceSpec("atomic", "Atomic Mind Map", [], tmp_path, tmp_path / "log", tmp_path / "pid")
     monkeypatch.setattr(app.services, "all_services", lambda: [spec])
@@ -281,6 +290,21 @@ def test_start_route_rejects_incomplete_setup(tmp_path, monkeypatch):
 
     assert response.status_code == 409
     assert started == []
+
+
+def test_open_route_uses_default_browser_tab(tmp_path, monkeypatch):
+    spec = services.ServiceSpec(
+        "sillytavern", "SillyTavern", [], tmp_path, tmp_path / "log", tmp_path / "pid",
+        open_url="http://127.0.0.1:8001",
+    )
+    opened = []
+    monkeypatch.setattr(app, "_find_service", lambda _name: spec)
+    monkeypatch.setattr(app.webbrowser, "open_new_tab", lambda url: opened.append(url) or True)
+
+    response = TestClient(app.app).post("/service/sillytavern/open")
+
+    assert response.json() == {"ok": True}
+    assert opened == ["http://127.0.0.1:8001"]
 
 
 def test_install_route_rejects_live_service(tmp_path, monkeypatch):

@@ -16,6 +16,11 @@ def test_chromium_profile_persists_after_browser_exit(tmp_path, monkeypatch):
     chrome = SimpleNamespace(wait=lambda: launched.setdefault("waited", True))
     server = SimpleNamespace(should_exit=False)
     settings_path = tmp_path / "settings" / "paths.json"
+    settings_path.parent.mkdir()
+    settings_path.write_text(
+        '{"window_position":{"x":321,"y":123},"window_size":{"width":552,"height":661}}\n',
+        encoding="utf-8",
+    )
 
     class FakeThread:
         def __init__(self, *, target, args, daemon):
@@ -24,8 +29,9 @@ def test_chromium_profile_persists_after_browser_exit(tmp_path, monkeypatch):
         def start(self):
             launched["started"] = True
 
-    def open_app(*args):
+    def open_app(*args, **kwargs):
         launched["args"] = args
+        launched["kwargs"] = kwargs
         return chrome
 
     monkeypatch.setattr(run, "_wait_for_port", lambda *_args: True)
@@ -38,6 +44,7 @@ def test_chromium_profile_persists_after_browser_exit(tmp_path, monkeypatch):
 
     profile = settings_path.parent / "chromium-profile"
     assert launched["args"] == ("http://127.0.0.1:8765/?openalma_app=1", "chromium", profile)
+    assert launched["kwargs"] == {"width": 552, "height": 661, "position": (321, 123)}
     assert profile.is_dir()
     target, args, daemon = launched["thread"]
     assert daemon is True
@@ -59,6 +66,16 @@ def test_browser_launch_includes_isolated_profile(tmp_path, monkeypatch):
     assert "--disable-background-mode" in launched["args"]
     assert not any(arg.startswith("--force-device-scale-factor=") for arg in launched["args"])
     assert launched["kwargs"]["start_new_session"] is True
+
+
+def test_browser_launch_uses_saved_position(tmp_path, monkeypatch):
+    launched = {}
+    monkeypatch.setattr(browser.subprocess, "Popen", lambda args, **kwargs: launched.update(args=args) or object())
+
+    browser.open_app("http://127.0.0.1:8765", "chromium", tmp_path, position=(321, 123))
+
+    assert "--window-size=600,740" in launched["args"]
+    assert "--window-position=321,123" in launched["args"]
 
 
 def test_find_chromium_uses_standard_windows_install_path(tmp_path, monkeypatch):
@@ -91,6 +108,7 @@ def test_existing_launcher_reuses_profile_without_stopping_server(tmp_path, monk
 
     monkeypatch.setattr(run.browser, "find_chromium", lambda: "chromium")
     monkeypatch.setattr(run.settings, "SETTINGS_PATH", settings_path)
+    monkeypatch.setattr(run.settings, "read_paths", lambda: {})
     monkeypatch.setattr(
         run,
         "_watch_browser_and_stop",
@@ -99,7 +117,7 @@ def test_existing_launcher_reuses_profile_without_stopping_server(tmp_path, monk
     monkeypatch.setattr(
         run.browser,
         "open_app",
-        lambda *args, **_kwargs: launched.setdefault("args", args) and chrome,
+        lambda *args, **kwargs: launched.update(args=args, kwargs=kwargs) or chrome,
     )
 
     run._open_existing_launcher("http://127.0.0.1:8765")
@@ -109,6 +127,7 @@ def test_existing_launcher_reuses_profile_without_stopping_server(tmp_path, monk
         "chromium",
         settings_path.parent / "chromium-profile",
     )
+    assert launched["kwargs"] == {"position": None}
     assert launched["waited"] is True
 
 
