@@ -7,6 +7,7 @@ import socket
 import subprocess
 import threading
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -88,13 +89,6 @@ def _watch_browser_and_stop(
     chrome: subprocess.Popen,
     server: uvicorn.Server,
 ) -> None:
-    """Quit the launcher when the chromium app window closes.
-
-    With --user-data-dir, the chromium process is the launcher's own;
-    closing its only window causes the process to exit. The launcher
-    follows it down so the Python process doesn't outlive the UI and
-    silently hold the port for next launch.
-    """
     try:
         chrome.wait()
     finally:
@@ -107,6 +101,51 @@ def _browser_profile() -> Path:
     return profile
 
 
+def _browser_target(url: str) -> tuple[int, str] | None:
+    try:
+        port = int((_browser_profile() / "DevToolsActivePort").read_text(encoding="utf-8").splitlines()[0])
+        if not 0 < port < 65_536:
+            return None
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=1) as response:
+            targets = json.loads(response.read().decode("utf-8"))
+        origin = urllib.parse.urlsplit(url)
+        target = next(
+            row for row in targets
+            if isinstance(row, dict)
+            and row.get("type") == "page"
+            and urllib.parse.urlsplit(str(row.get("url") or ""))[:2] == origin[:2]
+            and isinstance(row.get("id"), str)
+        )
+        return port, target["id"]
+    except (OSError, ValueError, json.JSONDecodeError, IndexError, StopIteration):
+        return None
+
+
+def _activate_existing_browser(url: str) -> bool:
+    target = _browser_target(url)
+    if target is None:
+        return False
+    port, target_id = target
+    try:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/json/activate/{urllib.parse.quote(target_id, safe='')}",
+            data=b"",
+            method="PUT",
+        )
+        with urllib.request.urlopen(request, timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+def _open_chromium(url: str, chromium: str) -> subprocess.Popen | None:
+    return browser.open_app(
+        f"{url.rstrip('/')}/?openalma_app=1",
+        chromium,
+        _browser_profile(),
+    )
+
+
 def _open_browser_when_ready(host: str, port: int, url: str, server: uvicorn.Server) -> None:
     if not _wait_for_port(host, port):
         return
@@ -114,7 +153,7 @@ def _open_browser_when_ready(host: str, port: int, url: str, server: uvicorn.Ser
     if chromium is None:
         browser.open_app(url)
         return
-    chrome = browser.open_app(url, chromium, _browser_profile())
+    chrome = _open_chromium(url, chromium)
     if chrome is not None:
         threading.Thread(
             target=_watch_browser_and_stop,
@@ -128,7 +167,9 @@ def _open_existing_launcher(url: str) -> None:
     if chromium is None:
         browser.open_app(url)
         return
-    chrome = browser.open_app(url, chromium, _browser_profile())
+    if _activate_existing_browser(url):
+        return
+    chrome = _open_chromium(url, chromium)
     if chrome is not None:
         chrome.wait()
 

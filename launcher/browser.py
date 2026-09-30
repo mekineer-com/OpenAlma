@@ -31,8 +31,8 @@ _WINDOWS_CHROMIUM_PATHS = (
     ("PROGRAMFILES(X86)", "Microsoft/Edge/Application/msedge.exe"),
 )
 
-_DEFAULT_DEVICE_SCALE_FACTOR = 0.85
 _CHROMIUM_LOW_OVERHEAD_FLAGS = [
+    "--disable-background-mode",
     "--disable-extensions",
     "--disable-sync",
     "--disable-background-networking",
@@ -78,16 +78,18 @@ def open_app(
     if chromium:
         if user_data_dir is None:
             raise ValueError("Chromium requires an isolated user-data directory")
+        args = [
+            chromium,
+            f"--app={url}",
+            f"--user-data-dir={user_data_dir}",
+            "--remote-debugging-address=127.0.0.1",
+            "--remote-debugging-port=0",
+            f"--window-size={int(width)},{int(height)}",
+            "--no-default-browser-check",
+            *_CHROMIUM_LOW_OVERHEAD_FLAGS,
+        ]
         return subprocess.Popen(
-            [
-                chromium,
-                f"--app={url}",
-                f"--user-data-dir={user_data_dir}",
-                f"--window-size={int(width)},{int(height)}",
-                f"--force-device-scale-factor={_DEFAULT_DEVICE_SCALE_FACTOR}",
-                "--no-default-browser-check",
-                *_CHROMIUM_LOW_OVERHEAD_FLAGS,
-            ],
+            args,
             start_new_session=True,
         )
     webbrowser.open_new(url)

@@ -37,7 +37,7 @@ def test_chromium_profile_persists_after_browser_exit(tmp_path, monkeypatch):
     run._open_browser_when_ready("127.0.0.1", 8765, "http://127.0.0.1:8765", server)
 
     profile = settings_path.parent / "chromium-profile"
-    assert launched["args"] == ("http://127.0.0.1:8765", "chromium", profile)
+    assert launched["args"] == ("http://127.0.0.1:8765/?openalma_app=1", "chromium", profile)
     assert profile.is_dir()
     target, args, daemon = launched["thread"]
     assert daemon is True
@@ -54,6 +54,10 @@ def test_browser_launch_includes_isolated_profile(tmp_path, monkeypatch):
     browser.open_app("http://127.0.0.1:8765", "chromium", tmp_path)
 
     assert f"--user-data-dir={tmp_path}" in launched["args"]
+    assert "--remote-debugging-address=127.0.0.1" in launched["args"]
+    assert "--remote-debugging-port=0" in launched["args"]
+    assert "--disable-background-mode" in launched["args"]
+    assert not any(arg.startswith("--force-device-scale-factor=") for arg in launched["args"])
     assert launched["kwargs"]["start_new_session"] is True
 
 
@@ -95,17 +99,63 @@ def test_existing_launcher_reuses_profile_without_stopping_server(tmp_path, monk
     monkeypatch.setattr(
         run.browser,
         "open_app",
-        lambda *args: launched.setdefault("args", args) and chrome,
+        lambda *args, **_kwargs: launched.setdefault("args", args) and chrome,
     )
 
     run._open_existing_launcher("http://127.0.0.1:8765")
 
     assert launched["args"] == (
-        "http://127.0.0.1:8765",
+        "http://127.0.0.1:8765/?openalma_app=1",
         "chromium",
         settings_path.parent / "chromium-profile",
     )
     assert launched["waited"] is True
+
+
+def test_existing_launcher_activates_open_window_without_launching(tmp_path, monkeypatch):
+    profile = tmp_path / "chromium-profile"
+    profile.mkdir()
+    (profile / "DevToolsActivePort").write_text("41234\n/devtools/browser/id\n", encoding="utf-8")
+    requests = []
+
+    class Response:
+        def __init__(self, body=b""):
+            self.body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def read(self):
+            return self.body
+
+    def urlopen(request, **_kwargs):
+        requests.append(request)
+        url = request.full_url if isinstance(request, run.urllib.request.Request) else request
+        if url.endswith("/json/list"):
+            return Response(json.dumps([{
+                "id": "target/id",
+                "type": "page",
+                "url": "http://127.0.0.1:8765/settings",
+            }]).encode())
+        return Response()
+
+    monkeypatch.setattr(run.browser, "find_chromium", lambda: "chromium")
+    monkeypatch.setattr(run, "_browser_profile", lambda: profile)
+    monkeypatch.setattr(run.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(
+        run,
+        "_open_chromium",
+        lambda *_args: pytest.fail("an activated launcher must not open another window"),
+    )
+
+    run._open_existing_launcher("http://127.0.0.1:8765")
+
+    activation = requests[-1]
+    assert activation.full_url == "http://127.0.0.1:41234/json/activate/target%2Fid"
+    assert activation.method == "PUT"
 
 
 def test_cold_start_waits_up_to_thirty_seconds():
