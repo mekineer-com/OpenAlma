@@ -29,7 +29,8 @@ python3 -m venv .venv
 
 The launcher serves on `http://127.0.0.1:8765` and opens a chromeless window
 (Chrome / Edge / Brave / Chromium / Vivaldi). If no Chromium-family browser is
-installed, it falls back to opening the URL in your default browser.
+installed, it falls back to opening the URL in your default browser. Its dedicated
+Chromium profile persists browser preferences such as page zoom between launches.
 
 Flags:
 

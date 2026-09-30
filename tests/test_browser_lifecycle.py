@@ -11,12 +11,11 @@ import browser  # noqa: E402
 import run  # noqa: E402
 
 
-def test_chromium_profile_lives_until_browser_exit(tmp_path, monkeypatch):
+def test_chromium_profile_persists_after_browser_exit(tmp_path, monkeypatch):
     launched = {}
-    profile = SimpleNamespace(name=str(tmp_path / "profile"), cleaned=False)
-    profile.cleanup = lambda: setattr(profile, "cleaned", True)
     chrome = SimpleNamespace(wait=lambda: launched.setdefault("waited", True))
     server = SimpleNamespace(should_exit=False)
+    settings_path = tmp_path / "settings" / "paths.json"
 
     class FakeThread:
         def __init__(self, *, target, args, daemon):
@@ -31,19 +30,20 @@ def test_chromium_profile_lives_until_browser_exit(tmp_path, monkeypatch):
 
     monkeypatch.setattr(run, "_wait_for_port", lambda *_args: True)
     monkeypatch.setattr(run.browser, "find_chromium", lambda: "chromium")
-    monkeypatch.setattr(run.tempfile, "TemporaryDirectory", lambda **_kwargs: profile)
+    monkeypatch.setattr(run.settings, "SETTINGS_PATH", settings_path)
     monkeypatch.setattr(run.browser, "open_app", open_app)
     monkeypatch.setattr(run.threading, "Thread", FakeThread)
 
     run._open_browser_when_ready("127.0.0.1", 8765, "http://127.0.0.1:8765", server)
 
-    assert launched["args"] == ("http://127.0.0.1:8765", "chromium", profile.name)
-    assert profile.cleaned is False
+    profile = settings_path.parent / "chromium-profile"
+    assert launched["args"] == ("http://127.0.0.1:8765", "chromium", profile)
+    assert profile.is_dir()
     target, args, daemon = launched["thread"]
     assert daemon is True
     target(*args)
     assert launched["waited"] is True
-    assert profile.cleaned is True
+    assert profile.is_dir()
     assert server.should_exit is True
 
 
@@ -80,27 +80,22 @@ def test_default_browser_is_fallback_when_chromium_is_unavailable(monkeypatch):
     assert opened == ["http://127.0.0.1:8765"]
 
 
-def test_existing_launcher_still_uses_chromium_app_mode(tmp_path, monkeypatch):
+def test_existing_launcher_reuses_profile_without_stopping_server(tmp_path, monkeypatch):
     launched = {}
     chrome = SimpleNamespace(wait=lambda: launched.setdefault("waited", True))
-
-    class FakeTemporaryDirectory:
-        def __enter__(self):
-            return str(tmp_path / "profile")
-
-        def __exit__(self, *_args):
-            pass
+    settings_path = tmp_path / "settings" / "paths.json"
 
     monkeypatch.setattr(run.browser, "find_chromium", lambda: "chromium")
+    monkeypatch.setattr(run.settings, "SETTINGS_PATH", settings_path)
+    monkeypatch.setattr(
+        run,
+        "_watch_browser_and_stop",
+        lambda *_args: pytest.fail("repeated launch must not install a server shutdown watcher"),
+    )
     monkeypatch.setattr(
         run.browser,
         "open_app",
         lambda *args: launched.setdefault("args", args) and chrome,
-    )
-    monkeypatch.setattr(
-        run.tempfile,
-        "TemporaryDirectory",
-        lambda **_kwargs: FakeTemporaryDirectory(),
     )
 
     run._open_existing_launcher("http://127.0.0.1:8765")
@@ -108,7 +103,7 @@ def test_existing_launcher_still_uses_chromium_app_mode(tmp_path, monkeypatch):
     assert launched["args"] == (
         "http://127.0.0.1:8765",
         "chromium",
-        str(tmp_path / "profile"),
+        settings_path.parent / "chromium-profile",
     )
     assert launched["waited"] is True
 

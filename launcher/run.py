@@ -5,15 +5,16 @@ import argparse
 import json
 import socket
 import subprocess
-import tempfile
 import threading
 import time
 import urllib.request
+from pathlib import Path
 
 import uvicorn
 
 import app as launcher_app
 import browser
+import settings
 
 
 class ActiveServicesError(RuntimeError):
@@ -86,7 +87,6 @@ def _wait_for_port(host: str, port: int, timeout: float = 30.0) -> bool:
 def _watch_browser_and_stop(
     chrome: subprocess.Popen,
     server: uvicorn.Server,
-    profile: tempfile.TemporaryDirectory,
 ) -> None:
     """Quit the launcher when the chromium app window closes.
 
@@ -98,8 +98,13 @@ def _watch_browser_and_stop(
     try:
         chrome.wait()
     finally:
-        profile.cleanup()
         server.should_exit = True
+
+
+def _browser_profile() -> Path:
+    profile = settings.SETTINGS_PATH.parent / "chromium-profile"
+    profile.mkdir(parents=True, exist_ok=True)
+    return profile
 
 
 def _open_browser_when_ready(host: str, port: int, url: str, server: uvicorn.Server) -> None:
@@ -109,16 +114,11 @@ def _open_browser_when_ready(host: str, port: int, url: str, server: uvicorn.Ser
     if chromium is None:
         browser.open_app(url)
         return
-    profile = tempfile.TemporaryDirectory(prefix="openalma-browser-")
-    try:
-        chrome = browser.open_app(url, chromium, profile.name)
-    except Exception:
-        profile.cleanup()
-        raise
+    chrome = browser.open_app(url, chromium, _browser_profile())
     if chrome is not None:
         threading.Thread(
             target=_watch_browser_and_stop,
-            args=(chrome, server, profile),
+            args=(chrome, server),
             daemon=True,
         ).start()
 
@@ -128,10 +128,9 @@ def _open_existing_launcher(url: str) -> None:
     if chromium is None:
         browser.open_app(url)
         return
-    with tempfile.TemporaryDirectory(prefix="openalma-browser-") as profile:
-        chrome = browser.open_app(url, chromium, profile)
-        if chrome is not None:
-            chrome.wait()
+    chrome = browser.open_app(url, chromium, _browser_profile())
+    if chrome is not None:
+        chrome.wait()
 
 
 def main() -> None:
