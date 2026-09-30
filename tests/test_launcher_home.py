@@ -87,6 +87,21 @@ def test_launcher_identity_and_favicon_are_available():
     assert "<svg" in favicon.text
 
 
+def test_settings_shows_managed_embedding_model(tmp_path, monkeypatch):
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.settings, "setup_apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.settings, "read_paths", lambda: {})
+    monkeypatch.setattr(app.settings, "next_apps_root", lambda _raw: tmp_path)
+    monkeypatch.setattr(app.services, "all_services", lambda: [])
+    monkeypatch.setattr(app.services, "mentra_readiness", lambda _root: {"enabled": False})
+    monkeypatch.setattr(app.services, "host_prerequisites", lambda _root: {"rows": []})
+
+    html = TestClient(app.app).get("/settings").text
+
+    assert '<select id="embedding-model" disabled>' in html
+    assert '<option selected>gemini-embedding-2</option>' in html
+
+
 def test_launcher_saves_window_position(tmp_path, monkeypatch):
     monkeypatch.setattr(app.settings, "SETTINGS_PATH", tmp_path / "paths.json")
 

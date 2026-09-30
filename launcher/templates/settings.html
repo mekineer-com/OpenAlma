@@ -56,6 +56,13 @@
     {% endfor %}
   </ul>
 
+  <h2>Embedding model</h2>
+  <label for="embedding-model">Model:</label>
+  <select id="embedding-model" disabled>
+    <option selected>gemini-embedding-2</option>
+  </select>
+  <p class="hint">Changing models requires a managed rebuild of every Soul database. Additional models will appear here only when that workflow is supported.</p>
+
   <h2>Iris &amp; Phone Setup</h2>
   {% if not iris_setup.enabled %}
     <p class="muted">Disabled. Enable Mentra in <code>mcp-memu-server/config.json</code> to use Iris.</p>
