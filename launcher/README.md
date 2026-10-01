@@ -72,6 +72,8 @@ Windows support will ship as a thin per-user installer (Inno Setup, compiled by 
 - Hermes uses one Iris-style editable soul field with attached existing-soul suggestions and an explicit arrow action. First Iris install retains its editable field and existing-soul dropdown. Both use the local MCP `/souls` API with user context. Lookup failure displays unavailable and preserves the current Channels configuration. Install config/target validation precedes soul creation; later build failures can still leave the created soul available for retry.
 - Deploy the status endpoint, launcher, and Iris release wrapper together: status now requires the existing bearer. No phone bundle update is needed for this host-side change.
 - Stop remains graceful and unbounded. If mcp reports no completed work for 30 seconds, the launcher reveals the separately confirmed Force Stop recovery action but never triggers it automatically.
+- The Memory view reports consolidation health: running, waiting (continue a conversation to trigger the next attempt), or failed with the recorded error and a Retry button. Retry appears only in the failed state — failed consolidations never restart automatically.
+- Settings shows each soul's embedding model (read-only, currently `gemini-embedding-2`). Changing a soul's embeddings requires rebuilding their database; more models appear there when that workflow is supported.
 
 - The launcher tracks PIDs in `~/.cache/openalma-launcher/`. Stopping the
   launcher does not stop the services it started — they keep running.
