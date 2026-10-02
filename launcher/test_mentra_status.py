@@ -737,7 +737,7 @@ class MentraStatusTest(TestCase):
                 resolve_soul.assert_called_once_with("Codexia", False)
             with patch.object(services, "list_souls", return_value=["Codexia"]):
                 self.assertNotIn("Your identity is saved", client.get("/").text)
-            self.assertEqual(client.get("/memorize/status").json(), {})
+            self.assertEqual(client.get("/memorize/status").json(), {"souls": []})
             iris = services.ServiceSpec("iris-server", "Iris", [], Path(directory), Path("log"), Path("pid"))
             app.settings.apps_root.return_value = Path(directory)
             start_issue_patch = patch.object(app.setup_install, "start_issue", return_value="")
