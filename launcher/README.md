@@ -32,6 +32,8 @@ The launcher serves on `http://127.0.0.1:8765` and opens a chromeless window
 installed, it falls back to opening the URL in your default browser. Its dedicated
 Chromium profile persists page zoom and, where the window manager permits it,
 window bounds. Reopening the shortcut raises the existing Chromium app window.
+If the browser survived a previous launcher exit, startup reuses it and watches
+the actual profile-owning browser process, not Chromium's forwarding child.
 
 Flags:
 
@@ -50,7 +52,7 @@ update-desktop-database ~/.local/share/applications/ 2>/dev/null || true
 Windows support will ship as a thin per-user installer (Inno Setup, compiled by the Windows CI workflow at release tags). It is not published yet — it arrives with the next coordinated release. Platform behavior beyond the shared Notes below:
 
 - Terminal-free: launching never opens a console; no-console subprocess flags are shared with child services.
-- Exact single-instance server identity — a second launch opens another window onto the existing launcher rather than starting another server.
+- Exact single-instance server identity — a second launch raises the existing launcher window rather than starting another server.
 - Prefers a Chromium-family chromeless window and falls back to the default browser; an explicit Exit action; favicon/log access from the UI.
 - A shared `.openalma-root` marker lets a packaged installer adopt a launcher-managed manual Apps root without guessing ownership.
 - Coordinated updates: numeric launcher upgrades with exact-tag matching; readiness requires every OpenAlma service stopped; the core (memU + mcp-memu-server) updates first with optional clients separate; a WAL-safe Soul backup (space/retention policy) precedes migration; rollback is database-first, and one Recover action restores the recorded backup and previous core commits if rollback cannot finish.
@@ -73,7 +75,7 @@ Windows support will ship as a thin per-user installer (Inno Setup, compiled by 
 - Deploy the status endpoint, launcher, and Iris release wrapper together: status now requires the existing bearer. No phone bundle update is needed for this host-side change.
 - Stop remains graceful and unbounded. If mcp reports no completed work for 30 seconds, the launcher reveals the separately confirmed Force Stop recovery action but never triggers it automatically.
 - The Memory view reports consolidation health: running, waiting (continue a conversation to trigger the next attempt), or failed with the recorded error and a Retry button. Retry appears only in the failed state — failed consolidations never restart automatically.
-- Settings shows each soul's embedding model (read-only, currently `gemini-embedding-2`). Changing a soul's embeddings requires rebuilding their database; more models appear there when that workflow is supported.
+- Settings shows the server's embedding model for all Souls (read-only, currently `gemini-embedding-2`). Per-Soul model display and managed switching are planned, not implemented.
 
 - The launcher tracks PIDs in `~/.cache/openalma-launcher/`. Stopping the
   launcher does not stop the services it started — they keep running.

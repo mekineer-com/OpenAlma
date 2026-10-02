@@ -111,6 +111,16 @@ def test_launcher_saves_window_position(tmp_path, monkeypatch):
     assert app.settings.read_paths()["window_position"] == {"x": 321, "y": 123}
 
 
+@pytest.mark.parametrize("contents", ['{"apps_root":"/fictional/stack",}', '[]'])
+def test_position_save_does_not_overwrite_invalid_settings(tmp_path, monkeypatch, contents):
+    path = tmp_path / "paths.json"
+    path.write_text(contents, encoding="utf-8")
+    monkeypatch.setattr(app.settings, "SETTINGS_PATH", path)
+    with pytest.raises(ValueError):
+        TestClient(app.app).post("/launcher/window-position?x=321&y=123")
+    assert path.read_text(encoding="utf-8") == contents
+
+
 def test_update_readiness_names_active_services(tmp_path, monkeypatch):
     spec = services.ServiceSpec("atomic", "Atomic Mind Map", [], tmp_path, tmp_path / "log", tmp_path / "pid")
     monkeypatch.setattr(app.services, "all_services", lambda: [spec])

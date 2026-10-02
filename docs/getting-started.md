@@ -29,12 +29,15 @@ OpenAlma does not install system packages, alter your firewall, or create VPN se
 - Python 3.12
 - Node.js — for SillyTavern, WhatsApp, the Atomic build, and the Iris installer
 - An API key for an LLM provider — OpenAI, NanoGPT, or any compatible endpoint
+- A Gemini API key for embeddings, stored in `llm.embedding.api_key`
 
 **Working AI models.** Every turn asks the model for a complex, structured JSON response — her reply, working thoughts, and intentions in one contract. Models below a certain capability level fail the turn entirely. These are tested and working:
 
 claude-opus-4-6 thru claude-opus-5 · claude-sonnet-4-6 · glm-5.2 (+ `glm-5.2:thinking` for consolidation) · mistral-small-4-119b (+ thinking) · devstral-2-123b (+ thinking)
 
-Stay on the same embedding model — switching requires re-embedding everything.
+The server currently uses `gemini-embedding-2` for every Soul. Changing a Soul's
+embedding model requires rebuilding its database; model switching is not yet
+available in Settings.
 
 **Recommended layout**
 
@@ -52,13 +55,13 @@ The Stack launcher walks up from its own directory to find this layout automatic
 
 SillyTavern lives elsewhere (it's a full app, not a sibling). The plugin and extension get installed *inside* the SillyTavern tree.
 
-**Three things in `config.json` that must match your actual layout:**
+**Core settings in `config.json`:**
 
 | Setting | Points to |
 |---------|-----------|
 | `memu.path` | path to `memu/src` (the engine source, from step 2) |
 | `storage.metadata_store.dsn` | where the SQLite DB will live |
-| `llm.embed_model` | embedding model name — e.g. `text-embedding-3-large` (NanoGPT/OpenAI both support it) |
+| `llm.embedding.api_key` | Gemini API key for the server-owned embedding model |
 
 ## Core (required)
 

@@ -54,6 +54,49 @@ def test_chromium_profile_persists_after_browser_exit(tmp_path, monkeypatch):
     assert server.should_exit is True
 
 
+@pytest.mark.parametrize("activated", [True, False])
+def test_restarted_launcher_watches_existing_profile_owner(tmp_path, monkeypatch, activated):
+    events = []
+    server = SimpleNamespace(should_exit=False)
+    owner = SimpleNamespace(wait=lambda: events.append("owner exited"))
+    monkeypatch.setattr(run, "_browser_profile", lambda: tmp_path / "profile")
+    monkeypatch.setattr(run, "_wait_for_port", lambda *_args: True)
+    monkeypatch.setattr(run.browser, "find_chromium", lambda: "chromium")
+    monkeypatch.setattr(run.browser, "profile_process", lambda _profile: owner)
+    monkeypatch.setattr(run, "_activate_existing_browser", lambda _url: activated)
+    def open_chromium(*_args):
+        assert not activated
+        events.append("forwarded")
+        return SimpleNamespace(wait=lambda: pytest.fail("must not watch the forwarding child"))
+    monkeypatch.setattr(run, "_open_chromium", open_chromium)
+
+    class Thread:
+        def __init__(self, *, target, args, daemon):
+            self.target, self.args = target, args
+
+        def start(self):
+            assert not server.should_exit
+            self.target(*self.args)
+
+    monkeypatch.setattr(run.threading, "Thread", Thread)
+    run._open_browser_when_ready("127.0.0.1", 8765, "http://127.0.0.1:8765", server)
+    assert events == (["owner exited"] if activated else ["forwarded", "owner exited"])
+    assert server.should_exit
+
+
+def test_profile_lookup_excludes_other_profiles_and_renderer_processes(tmp_path, monkeypatch):
+    args = [f"--user-data-dir={tmp_path}"]
+    owner = SimpleNamespace(info={"cmdline": args})
+    processes = [
+        SimpleNamespace(info={"cmdline": None}),
+        SimpleNamespace(info={"cmdline": args + ["--type=renderer"]}),
+        SimpleNamespace(info={"cmdline": ["--user-data-dir=/another/profile"]}),
+        owner,
+    ]
+    monkeypatch.setattr(browser.psutil, "process_iter", lambda _attrs: processes)
+    assert browser.profile_process(tmp_path) is owner
+
+
 def test_browser_launch_includes_isolated_profile(tmp_path, monkeypatch):
     launched = {}
     monkeypatch.setattr(browser.subprocess, "Popen", lambda args, **kwargs: launched.update(args=args, kwargs=kwargs) or object())

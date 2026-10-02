@@ -35,9 +35,11 @@ _AUTODISCOVER_MARKER = "mcp-memu-server/run.py"
 def read_paths() -> dict:
     try:
         data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except FileNotFoundError:
         return {}
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected an object in {SETTINGS_PATH}")
+    return data
 
 
 def write_paths(paths: dict) -> None:

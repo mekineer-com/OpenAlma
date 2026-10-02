@@ -7,6 +7,8 @@ import shutil
 import subprocess
 import webbrowser
 
+import psutil
+
 # Priority order: Chromium-family browsers support `--app=URL` (chromeless window).
 # Firefox dropped SSB years ago and cannot deliver a solitary window.
 CHROMIUM_FAMILY = [
@@ -58,6 +60,15 @@ def _find_windows_chromium() -> str | None:
         candidate = Path(root, relative_path) if root else None
         if candidate is not None and candidate.is_file():
             return str(candidate)
+    return None
+
+
+def profile_process(user_data_dir: Path) -> psutil.Process | None:
+    profile_arg = f"--user-data-dir={user_data_dir}"
+    for process in psutil.process_iter(["cmdline"]):
+        args = process.info["cmdline"] or []
+        if profile_arg in args and not any(arg.startswith("--type=") for arg in args):
+            return process
     return None
 
 

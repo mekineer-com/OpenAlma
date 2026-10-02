@@ -12,6 +12,7 @@ import urllib.request
 from pathlib import Path
 
 import uvicorn
+import psutil
 
 import app as launcher_app
 import browser
@@ -86,7 +87,7 @@ def _wait_for_port(host: str, port: int, timeout: float = 30.0) -> bool:
 
 
 def _watch_browser_and_stop(
-    chrome: subprocess.Popen,
+    chrome: subprocess.Popen | psutil.Process,
     server: uvicorn.Server,
 ) -> None:
     try:
@@ -176,7 +177,9 @@ def _open_browser_when_ready(host: str, port: int, url: str, server: uvicorn.Ser
     if chromium is None:
         browser.open_app(url)
         return
-    chrome = _open_chromium(url, chromium)
+    owner = browser.profile_process(_browser_profile())
+    chrome = owner if owner is not None and _activate_existing_browser(url) else _open_chromium(url, chromium)
+    chrome = owner or chrome
     if chrome is not None:
         threading.Thread(
             target=_watch_browser_and_stop,
