@@ -595,6 +595,16 @@ def retry_consolidation(conversation_id: str, soul_id: str, user_id: str) -> dic
         raise RuntimeError("memU Server is unavailable") from exc
 
 
+def retry_memorize(soul_id: str, user_id: str) -> dict:
+    query = urllib.parse.urlencode({"soul_id": soul_id, "user_id": user_id})
+    try:
+        return _mcp_request(f"/memorize/retry?{query}", {})
+    except urllib.error.HTTPError as exc:
+        raise ValueError(str(_http_error_detail(exc))) from exc
+    except OSError as exc:
+        raise RuntimeError("memU Server is unavailable") from exc
+
+
 def _mcp_request(path: str, payload: dict | None = None) -> dict:
     request = urllib.request.Request(
         f"http://127.0.0.1:{MEMU_SERVER_PORT}{path}",

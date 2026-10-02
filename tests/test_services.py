@@ -223,7 +223,7 @@ def test_owner_request_uses_shared_mcp_transport(monkeypatch):
     }
 
 
-def test_memorize_status_uses_active_soul_and_shared_owner(tmp_path, monkeypatch):
+def test_memorize_status_lists_all_souls_without_hermes(tmp_path, monkeypatch):
     pytest.importorskip("fastapi")
     import app as launcher_app  # noqa: PLC0415
 
@@ -232,14 +232,19 @@ def test_memorize_status_uses_active_soul_and_shared_owner(tmp_path, monkeypatch
     config.write_text(json.dumps({"soul_id": "Fictional Soul", "user_id": "Wrong User"}))
     monkeypatch.setattr(launcher_app.soul, "CHANNELS_CONFIG_PATH", config)
     monkeypatch.setattr(launcher_app.services, "read_owner", lambda: "Fictional Owner")
+    monkeypatch.setattr(launcher_app.services, "list_souls", lambda: ["Fictional Soul", "Other Soul"])
     monkeypatch.setattr(
         launcher_app.services,
         "memorize_pending",
         lambda soul_id, user_id: seen.setdefault((soul_id, user_id), {"threshold": 6000}),
     )
 
-    assert launcher_app.memorize_status() == {"threshold": 6000}
+    assert launcher_app.memorize_status() == {"souls": [
+        {"threshold": 6000, "soul_id": "Fictional Soul"},
+        {"threshold": 6000, "soul_id": "Other Soul"},
+    ]}
     assert ("Fictional Soul", "Fictional Owner") in seen
+    assert ("Other Soul", "Fictional Owner") in seen
 
 
 def test_memorize_retry_uses_diagnostic_conversation(monkeypatch):
@@ -249,11 +254,13 @@ def test_memorize_retry_uses_diagnostic_conversation(monkeypatch):
     seen = {}
     monkeypatch.setattr(launcher_app.soul, "read_active_soul_id", lambda: "Fictional Soul")
     monkeypatch.setattr(launcher_app.services, "read_owner", lambda: "Fictional Owner")
+    monkeypatch.setattr(launcher_app.services, "list_souls", lambda: ["Fictional Soul"])
     monkeypatch.setattr(
         launcher_app.services,
         "memorize_pending",
         lambda *_args: {
             "consolidation_state": "error",
+            "retry_operation": "consolidation",
             "retry_conversation_id": "fictional:chat",
         },
     )
@@ -268,7 +275,7 @@ def test_memorize_retry_uses_diagnostic_conversation(monkeypatch):
         or {"status": "accepted"},
     )
 
-    assert launcher_app.memorize_retry() == {"status": "accepted"}
+    assert launcher_app.memorize_retry("Fictional Soul") == {"status": "accepted"}
     assert seen == {
         "conversation_id": "fictional:chat",
         "soul_id": "Fictional Soul",
@@ -282,6 +289,7 @@ def test_memorize_retry_rejects_non_error_state(monkeypatch):
 
     monkeypatch.setattr(launcher_app.soul, "read_active_soul_id", lambda: "Fictional Soul")
     monkeypatch.setattr(launcher_app.services, "read_owner", lambda: "Fictional Owner")
+    monkeypatch.setattr(launcher_app.services, "list_souls", lambda: ["Fictional Soul"])
     monkeypatch.setattr(
         launcher_app.services,
         "memorize_pending",
@@ -292,7 +300,19 @@ def test_memorize_retry_rejects_non_error_state(monkeypatch):
     )
 
     with pytest.raises(launcher_app.HTTPException, match="ready to retry"):
-        launcher_app.memorize_retry()
+        launcher_app.memorize_retry("Fictional Soul")
+
+
+def test_memorize_retry_targets_failed_row_not_hermes(monkeypatch):
+    import app as launcher_app
+    seen = []
+    monkeypatch.setattr(launcher_app.services, "read_owner", lambda: "Fictional Owner")
+    monkeypatch.setattr(launcher_app.services, "list_souls", lambda: ["Failed Soul", "Other Soul"])
+    monkeypatch.setattr(launcher_app.soul, "read_active_soul_id", lambda: pytest.fail("Retry must not use Hermes"))
+    monkeypatch.setattr(launcher_app.services, "memorize_pending", lambda *_args: {"retry_operation": "memorize"})
+    monkeypatch.setattr(launcher_app.services, "retry_memorize", lambda sid, uid: seen.append((sid, uid)) or {"ok": True})
+    assert launcher_app.memorize_retry("Failed Soul") == {"ok": True}
+    assert seen == [("Failed Soul", "Fictional Owner")]
 
 
 def test_service_action_spinner_confirmation_and_error_display():

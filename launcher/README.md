@@ -75,6 +75,7 @@ Windows support will ship as a thin per-user installer (Inno Setup, compiled by 
 - Deploy the status endpoint, launcher, and Iris release wrapper together: status now requires the existing bearer. No phone bundle update is needed for this host-side change.
 - Stop remains graceful and unbounded. If mcp reports no completed work for 30 seconds, the launcher reveals the separately confirmed Force Stop recovery action but never triggers it automatically.
 - The Memory view reports consolidation health: running, waiting (continue a conversation to trigger the next attempt), or failed with the recorded error and a Retry button. Retry appears only in the failed state — failed consolidations never restart automatically.
+- Memorize shows each existing Soul independently of Hermes, naming every meter when there is more than one. Paused rows retain the failure while Retry runs; Retry targets that row's failed operation. Other Souls remain independent.
 - Settings shows the server's embedding model for all Souls (read-only, currently `gemini-embedding-2`). Per-Soul model display and managed switching are planned, not implemented.
 
 - The launcher tracks PIDs in `~/.cache/openalma-launcher/`. Stopping the

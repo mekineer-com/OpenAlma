@@ -221,30 +221,38 @@
 
   <h2>Memorize</h2>
   <div id="memorize-meter">
-    {% if memorize and memorize.error %}
-      <p class="error" role="alert">{{ memorize.error }}</p>
-    {% elif memorize and memorize.threshold %}
+    {% for meter in memorize %}
+    <div data-soul="{{ meter.soul_id }}">
+    {% if memorize|length > 1 %}<h3>{{ meter.soul_id }}</h3>{% endif %}
+    {% if meter.error %}
+      <p class="error" role="alert">{{ meter.error }}</p>
+    {% elif meter.threshold %}
       <p>
-        Memorize: {{ "{:,}".format(memorize.summed_unmemorized_tokens) }} / {{ "{:,}".format(memorize.threshold) }} ({{ memorize.pct }}%)
-        {% if memorize.summed_unmemorized_tokens >= memorize.threshold %}
-          <span class="badge">{{ "sleep-gap detected" if memorize.sleep_gap_ready else "waiting for sleep-gap" }}</span>
+        Memorize: {{ "{:,}".format(meter.summed_unmemorized_tokens) }} / {{ "{:,}".format(meter.threshold) }} ({{ meter.pct }}%)
+        {% if meter.summed_unmemorized_tokens >= meter.threshold %}
+          <span class="badge">{{ "sleep-gap detected" if meter.sleep_gap_ready else "waiting for sleep-gap" }}</span>
         {% endif %}
       </p>
-      <div class="meter"><div class="meter-fill" style="width: {{ [memorize.pct, 100]|min }}%"></div></div>
-      {% if memorize.consolidation_state == "error" %}
+      <div class="meter"><div class="meter-fill" style="width: {{ [meter.pct, 100]|min }}%"></div></div>
+      {% if meter.paused %}
         <p class="consolidation-warning" role="alert">
-          Memory consolidation stopped; {{ memorize.pending_consolidation_segments }} memory {{ "batch is" if memorize.pending_consolidation_segments == 1 else "batches are" }} still waiting. Review the error below. Retry only after the issue has been fixed.{% if memorize.last_consolidation_error %}<br>Error: {{ memorize.last_consolidation_error }}{% endif %}
-          <button type="button" class="btn" onclick="retryConsolidation(this)">Retry</button>
+          Paused: {{ 'Memorize' if meter.retry_operation == 'memorize' else 'Consolidation' }} failed.
+          <span title="{{ meter.pause_reason }}">!</span>
+          <button type="button" class="btn" data-soul="{{ meter.soul_id }}" onclick="retryConsolidation(this)" {% if meter.memorize_running or meter.consolidation_running %}disabled{% endif %}>{{ 'Retrying...' if meter.memorize_running or meter.consolidation_running else 'Retry' }}</button>
         </p>
-      {% elif memorize.consolidation_state == "overdue" %}
-        <p class="consolidation-warning" role="status">Weekly reflection will occur after the coming Memorize. {{ memorize.pending_consolidation_segments }} memorized {{ "segment" if memorize.pending_consolidation_segments == 1 else "segments" }} already in queue.</p>
-      {% elif memorize.consolidation_state == "running" %}
+      {% elif meter.consolidation_state == "overdue" %}
+        <p class="consolidation-warning" role="status">Weekly reflection will occur after the coming Memorize. {{ meter.pending_consolidation_segments }} memorized {{ "segment" if meter.pending_consolidation_segments == 1 else "segments" }} already in queue.</p>
+      {% elif meter.consolidation_state == "running" %}
         <p class="muted" role="status">Memory consolidation is running.</p>
       {% endif %}
-      <p class="muted">Memorize-eligible at {{ "{:,}".format(memorize.threshold) }} tokens; a sleep-gap releases it. Snapshot <span class="snapshot-time" data-timestamp="{{ memorize.computed_at }}">{{ memorize.computed_at }}</span>.</p>
+      {% if meter.memorize_running %}<p class="muted" role="status">{{ meter.progress.phase }}{% if meter.progress.total %}: {{ meter.progress.current }} / {{ meter.progress.total }}{% endif %}</p>{% endif %}
+      <p class="muted">Memorize-eligible at {{ "{:,}".format(meter.threshold) }} tokens; a sleep-gap releases it. Snapshot <span class="snapshot-time" data-timestamp="{{ meter.computed_at }}">{{ meter.computed_at }}</span>.</p>
     {% else %}
       <p class="muted">No pending-memorize data — is mcp-memu-server running?</p>
     {% endif %}
+    </div>
+    {% else %}<p class="muted">No pending-memorize data - is mcp-memu-server running?</p>
+    {% endfor %}
   </div>
 
   {% if channels_configured %}
@@ -592,16 +600,12 @@ function fmtSnapshot(value) {
   return Number.isNaN(date.getTime()) ? String(value || '') : date.toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'});
 }
 
-function renderMemorize(data) {
-  var box = document.getElementById('memorize-meter');
-  if (!box) return;
+function memorizeHtml(data) {
   if (data && data.error) {
-    box.innerHTML = '<p class="error" role="alert">' + esc(data.error) + '</p>';
-    return;
+    return '<p class="error" role="alert">' + esc(data.error) + '</p>';
   }
   if (!data || !data.threshold) {
-    box.innerHTML = '<p class="muted">No pending-memorize data — is mcp-memu-server running?</p>';
-    return;
+    return '<p class="muted">Memory status unavailable</p>';
   }
   var tokens = Number(data.summed_unmemorized_tokens || 0);
   var threshold = Number(data.threshold || 0);
@@ -612,14 +616,10 @@ function renderMemorize(data) {
   }
   html += '</p>';
   html += '<div class="meter"><div class="meter-fill" style="width: ' + Math.min(pct, 100) + '%"></div></div>';
-  if (data.consolidation_state === 'error') {
-    var pendingSegments = Number(data.pending_consolidation_segments || 0);
-    html += '<p class="consolidation-warning" role="alert">Memory consolidation stopped; ' + fmt(pendingSegments) + ' memory ' + (pendingSegments === 1 ? 'batch is' : 'batches are') + ' still waiting. Review the error below. Retry only after the issue has been fixed.';
-    if (data.last_consolidation_error) {
-      html += '<br>Error: ' + esc(data.last_consolidation_error);
-    }
-    html += ' <button type="button" class="btn" onclick="retryConsolidation(this)">Retry</button>';
-    html += '</p>';
+  if (data.paused) {
+    var running = data.memorize_running || data.consolidation_running;
+    html += '<p class="consolidation-warning" role="alert">Paused: ' + (data.retry_operation === 'memorize' ? 'Memorize' : 'Consolidation') + ' failed. <span title="' + esc(data.pause_reason) + '">!</span> ';
+    html += '<button type="button" class="btn" data-soul="' + esc(data.soul_id) + '" onclick="retryConsolidation(this)"' + (running ? ' disabled' : '') + '>' + (running ? 'Retrying...' : 'Retry') + '</button></p>';
   } else if (data.consolidation_state === 'overdue') {
     var overdueSegments = Number(data.pending_consolidation_segments || 0);
     html += '<p class="consolidation-warning" role="status">Weekly reflection will occur after the coming Memorize. ' + fmt(overdueSegments) + ' memorized ' + (overdueSegments === 1 ? 'segment' : 'segments') + ' already in queue.</p>';
@@ -627,13 +627,26 @@ function renderMemorize(data) {
     html += '<p class="muted" role="status">Memory consolidation is running.</p>';
   }
   html += '<p class="muted">Memorize-eligible at ' + fmt(threshold) + ' tokens; a sleep-gap releases it. Snapshot ' + esc(fmtSnapshot(data.computed_at)) + '.</p>';
-  box.innerHTML = html;
+  if (data.memorize_running && data.progress) {
+    html += '<p class="muted" role="status">' + esc(data.progress.phase || 'Running') + (data.progress.total ? ': ' + fmt(data.progress.current) + ' / ' + fmt(data.progress.total) : '') + '</p>';
+  }
+  return html;
+}
+
+function renderMemorize(data) {
+  var box = document.getElementById('memorize-meter');
+  if (!box) return;
+  if (data.error) { box.innerHTML = '<p class="error" role="alert">' + esc(data.error) + '</p>'; return; }
+  var rows = data.souls || [];
+  box.innerHTML = rows.map(function(row) {
+    return (rows.length > 1 ? '<h3>' + esc(row.soul_id) + '</h3>' : '') + memorizeHtml(row);
+  }).join('') || '<p class="muted">No Souls available</p>';
 }
 
 function retryConsolidation(button) {
   button.disabled = true;
   button.textContent = 'Retrying...';
-  fetch('/memorize/retry', { method: 'POST' })
+  fetch('/memorize/retry?soul_id=' + encodeURIComponent(button.dataset.soul), { method: 'POST' })
     .then(function(response) {
       if (response.ok) return response.json();
       return response.json().then(function(data) {

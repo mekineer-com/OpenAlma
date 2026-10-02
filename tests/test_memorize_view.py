@@ -8,7 +8,7 @@ jinja2 = pytest.importorskip("jinja2")
 
 
 def _render(
-    memorize: dict,
+    memorize: dict | list,
     not_installed_services: list[dict] | None = None,
     services: list[dict] | None = None,
 ) -> str:
@@ -29,7 +29,7 @@ def _render(
         editable_configs=[],
         apps_root="",
         needs_setup=False,
-        memorize=memorize,
+        memorize=memorize if isinstance(memorize, list) else ([{"soul_id": "Fictional Soul", **memorize}] if memorize else []),
         owner_id="Fictional User",
         owner_error="",
         channels_configured=True,
@@ -92,13 +92,14 @@ def test_memorize_gauge_shows_failed_consolidation_retry():
         "sleep_gap_ready": False,
         "pending_consolidation_segments": 2,
         "consolidation_state": "error",
+        "paused": True, "retry_operation": "consolidation",
+        "pause_reason": "RuntimeError: reflection failed",
         "consolidation_age_days": 103.5,
         "last_consolidation_error": "RuntimeError: reflection failed",
         "computed_at": "2026-09-26T10:00:00+00:00",
     })
 
-    assert "Memory consolidation stopped; 2 memory batches are still waiting" in html
-    assert "Retry only after the issue has been fixed" in html
+    assert "Paused: Consolidation failed" in html
     assert "RuntimeError: reflection failed" in html
     assert ">Retry</button>" in html
 
@@ -126,12 +127,12 @@ def test_memorize_poll_renderer_supports_consolidation_states_and_retry():
         Path(__file__).resolve().parents[1] / "launcher" / "templates" / "index.html"
     ).read_text(encoding="utf-8")
 
-    assert "if (data.consolidation_state === 'error')" in template
+    assert "if (data.paused)" in template
     assert "data.consolidation_state === 'overdue'" in template
     assert "data.consolidation_state === 'running'" in template
     assert "data.pending_consolidation_segments" in template
-    assert "data.last_consolidation_error" in template
-    assert "fetch('/memorize/retry', { method: 'POST' })" in template
+    assert "data.pause_reason" in template
+    assert "encodeURIComponent(button.dataset.soul)" in template
 
 
 def test_memorize_poll_renderer_executes_all_consolidation_states():
@@ -158,22 +159,22 @@ vm.createContext(context);
 vm.runInContext(script, context);
 (async () => {
 const base = {threshold: 8000, pending_consolidation_segments: 2, computed_at: '2026-09-26T10:00:00Z'};
-context.renderMemorize({...base, consolidation_state: 'error', last_consolidation_error: '<bad>'});
+context.renderMemorize({souls: [{...base, paused: true, retry_operation: 'consolidation', pause_reason: '<bad>', soul_id: 'First Soul'}]});
 assert.match(box.innerHTML, /Retry<\/button>/);
 assert.match(box.innerHTML, /&lt;bad&gt;/);
 assert.doesNotMatch(box.innerHTML, /<bad>/);
-context.renderMemorize({...base, consolidation_state: 'overdue'});
+context.renderMemorize({souls: [{...base, consolidation_state: 'overdue'}]});
 assert.match(box.innerHTML, /Weekly reflection will occur after the coming Memorize/);
 assert.doesNotMatch(box.innerHTML, /Retry<\/button>/);
-context.renderMemorize({...base, consolidation_state: 'running'});
+context.renderMemorize({souls: [{...base, consolidation_state: 'running'}]});
 assert.match(box.innerHTML, /is running/);
 assert.doesNotMatch(box.innerHTML, /Retry<\/button>/);
-const button = {disabled: false, textContent: 'Retry'};
+const button = {disabled: false, textContent: 'Retry', dataset: {soul: 'First Soul'}};
 context.retryConsolidation(button);
 await new Promise(resolve => setImmediate(resolve));
 assert.equal(button.disabled, true);
 assert.equal(button.textContent, 'Retrying...');
-assert.deepEqual(fetches, [{url: '/memorize/retry', options: {method: 'POST'}}]);
+assert.deepEqual(fetches, [{url: '/memorize/retry?soul_id=First%20Soul', options: {method: 'POST'}}]);
 assert.equal(polls, 1);
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """,
@@ -187,6 +188,19 @@ def test_memorize_gauge_empty_state():
     html = _render({})
     assert "No pending-memorize data" in html
     assert '<div class="meter">' not in html
+
+
+def test_multi_soul_meters_are_named_and_retry_stays_paused():
+    base = {"summed_unmemorized_tokens": 10, "threshold": 6000, "pct": 0, "computed_at": "2026-10-02T00:00:00Z"}
+    html = _render([
+        {**base, "soul_id": "First Soul", "paused": True, "retry_operation": "memorize", "pause_reason": "Failed", "memorize_running": True, "progress": {"phase": "extracting", "current": 1, "total": 2}},
+        {**base, "soul_id": "Other Soul"},
+    ])
+    assert "<h3>First Soul</h3>" in html and "<h3>Other Soul</h3>" in html
+    assert "Paused: Memorize failed" in html
+    assert "disabled>Retrying..." in html
+    assert html.count('class="meter"') == 2
+    assert "<h3>" not in _render(base)
 
 
 def test_memorize_owner_error_is_visible():

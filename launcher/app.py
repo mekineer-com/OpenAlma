@@ -218,7 +218,10 @@ def index(request: Request) -> HTMLResponse:
         soul_ids = services.list_souls()
     except (services.SoulServiceUnavailable, ValueError) as exc:
         soul_error = str(exc)
-    memorize = services.memorize_pending(active_soul, owner_id) if active_soul and owner_id else {}
+    memorize = [
+        {**(services.memorize_pending(sid, owner_id) or {"error": "Memory status unavailable"}), "soul_id": sid}
+        for sid in soul_ids
+    ] if owner_id else []
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -254,27 +257,31 @@ def index(request: Request) -> HTMLResponse:
 
 @app.get("/memorize/status")
 def memorize_status() -> dict:
-    if not soul.CHANNELS_CONFIG_PATH.exists():
-        return {}
-    active_soul = soul.read_active_soul_id()
-    if not active_soul:
-        return {}
-    owner_id = services.read_owner()
-    return services.memorize_pending(active_soul, owner_id) if owner_id else {}
+    try:
+        owner_id = services.read_owner()
+        return {"souls": [
+            {**(services.memorize_pending(sid, owner_id) or {"error": "Memory status unavailable"}), "soul_id": sid}
+            for sid in services.list_souls()
+        ] if owner_id else []}
+    except (services.SoulServiceUnavailable, ValueError) as exc:
+        return {"souls": [], "error": str(exc)}
 
 
 @app.post("/memorize/retry")
-def memorize_retry() -> dict:
-    active_soul = soul.read_active_soul_id()
+def memorize_retry(soul_id: str) -> dict:
     owner_id = services.read_owner()
-    if not active_soul or not owner_id:
-        raise HTTPException(status_code=409, detail="No failed consolidation is ready to retry")
-    status = services.memorize_pending(active_soul, owner_id)
+    if soul_id not in services.list_souls() or not owner_id:
+        raise HTTPException(status_code=404, detail="Soul not found")
+    status = services.memorize_pending(soul_id, owner_id)
+    if status.get("memorize_running") or status.get("consolidation_running"):
+        raise HTTPException(status_code=409, detail="Memory work is still running")
     conversation_id = str(status.get("retry_conversation_id") or "").strip()
-    if status.get("consolidation_state") != "error" or not conversation_id:
-        raise HTTPException(status_code=409, detail="No failed consolidation is ready to retry")
     try:
-        return services.retry_consolidation(conversation_id, active_soul, owner_id)
+        if status.get("retry_operation") == "memorize":
+            return services.retry_memorize(soul_id, owner_id)
+        if status.get("retry_operation") == "consolidation" and conversation_id:
+            return services.retry_consolidation(conversation_id, soul_id, owner_id)
+        raise HTTPException(status_code=409, detail="No failed memory work is ready to retry")
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except RuntimeError as exc:
