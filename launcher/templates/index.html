@@ -226,7 +226,7 @@
     {% if memorize|length > 1 %}<h3>{{ meter.soul_id }}</h3>{% endif %}
     {% if meter.error %}
       <p class="error" role="alert">{{ meter.error }}</p>
-    {% elif meter.threshold %}
+    {% elif meter.threshold is defined and meter.threshold is not none %}
       <p>
         Memorize: {{ "{:,}".format(meter.summed_unmemorized_tokens) }} / {{ "{:,}".format(meter.threshold) }} ({{ meter.pct }}%)
         {% if meter.summed_unmemorized_tokens >= meter.threshold %}
@@ -604,7 +604,7 @@ function memorizeHtml(data) {
   if (data && data.error) {
     return '<p class="error" role="alert">' + esc(data.error) + '</p>';
   }
-  if (!data || !data.threshold) {
+  if (!data || data.threshold == null) {
     return '<p class="muted">Memory status unavailable</p>';
   }
   var tokens = Number(data.summed_unmemorized_tokens || 0);
@@ -667,9 +667,9 @@ document.querySelectorAll('.snapshot-time').forEach(function(element) {
 
 function pollMemorize() {
   fetch('/memorize/status', { cache: 'no-store' })
-    .then(function(r) { return r.json(); })
+    .then(function(r) { if (!r.ok) throw new Error('Memory status unavailable'); return r.json(); })
     .then(renderMemorize)
-    .catch(function() {});
+    .catch(function() { renderMemorize({souls: [], error: 'Memory status unavailable'}); });
 }
 
 setInterval(function() {

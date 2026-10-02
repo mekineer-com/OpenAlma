@@ -163,6 +163,9 @@ context.renderMemorize({souls: [{...base, paused: true, retry_operation: 'consol
 assert.match(box.innerHTML, /Retry<\/button>/);
 assert.match(box.innerHTML, /&lt;bad&gt;/);
 assert.doesNotMatch(box.innerHTML, /<bad>/);
+context.renderMemorize({souls: [{...base, threshold: 0, paused: true, retry_operation: 'memorize', soul_id: 'First Soul'}]});
+assert.match(box.innerHTML, /Paused: Memorize failed/);
+assert.match(box.innerHTML, /Retry<\/button>/);
 context.renderMemorize({souls: [{...base, consolidation_state: 'overdue'}]});
 assert.match(box.innerHTML, /Weekly reflection will occur after the coming Memorize/);
 assert.doesNotMatch(box.innerHTML, /Retry<\/button>/);
@@ -201,6 +204,8 @@ def test_multi_soul_meters_are_named_and_retry_stays_paused():
     assert "disabled>Retrying..." in html
     assert html.count('class="meter"') == 2
     assert "<h3>" not in _render(base)
+    zero = _render({**base, "threshold": 0, "paused": True, "retry_operation": "memorize"})
+    assert "Paused: Memorize failed" in zero and ">Retry</button>" in zero
 
 
 def test_memorize_owner_error_is_visible():

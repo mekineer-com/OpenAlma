@@ -263,7 +263,7 @@ def memorize_status() -> dict:
             {**(services.memorize_pending(sid, owner_id) or {"error": "Memory status unavailable"}), "soul_id": sid}
             for sid in services.list_souls()
         ] if owner_id else []}
-    except (services.SoulServiceUnavailable, ValueError) as exc:
+    except (services.SoulServiceUnavailable, services.OwnerServiceUnavailable, ValueError) as exc:
         return {"souls": [], "error": str(exc)}
 
 

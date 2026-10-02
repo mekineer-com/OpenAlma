@@ -315,6 +315,14 @@ def test_memorize_retry_targets_failed_row_not_hermes(monkeypatch):
     assert seen == [("Failed Soul", "Fictional Owner")]
 
 
+def test_memorize_status_reports_owner_transport_failure(monkeypatch):
+    import app as launcher_app
+    def unavailable():
+        raise services.OwnerServiceUnavailable("Owner service unavailable")
+    monkeypatch.setattr(services, "read_owner", unavailable)
+    assert launcher_app.memorize_status() == {"souls": [], "error": "Owner service unavailable"}
+
+
 def test_service_action_spinner_confirmation_and_error_display():
     template = Path(__file__).resolve().parents[1] / "launcher/templates/index.html"
     subprocess.run(["node", "-e", r'''
