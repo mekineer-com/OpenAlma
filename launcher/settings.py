@@ -86,12 +86,19 @@ def setup_apps_root() -> Path | None:
         return None
 
 
-_ACTIVE_APPS_ROOT = resolve_apps_root(read_paths().get("apps_root")) or _autodiscover_apps_root()
-if _ACTIVE_APPS_ROOT is not None:
-    _ACTIVE_APPS_ROOT = _ACTIVE_APPS_ROOT.resolve()
+_ACTIVE_APPS_ROOT: Path | None = None
+_ACTIVE_CHANNELS_HOME: Path | None = None
+
+
+def _initialize_paths() -> None:
+    global _ACTIVE_APPS_ROOT, _ACTIVE_CHANNELS_HOME
+    if _ACTIVE_CHANNELS_HOME is None:
+        _ACTIVE_APPS_ROOT = resolve_apps_root(read_paths().get("apps_root")) or _autodiscover_apps_root()
+        _ACTIVE_CHANNELS_HOME = _active_channels_home()
 
 
 def apps_root() -> Path | None:
+    _initialize_paths()
     return _ACTIVE_APPS_ROOT
 
 
@@ -99,16 +106,15 @@ def _active_channels_home() -> Path:
     raw = os.environ.get("CHANNELS_HOME")
     if raw and raw.strip():
         return Path(raw.strip()).expanduser().resolve()
-    root = apps_root()
+    root = _ACTIVE_APPS_ROOT
     if root is not None:
         return root / "hermes-channels" / "data"
     return (LAUNCHER_DIR.parents[1] / "hermes-channels" / "data").resolve()
 
 
-_ACTIVE_CHANNELS_HOME = _active_channels_home()
-
-
 def channels_home() -> Path:
+    _initialize_paths()
+    assert _ACTIVE_CHANNELS_HOME is not None
     return _ACTIVE_CHANNELS_HOME
 
 

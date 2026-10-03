@@ -34,6 +34,8 @@ Chromium profile persists page zoom and, where the window manager permits it,
 window bounds. Reopening the shortcut raises the existing Chromium app window.
 If the browser survived a previous launcher exit, startup reuses it and watches
 the actual profile-owning browser process, not Chromium's forwarding child.
+Malformed or unreadable path settings stay untouched: Windows uses its startup
+error dialog; Linux opens an error page in the default browser.
 
 Flags:
 

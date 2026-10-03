@@ -14,9 +14,20 @@ from pathlib import Path
 import uvicorn
 import psutil
 
-import app as launcher_app
 import browser
 import settings
+
+try:
+    import app as launcher_app
+except (OSError, ValueError) as exc:
+    if settings.os.name != "nt":
+        import html
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(mode="w", prefix="openalma-startup-", suffix=".html", encoding="utf-8", delete=False) as page:
+            page.write(f"<!doctype html><title>OpenAlma</title><h1>OpenAlma could not start</h1><pre>{html.escape(str(exc))}</pre>")
+        browser.open_app(Path(page.name).as_uri())
+    raise
 
 
 class ActiveServicesError(RuntimeError):
@@ -179,7 +190,7 @@ def _open_browser_when_ready(host: str, port: int, url: str, server: uvicorn.Ser
         return
     owner = browser.profile_process(_browser_profile())
     chrome = owner if owner is not None and _activate_existing_browser(url) else _open_chromium(url, chromium)
-    chrome = owner or chrome
+    chrome = owner if owner is not None and owner.is_running() else chrome
     if chrome is not None:
         threading.Thread(
             target=_watch_browser_and_stop,

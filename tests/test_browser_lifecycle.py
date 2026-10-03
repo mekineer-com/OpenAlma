@@ -54,11 +54,11 @@ def test_chromium_profile_persists_after_browser_exit(tmp_path, monkeypatch):
     assert server.should_exit is True
 
 
-@pytest.mark.parametrize("activated", [True, False])
-def test_restarted_launcher_watches_existing_profile_owner(tmp_path, monkeypatch, activated):
+@pytest.mark.parametrize("activated, alive", [(True, True), (False, True), (False, False)])
+def test_restarted_launcher_watches_existing_profile_owner(tmp_path, monkeypatch, activated, alive):
     events = []
     server = SimpleNamespace(should_exit=False)
-    owner = SimpleNamespace(wait=lambda: events.append("owner exited"))
+    owner = SimpleNamespace(wait=lambda: events.append("owner exited"), is_running=lambda: alive)
     monkeypatch.setattr(run, "_browser_profile", lambda: tmp_path / "profile")
     monkeypatch.setattr(run, "_wait_for_port", lambda *_args: True)
     monkeypatch.setattr(run.browser, "find_chromium", lambda: "chromium")
@@ -67,7 +67,7 @@ def test_restarted_launcher_watches_existing_profile_owner(tmp_path, monkeypatch
     def open_chromium(*_args):
         assert not activated
         events.append("forwarded")
-        return SimpleNamespace(wait=lambda: pytest.fail("must not watch the forwarding child"))
+        return SimpleNamespace(wait=lambda: pytest.fail("must not watch the forwarding child") if alive else events.append("new browser exited"))
     monkeypatch.setattr(run, "_open_chromium", open_chromium)
 
     class Thread:
@@ -80,7 +80,7 @@ def test_restarted_launcher_watches_existing_profile_owner(tmp_path, monkeypatch
 
     monkeypatch.setattr(run.threading, "Thread", Thread)
     run._open_browser_when_ready("127.0.0.1", 8765, "http://127.0.0.1:8765", server)
-    assert events == (["owner exited"] if activated else ["forwarded", "owner exited"])
+    assert events == (["owner exited"] if activated else ["forwarded", "owner exited" if alive else "new browser exited"])
     assert server.should_exit
 
 

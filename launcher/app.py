@@ -269,14 +269,14 @@ def memorize_status() -> dict:
 
 @app.post("/memorize/retry")
 def memorize_retry(soul_id: str) -> dict:
-    owner_id = services.read_owner()
-    if soul_id not in services.list_souls() or not owner_id:
-        raise HTTPException(status_code=404, detail="Soul not found")
-    status = services.memorize_pending(soul_id, owner_id)
-    if status.get("memorize_running") or status.get("consolidation_running"):
-        raise HTTPException(status_code=409, detail="Memory work is still running")
-    conversation_id = str(status.get("retry_conversation_id") or "").strip()
     try:
+        owner_id = services.read_owner()
+        if soul_id not in services.list_souls() or not owner_id:
+            raise HTTPException(status_code=404, detail="Soul not found")
+        status = services.memorize_pending(soul_id, owner_id)
+        if status.get("memorize_running") or status.get("consolidation_running"):
+            raise HTTPException(status_code=409, detail="Memory work is still running")
+        conversation_id = str(status.get("retry_conversation_id") or "").strip()
         if status.get("retry_operation") == "memorize":
             return services.retry_memorize(soul_id, owner_id)
         if status.get("retry_operation") == "consolidation" and conversation_id:
@@ -284,7 +284,7 @@ def memorize_retry(soul_id: str) -> dict:
         raise HTTPException(status_code=409, detail="No failed memory work is ready to retry")
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except RuntimeError as exc:
+    except (services.OwnerServiceUnavailable, services.SoulServiceUnavailable, RuntimeError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 

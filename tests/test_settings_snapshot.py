@@ -61,3 +61,50 @@ def test_atomic_binary_prefers_production_then_debug(tmp_path):
     production.parent.mkdir(parents=True)
     production.touch()
     assert settings.atomic_server_binary(tmp_path) == production
+
+
+def test_bad_settings_import_is_safe_but_first_path_read_refuses(tmp_path):
+    import subprocess
+    config = tmp_path / ".config/openalma-launcher/paths.json"
+    config.parent.mkdir(parents=True)
+    config.write_text('{broken')
+    script = '''
+import sys
+from pathlib import Path
+Path.home = classmethod(lambda cls: Path(sys.argv[1]))
+import settings
+try:
+    settings.apps_root()
+except ValueError:
+    pass
+else:
+    raise AssertionError("bad settings accepted")
+assert settings.SETTINGS_PATH.read_text() == "{broken"
+'''
+    subprocess.run([sys.executable, "-c", script, str(tmp_path)], cwd=Path(settings.__file__).parent, check=True)
+
+
+def test_linux_startup_opens_error_page_without_replacing_bad_settings(tmp_path):
+    import subprocess
+    config = tmp_path / ".config/openalma-launcher/paths.json"
+    config.parent.mkdir(parents=True)
+    config.write_text('{broken')
+    script = '''
+import sys, tempfile, types
+from pathlib import Path
+Path.home = classmethod(lambda cls: Path(sys.argv[1]))
+tempfile.gettempdir = lambda: sys.argv[1]
+opened = []
+sys.modules["browser"] = types.SimpleNamespace(open_app=lambda url: opened.append(url))
+try:
+    import run
+except ValueError:
+    pass
+else:
+    raise AssertionError("bad settings accepted")
+page, = Path(sys.argv[1]).glob("openalma-startup-*.html")
+assert opened == [page.as_uri()]
+assert "OpenAlma could not start" in page.read_text()
+assert (Path(sys.argv[1]) / ".config/openalma-launcher/paths.json").read_text() == "{broken"
+'''
+    subprocess.run([sys.executable, "-c", script, str(tmp_path)], cwd=Path(settings.__file__).parent, check=True)

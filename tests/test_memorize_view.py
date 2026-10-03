@@ -243,3 +243,19 @@ def test_force_stop_only_renders_with_failure_evidence():
     ).read_text(encoding="utf-8")
     action_html = template.split("function actionHtml", 1)[1]
     assert action_html.index("if (data.force_stoppable)") < action_html.index("if (data.action_kind")
+
+
+def test_retry_reports_unavailable_server_at_each_read(monkeypatch):
+    from fastapi.testclient import TestClient
+    import app
+    for method in ("read_owner", "list_souls", "memorize_pending"):
+        with monkeypatch.context() as patch:
+            patch.setattr(app.services, "read_owner", lambda: "TestOwner")
+            patch.setattr(app.services, "list_souls", lambda: ["TestSoul"])
+            patch.setattr(app.services, "memorize_pending", lambda *_args: {})
+            def unavailable(*_args):
+                raise app.services.OwnerServiceUnavailable("Owner service unavailable")
+            patch.setattr(app.services, method, unavailable)
+            response = TestClient(app.app).post("/memorize/retry?soul_id=TestSoul")
+            assert response.status_code == 503
+            assert response.json()["detail"] == "Owner service unavailable"
