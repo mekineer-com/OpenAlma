@@ -31,7 +31,10 @@ Memories can also be viewed as a graph rather than a list. Related ones sit near
 
 A separate panel lists everyone and everything she's recognized by name. You can correct a name, merge two entries that turn out to be the same person, or hide one you'd rather she stopped tracking.
 
-Hiding destroys nothing — the history stays, she just stops noticing that name going forward. Deleting is only offered when nothing references the entry at all; if memories still point at it, the app refuses.
+Hiding destroys nothing - the history stays, she just stops noticing that name
+going forward. Delete still refuses current mentions from active memories or
+protected identity, relationship, dossier, or speaker uses. Otherwise it removes
+the entity and its hidden links together; that history is permanently erased.
 
 Merging shows you exactly what will move over before you confirm.
 
@@ -41,8 +44,17 @@ Open one of her dossiers and you'll see the memories behind the summary — the 
 
 ## Her own workspace
 
-Atomic isn't only a window onto her memory — each soul gets a workspace of her own in it. Her own notes, and real conversations with you, kept separate per soul: switch souls and you switch workspaces. The memory tools stay open in tabs while you work, instead of closing after every look. (The workspace is newer than the latest release tag — it's on `main` for now, which the README recommends anyway.)
+Atomic isn't only a window onto her memory - each soul gets a workspace of her
+own in it. Her own notes, and real conversations with you, kept separate per
+soul: switch souls and you switch workspaces. The memory tools stay open in
+tabs while you work, instead of closing after every look. The workspace is
+newer than the latest release tag and lives on Atomic's `buildfix` branch.
 
 ## When you close it
 
-Talking to her inside Atomic is a real conversation, so ending the session sends it to be memorized like any other.
+Ending a session saves the conversation and an activity recap. The transcript
+joins ordinary memory processing; closing a session does not itself start a
+paid extraction.
+
+If failed memory work has paused her, a refused send restores your unsent draft
+instead of making up an error reply from her. Recover in the launcher.

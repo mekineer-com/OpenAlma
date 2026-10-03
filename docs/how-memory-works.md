@@ -58,3 +58,8 @@ Exact repeats can be reinforced rather than duplicated. Near-duplicate merging u
 ## Honest limitations
 
 It's not perfect. Extraction misses things, occasionally misreads emphasis, and sometimes surfaces connections that aren't quite right. Think of it as a thoughtful approximation, not a transcript. It gets better as the relationship deepens and the categories fill out.
+
+If extraction or ordinary consolidation fails, new activity pauses for that
+soul. The launcher keeps the failure visible and offers manual Retry; it does
+not quietly pay for another attempt. Other souls continue, and input stays
+with the client rather than becoming an invented reply from her.
