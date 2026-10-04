@@ -87,3 +87,19 @@ Windows support will ship as a thin per-user installer (Inno Setup, compiled by 
   `reply_prefix_template`). The retired hermes-agent had its own "SOUL.md"
   persona file — unrelated to the memU soul concept; they shared a name only
   by accident.
+
+## Chat Import Foundation
+
+`chat_import.py` converts generic JSON (`messages` plus optional `title`, or a
+message array) and native Replika JSON into the client-owned
+`openalma/imports/chats.db`. Messages require dates and `user`/`assistant` roles;
+ISO datetimes require a timezone. Source names, IDs, calendar days and metadata
+are retained. Same owner/Soul/app label reuses the chat; replay keeps stored rows
+and their history/current choice. ID-less date/speaker/role conflicts refuse the
+whole upload. MCP owns processing checkpoints, not this source database.
+
+Preview uses `prepare_upload`; confirmation revalidates new current rows through
+MCP `/imports/validate` before `store_upload`, then `/imports/register` publishes
+the stored historical bound. Neither MCP endpoint runs a model. The Imports
+page and historical batch controls are still pending; these helpers do not
+start processing by themselves.
