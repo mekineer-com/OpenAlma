@@ -9,4 +9,3 @@ async function quitLauncher(button) {
     alert(error.message);
   }
 }
-
