@@ -47,6 +47,10 @@ def test_conversion_date_identity_and_metadata(tmp_path):
     assert messages[0]["timestamp"] == "2024-12-31T22:30:00+00:00"
     assert messages[0]["source_day"] == "2025-01-01"
     assert messages[0]["metadata"] == raw[0] and messages[1]["name"] == ""
+    native_preview = chat_import.prepare_upload(tmp_path / "native.db", user_id="TestOwner", soul_id="TestSoul",
+                                               label="Replika", messages=messages, history_count=0)
+    assert native_preview["messages"][0]["name"] == "TestOwner"
+    assert native_preview["messages"][0]["metadata"] == raw[0]
     scope = {"user_id": "TestOwner", "soul_id": "TestSoul", "label": "Nomi"}
     db = tmp_path / "chats.db"
     no_ids, _, _ = chat_import.normalize_messages([{"role": "user", "content": "hi", "timestamp": "2025-01-01T01:00:00+01:00"}])

@@ -136,6 +136,11 @@ def _prepare(con: sqlite3.Connection | None, user_id: str, soul_id: str, label: 
         raise ValueError("Owner, Soul and a one-word chat-app label are required")
     if type(history_count) is not int or not 0 <= history_count <= len(messages):
         raise ValueError("The history split must be within the imported messages")
+    messages = [
+        {**m, "name": user_id}
+        if "role" not in m["metadata"] and (m["metadata"].get("meta") or {}).get("nature") == "Customer"
+        else m for m in messages
+    ]
     chat = con.execute(
         "SELECT * FROM imported_chats WHERE user_id = ? AND soul_id = ? AND label = ?",
         (user_id, soul_id, label),
