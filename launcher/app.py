@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 import json
+import urllib.error
+import urllib.parse
 import webbrowser
 from pathlib import Path
 
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import policy
+import chat_import
 import services
 import setup_install
 import settings
@@ -248,6 +251,134 @@ def memorize_retry(soul_id: str) -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (services.OwnerServiceUnavailable, services.SoulServiceUnavailable, RuntimeError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _echo_scope(soul_id: str, label: str = "") -> tuple[Path, dict]:
+    root = settings.apps_root()
+    if root is None:
+        raise HTTPException(status_code=409, detail="Configure the Apps root first")
+    try:
+        owner_id = services.read_owner()
+        if not owner_id:
+            raise HTTPException(status_code=409, detail="Establish your OpenAlma identity first")
+        if soul_id not in services.list_souls():
+            raise HTTPException(status_code=404, detail="Select an existing Soul")
+    except (services.OwnerServiceUnavailable, services.SoulServiceUnavailable) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return chat_import.source_path(root), {"user_id": owner_id, "soul_id": soul_id, "label": label.strip()}
+
+
+def _echo_request(path: str, payload: dict | None = None, *, timeout: float = 2) -> dict:
+    try:
+        return services._mcp_request(path, payload, timeout=timeout)
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(status_code=exc.code, detail=services._http_error_detail(exc)) from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="memU Server is unavailable; check status before retrying") from exc
+
+
+@app.get("/echo", response_class=HTMLResponse)
+def echo_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request, "echo.html", {
+        "page_title": "Echo - OpenAlma", "setup_title": "Echo: Chat Importer",
+        "setup_logo": "/static/echo-logo.svg",
+    })
+
+
+@app.get("/echo/chats")
+def echo_chats(soul_id: str) -> dict:
+    path, scope = _echo_scope(soul_id)
+    return {"chats": chat_import.list_chats(path, user_id=scope["user_id"], soul_id=soul_id)}
+
+
+def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
+                 all_history: bool, confirmed_new: bool, *, save: bool) -> dict:
+    path, scope = _echo_scope(soul_id, label)
+    try:
+        messages, title, stats = chat_import.normalize_messages(json.load(file.file))
+        if not messages:
+            raise ValueError("The file has no text messages to import")
+        count = len(messages) if all_history else history_count
+        upload = chat_import.prepare_upload(path, **scope, messages=messages, history_count=count, title=title)
+        if save and not confirmed_new and not any(
+            chat["label"] == scope["label"] for chat in chat_import.list_chats(path, user_id=scope["user_id"], soul_id=soul_id)
+        ):
+            raise HTTPException(status_code=409, detail="Confirm creation of this chat with the arrow first")
+        guidance = _echo_request("/imports/validate", {**scope, "conversation_id": upload["conversation_id"],
+            "title": title, "current_messages": [
+                {key: row[key] for key in ("role", "content", "name", "timestamp", "source_day", "position")}
+                for row in upload["messages"] if not row["historical"]
+            ]}, timeout=60)
+        if save:
+            upload = chat_import.store_upload(path, **scope, messages=messages, history_count=count, title=title)
+            try:
+                _echo_request("/imports/register", scope)
+            except HTTPException as exc:
+                raise HTTPException(status_code=exc.status_code,
+                    detail="Source saved; registration incomplete. Use Register chat.") from exc
+        def dates(rows):
+            days = [row["source_day"] for row in rows]
+            return {"count": len(rows), "start": min(days, default=None), "end": max(days, default=None)}
+        incoming = dates(messages)
+        processed_start, processed_end = guidance["processed_start_day"], guidance["processed_end_day"]
+        return {"conversation_id": upload["conversation_id"], "saved": save,
+            "total_messages": len(messages), "duplicates": upload["duplicates"], "stats": stats,
+            "history": dates([row for row in upload["messages"] if row["historical"]]),
+            "current": dates([row for row in upload["messages"] if not row["historical"]]),
+            "before_gap": messages[count - 1]["content"] if count else "",
+            "after_gap": messages[count]["content"] if count < len(messages) else "",
+            "possible_overlap": bool(processed_start and processed_end
+                and incoming["start"] <= processed_end and incoming["end"] >= processed_start),
+            "guidance": guidance}
+    except (ValueError, UnicodeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/echo/preview")
+def echo_preview(file: UploadFile, soul_id: str = Form(), label: str = Form(),
+                 history_count: int = Form(default=0), all_history: bool = Form(default=True)) -> dict:
+    return _echo_upload(file, soul_id, label, history_count, all_history, False, save=False)
+
+
+@app.post("/echo/confirm")
+def echo_confirm(file: UploadFile, soul_id: str = Form(), label: str = Form(),
+                 history_count: int = Form(default=0), all_history: bool = Form(default=True),
+                 confirmed_new: bool = Form(default=False)) -> dict:
+    return _echo_upload(file, soul_id, label, history_count, all_history, confirmed_new, save=True)
+
+
+@app.post("/echo/{action}")
+def echo_action(action: str, soul_id: str = Form(), label: str = Form()) -> dict:
+    if action not in {"register", "process", "retry"}:
+        raise HTTPException(status_code=404, detail="Unknown import action")
+    _path, scope = _echo_scope(soul_id, label)
+    return _echo_request(f"/imports/{action}", scope)
+
+
+@app.get("/echo/status")
+def echo_status(soul_id: str, label: str) -> dict:
+    path, scope = _echo_scope(soul_id, label)
+    chat = next((chat for chat in chat_import.list_chats(path, user_id=scope["user_id"], soul_id=soul_id)
+                 if chat["label"] == scope["label"]), None)
+    if chat is None:
+        return {"stored": False}
+    try:
+        result = _echo_request("/imports/status?" + urllib.parse.urlencode(scope))
+    except HTTPException as exc:
+        if exc.status_code == 409:
+            return {"stored": True, "registered": False}
+        raise
+    return {**result, "stored": True, "registered": True,
+            "meter": services.memorize_pending(soul_id, scope["user_id"])}
+
+
+@app.get("/echo/results")
+def echo_results(soul_id: str) -> dict:
+    _path, scope = _echo_scope(soul_id)
+    query = urllib.parse.urlencode({"user_id": scope["user_id"], "soul_id": soul_id})
+    categories = _echo_request("/categories?" + query)
+    pending = _echo_request("/pending?" + query)
+    return {"categories": categories["categories"], "soul_summaries": pending["soul_summaries"]}
 
 
 @app.get("/hermes", response_class=HTMLResponse)

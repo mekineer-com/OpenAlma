@@ -73,7 +73,7 @@ def test_initial_and_polled_setup_actions_match():
     ]
     script = r"""
 const fs=require('fs'),vm=require('vm'); const text=fs.readFileSync(process.argv[1],'utf8');
-vm.runInThisContext(text.slice(text.indexOf('function esc(text)'),text.indexOf('var pendingStarts')));
+vm.runInThisContext(fs.readFileSync(require('path').join(require('path').dirname(process.argv[1]), '../static/launcher.js'), 'utf8'));
 vm.runInThisContext(text.slice(text.indexOf('function actionHtml'),text.indexOf('async function openService')));
 console.log(JSON.stringify(JSON.parse(process.argv[2]).map(row=>actionHtml(row.name,row))));
 """
@@ -155,7 +155,7 @@ def test_memorize_gauge_distinguishes_overdue_and_running():
 def test_memorize_poll_renderer_supports_consolidation_states_and_retry():
     template = (
         Path(__file__).resolve().parents[1] / "launcher" / "templates" / "index.html"
-    ).read_text(encoding="utf-8")
+    ).read_text(encoding="utf-8") + (Path(__file__).resolve().parents[1] / "launcher/static/launcher.js").read_text(encoding="utf-8")
 
     assert "if (data.paused)" in template
     assert "data.consolidation_state === 'overdue'" in template
@@ -174,8 +174,7 @@ def test_memorize_poll_renderer_executes_all_consolidation_states():
             r"""
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const text = fs.readFileSync(process.argv[1], 'utf8');
-const script = text.slice(text.indexOf('function esc(text)'), text.indexOf('var pendingStarts'))
-  + text.slice(text.indexOf('function fmt(n)'), text.indexOf("document.querySelectorAll('.snapshot-time')"));
+const script = fs.readFileSync(require('path').join(require('path').dirname(process.argv[1]), '../static/launcher.js'), 'utf8');
 const box = {innerHTML: ''};
 const fetches = []; let polls = 0;
 const context = {

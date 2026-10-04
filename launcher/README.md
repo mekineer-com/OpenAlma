@@ -111,6 +111,18 @@ whole upload. MCP owns processing checkpoints, not this source database.
 
 Preview uses `prepare_upload`; confirmation revalidates new current rows through
 MCP `/imports/validate` before `store_upload`, then `/imports/register` publishes
-the stored historical bound. Neither MCP endpoint runs a model. The Imports
-page and historical batch controls are still pending; these helpers do not
-start processing by themselves.
+the stored historical bound. Neither MCP endpoint runs a model. **Echo** is a
+capability in Services; Setup opens `/echo`. Select an existing Soul and choose
+or confirm a chat-app label, then preview the file and its history/current gap.
+Confirm storage never starts processing. A saved source with incomplete
+registration can be registered again without re-uploading or deleting it.
+
+Process one historical batch, inspect current dossier prose, then decide whether
+to continue. **Process continuously** defaults off and lives only in the open
+page. It requires an acknowledged start and advancement of that chat's checkpoint;
+errors or uncertain acknowledgement stop it without automatically retrying a
+paid operation. Closing the page stops continuation, not an accepted batch.
+The ordinary current suffix still joins cross-conversation Memorize. Echo
+reuses the existing Memorize display; it is not a service process or installer.
+Existing Soul databases require the separately approved stopped/backed-up
+Resource date-column preparation before restarting with the new engine schema.

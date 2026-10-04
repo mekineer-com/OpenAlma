@@ -1,0 +1,76 @@
+{% include "_index_head.html" %}
+{% include "_header.html" %}
+<style>
+  .echo-form { display:grid; gap:.7rem; margin:1rem 0; }
+  .echo-form fieldset { border:0; margin:0; padding:0; min-width:0; }
+  .echo-form input[type=file], .echo-form input[type=range] { max-width:100%; }
+  .echo-prose { white-space:pre-wrap; overflow-wrap:anywhere; }
+  #echo-results details { margin:.8rem 0; }
+  .echo-form .soul-combobox input { min-width:0; width:18rem; max-width:65vw; }
+</style>
+<p class="muted">Import dated chat JSON. Preview and storage make no model calls. Processing history creates memories and revises dossiers; each batch costs model usage.</p>
+<p id="echo-error" class="failure" role="alert" hidden></p>
+<form id="echo-chat-form" class="echo-form">
+  <fieldset id="echo-picker">
+    <p><label for="echo-soul">Soul</label> <select id="echo-soul" required><option value="">Loading Souls...</option></select></p>
+    <p class="muted">Choose or enter the app this chat came from, such as Replika, Nomi or Kindroid. Use the app name, not your companion's name.</p>
+    <label for="echo-label">Chat app</label>
+    <span class="soul-entry">
+      <span class="soul-combobox">
+        <input id="echo-label" placeholder="Replika, Nomi, Kindroid..." required autocomplete="off" aria-controls="echo-chat-options" aria-expanded="false">
+        <span id="echo-chat-options" class="soul-options" role="listbox" hidden></span>
+      </span>
+      <button class="btn" type="submit" title="Use chat" aria-label="Use chat">&#10148;</button>
+      <span id="echo-chat-ready" class="soul-ready" hidden title="Chat selected">&#10003;</span>
+      <span id="echo-chat-new" class="soul-new" hidden>New chat will be created. Press the arrow again to confirm.</span>
+    </span>
+  </fieldset>
+</form>
+<form id="echo-upload-form" class="echo-form">
+  <fieldset id="echo-upload" disabled>
+    <p><label for="echo-file">Chat JSON file</label> <input id="echo-file" type="file" accept=".json,application/json" required></p>
+    <p><label><input id="echo-all-history" type="checkbox" checked> All history</label></p>
+    <div id="echo-gap" hidden>
+      <label for="echo-history-count">Gap after message <output id="echo-gap-count">0</output></label>
+      <input id="echo-history-count" type="range" min="0" max="0" value="0">
+      <p class="muted">Before the gap becomes historical memory. After it joins this chat's current context and the normal cross-conversation Memorize.</p>
+    </div>
+    <button class="btn" type="submit">Preview</button>
+    <button id="echo-confirm" class="btn" type="button" disabled>Confirm storage</button>
+  </fieldset>
+</form>
+<section id="echo-preview" hidden>
+  <h2>Preview</h2>
+  <p id="echo-counts"></p>
+  <p id="echo-ranges"></p>
+  <p id="echo-guidance" class="muted"></p>
+  <p id="echo-overlap" class="banner" hidden>This file overlaps dates already processed for this chat. It may create duplicate memories. Matching stored source messages are skipped.</p>
+  <details><summary>Messages around the gap</summary><p>Before:</p><div id="echo-before" class="echo-prose"></div><p>After:</p><div id="echo-after" class="echo-prose"></div></details>
+</section>
+<h2>Historical processing</h2>
+<p id="echo-status" role="status">Choose a Soul and chat app.</p>
+<p>
+  <button id="echo-register" class="btn" hidden>Register chat</button>
+  <button id="echo-process" class="btn" disabled>Process one batch</button>
+  <button id="echo-retry" class="btn" hidden>Retry</button>
+</p>
+<label><input id="echo-continuous" type="checkbox"> Process continuously</label>
+<p class="muted">Leave unchecked to inspect each batch before paying for the next. Closing this page stops continuation, not work already accepted.</p>
+<h2>Memorize</h2>
+<div id="memorize-meter"><p class="muted">Choose a chat to see its Soul's progress.</p></div>
+<h2>Results</h2>
+<button id="echo-show-results" class="btn" disabled>Show current prose</button>
+<p class="muted">These are current records, including earlier work. Review or edit them in Atomic, opened from <a href="/">Services</a>.</p>
+<div id="echo-results"></div>
+<details><summary>Accepted JSON</summary>
+<p>A message array, or an object containing <code>messages</code> and an optional <code>title</code>. Replika native JSON is also supported. Every message needs a date; datetimes need a timezone. Text only.</p>
+<pre class="echo-prose">{"messages": [
+  {"role": "user", "content": "Hello", "timestamp": "2025-01-01T12:00:00Z"},
+  {"role": "assistant", "content": "Hello back", "timestamp": "2025-01-01T12:01:00Z"}
+]}</pre>
+</details>
+<script src="/static/window-position.js"></script>
+<script src="/static/echo.js"></script>
+{% include "_footer.html" %}
+</body>
+</html>

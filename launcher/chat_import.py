@@ -14,6 +14,17 @@ def source_path(apps_root: Path) -> Path:
     return apps_root / "openalma" / "imports" / "chats.db"
 
 
+def list_chats(db_path: Path, *, user_id: str, soul_id: str) -> list[dict]:
+    if not db_path.exists():
+        return []
+    with closing(sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)) as con:
+        con.row_factory = sqlite3.Row
+        return [dict(row) for row in con.execute(
+            "SELECT chat_id, label, title FROM imported_chats WHERE user_id = ? AND soul_id = ? ORDER BY label",
+            (user_id, soul_id),
+        )]
+
+
 def extract_text(item: dict) -> str:
     # Ported from the workspace Replika converter.
     content = item.get("content")

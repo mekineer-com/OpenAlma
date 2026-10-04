@@ -605,13 +605,13 @@ def retry_memorize(soul_id: str, user_id: str) -> dict:
         raise RuntimeError("memU Server is unavailable") from exc
 
 
-def _mcp_request(path: str, payload: dict | None = None) -> dict:
+def _mcp_request(path: str, payload: dict | None = None, *, timeout: float = 2) -> dict:
     request = urllib.request.Request(
         f"http://127.0.0.1:{MEMU_SERVER_PORT}{path}",
         data=json.dumps(payload).encode() if payload is not None else None,
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(request, timeout=2) as response:
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         data = json.loads(response.read().decode("utf-8"))
     if not isinstance(data, dict):
         raise ValueError("Server returned an invalid response")

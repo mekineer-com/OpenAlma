@@ -100,6 +100,13 @@
         <td><a href="{{ '/install/' ~ s.name ~ '/logs' if s.install_setup else '/logs/' ~ s.name }}">view</a></td>
       </tr>
       {% endfor %}
+      <tr id="echo-row">
+        <td>Echo: Chat Importer</td>
+        {% set imports = memorize|selectattr('import_running')|list %}
+        <td id="echo-activity" class="muted">{% if imports %}Processing: {{ imports|map(attribute='soul_id')|join(', ') }}{% else %}Ready{% endif %}</td>
+        <td class="svc-actions"><a class="btn" href="/echo">Setup</a></td>
+        <td></td>
+      </tr>
     </tbody>
   </table>
   {% if not_installed_services %}
@@ -164,12 +171,6 @@
   </div>
 
   <script>
-function esc(text) {
-  return String(text || '').replace(/[&<>"']/g, function(ch) {
-    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
-  });
-}
-
 var pendingStarts = {};
 var pendingStops = {};
 
@@ -297,76 +298,6 @@ function pollStatus(name) {
     .catch(function() {});
 }
 
-function fmt(n) {
-  return Number(n || 0).toLocaleString();
-}
-
-function fmtSnapshot(value) {
-  var date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value || '') : date.toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'});
-}
-
-function memorizeHtml(data) {
-  if (data && data.error) {
-    return '<p class="error" role="alert">' + esc(data.error) + '</p>';
-  }
-  if (!data || data.threshold == null) {
-    return '<p class="muted">Memory status unavailable</p>';
-  }
-  var tokens = Number(data.summed_unmemorized_tokens || 0);
-  var threshold = Number(data.threshold || 0);
-  var pct = Number(data.pct || 0);
-  var html = '<p>Memorize: ' + fmt(tokens) + ' / ' + fmt(threshold) + ' (' + pct + '%)';
-  if (tokens >= threshold) {
-    html += ' <span class="badge">' + esc(data.sleep_gap_ready ? 'sleep-gap detected' : 'waiting for sleep-gap') + '</span>';
-  }
-  html += '</p>';
-  html += '<div class="meter"><div class="meter-fill" style="width: ' + Math.min(pct, 100) + '%"></div></div>';
-  if (data.paused) {
-    var running = data.memorize_running || data.consolidation_running;
-    html += '<p class="consolidation-warning" role="alert">Paused: ' + (data.retry_operation === 'memorize' ? 'Memorize' : 'Consolidation') + ' failed. <span title="' + esc(data.pause_reason) + '">!</span> ';
-    html += '<button type="button" class="btn" data-soul="' + esc(data.soul_id) + '" onclick="retryConsolidation(this)"' + (running ? ' disabled' : '') + '>' + (running ? 'Retrying...' : 'Retry') + '</button></p>';
-  } else if (data.consolidation_state === 'overdue') {
-    var overdueSegments = Number(data.pending_consolidation_segments || 0);
-    html += '<p class="consolidation-warning" role="status">Weekly reflection will occur after the coming Memorize. ' + fmt(overdueSegments) + ' memorized ' + (overdueSegments === 1 ? 'segment' : 'segments') + ' already in queue.</p>';
-  } else if (data.consolidation_state === 'running') {
-    html += '<p class="muted" role="status">Memory consolidation is running.</p>';
-  }
-  html += '<p class="muted">Memorize-eligible at ' + fmt(threshold) + ' tokens; a sleep-gap releases it. Snapshot ' + esc(fmtSnapshot(data.computed_at)) + '.</p>';
-  if (data.memorize_running && data.progress) {
-    html += '<p class="muted" role="status">' + esc(data.progress.phase || 'Running') + (data.progress.total ? ': ' + fmt(data.progress.current) + ' / ' + fmt(data.progress.total) : '') + '</p>';
-  }
-  return html;
-}
-
-function renderMemorize(data) {
-  var box = document.getElementById('memorize-meter');
-  if (!box) return;
-  if (data.error) { box.innerHTML = '<p class="error" role="alert">' + esc(data.error) + '</p>'; return; }
-  var rows = data.souls || [];
-  box.innerHTML = rows.map(function(row) {
-    return (rows.length > 1 ? '<h3>' + esc(row.soul_id) + '</h3>' : '') + memorizeHtml(row);
-  }).join('') || '<p class="muted">No Souls available</p>';
-}
-
-function retryConsolidation(button) {
-  button.disabled = true;
-  button.textContent = 'Retrying...';
-  fetch('/memorize/retry?soul_id=' + encodeURIComponent(button.dataset.soul), { method: 'POST' })
-    .then(function(response) {
-      if (response.ok) return response.json();
-      return response.json().then(function(data) {
-        throw new Error(data.detail || 'Retry failed');
-      });
-    })
-    .then(pollMemorize)
-    .catch(function(error) {
-      button.disabled = false;
-      button.textContent = 'Retry';
-      window.alert(error.message);
-    });
-}
-
 document.querySelectorAll('.snapshot-time').forEach(function(element) {
   element.textContent = fmtSnapshot(element.dataset.timestamp);
 });
@@ -374,8 +305,16 @@ document.querySelectorAll('.snapshot-time').forEach(function(element) {
 function pollMemorize() {
   fetch('/memorize/status', { cache: 'no-store' })
     .then(function(r) { if (!r.ok) throw new Error('Memory status unavailable'); return r.json(); })
-    .then(renderMemorize)
-    .catch(function() { renderMemorize({souls: [], error: 'Memory status unavailable'}); });
+    .then(function(data) {
+      renderMemorize(data);
+      var activity = document.getElementById('echo-activity');
+      var running = (data.souls || []).filter(function(row) { return row.import_running; });
+      activity.textContent = running.length ? 'Processing: ' + running.map(function(row) { return row.soul_id; }).join(', ') : (data.error ? 'Status unavailable' : 'Ready');
+    })
+    .catch(function() {
+      renderMemorize({souls: [], error: 'Memory status unavailable'});
+      document.getElementById('echo-activity').textContent = 'Status unavailable';
+    });
 }
 
 setInterval(function() {
