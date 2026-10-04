@@ -61,6 +61,17 @@ def test_conversion_date_identity_and_metadata(tmp_path):
     ambiguous, _, _ = chat_import.normalize_messages([{"role": "user", "content": "same", "timestamp": "2025-02-01"}])
     with pytest.raises(ValueError, match="ambiguous"):
         chat_import.store_upload(db, **scope, messages=ambiguous, history_count=0)
+    aliases, _, _ = chat_import.normalize_messages([
+        {"id": primary, "source_message_id": str(i), "role": "user", "content": f"alias {i}",
+         "timestamp": "2025-03-01"} for i, primary in enumerate((None, "", "  ", 0))])
+    assert [m["source_message_id"] for m in aliases] == ["0", "1", "2", "0"]
+    distinct = aliases[:3]
+    added = chat_import.store_upload(db, **{**scope, "label": "Kindroid", "user_id": " TestOwner ", "soul_id": " TestSoul "},
+                                     messages=distinct, history_count=3)
+    assert added["user_id"] == "TestOwner" and added["soul_id"] == "TestSoul"
+    assert chat_import.store_upload(db, **{**scope, "label": "Kindroid"}, messages=distinct, history_count=0)["duplicates"] == 3
+    with pytest.raises(ValueError, match="Conflicting messages for ID"):
+        chat_import.store_upload(db, **scope, messages=[aliases[0], aliases[3]], history_count=2)
 
 
 @pytest.mark.parametrize("message", [
@@ -68,6 +79,7 @@ def test_conversion_date_identity_and_metadata(tmp_path):
     {"role": "user", "content": "hello", "timestamp": "2025-01-01T12:00:00"},
     {"role": "user", "content": "hello", "timestamp": "2025-02-30"},
     {"role": "system", "content": "hello", "timestamp": "2025-01-01"},
+    {"content": "hello", "meta": {"timestamp": "2025-01-01"}},
 ])
 def test_invalid_input_is_refused(message):
     with pytest.raises(ValueError):

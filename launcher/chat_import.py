@@ -27,13 +27,9 @@ def extract_text(item: dict) -> str:
 def infer_role(item: dict) -> str:
     meta = item.get("meta", {})
     nature = meta.get("nature")
-    if nature is not None:
-        if nature not in {"Customer", "Robot"}:
-            raise ValueError(f"Unsupported Replika speaker: {nature}")
-        return "user" if nature == "Customer" else "assistant"
-    if meta.get("author_id") or item.get("is_generated") is True:
-        return "user"
-    return "assistant"
+    if nature not in {"Customer", "Robot"}:
+        raise ValueError(f"Unsupported Replika speaker: {nature}")
+    return "user" if nature == "Customer" else "assistant"
 
 
 def normalize_date(value: str) -> tuple[str, str, int]:
@@ -81,6 +77,8 @@ def normalize_messages(raw: list | dict) -> tuple[list[dict], str | None, dict]:
         if not isinstance(name, str):
             raise ValueError("Imported speaker names must be text")
         supplied_id = item.get("id", item.get("source_message_id"))
+        if supplied_id is None or isinstance(supplied_id, str) and not supplied_id.strip():
+            supplied_id = item.get("source_message_id")
         if supplied_id is not None and (isinstance(supplied_id, bool) or not isinstance(supplied_id, (str, int))):
             raise ValueError("Imported message IDs must be text or integers")
         out.append({
@@ -133,6 +131,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
 
 def _prepare(con: sqlite3.Connection | None, user_id: str, soul_id: str, label: str,
              messages: list[dict], history_count: int, title: str | None) -> dict:
+    user_id, soul_id = user_id.strip(), soul_id.strip()
     if not user_id.strip() or not soul_id.strip() or len(label.split()) != 1:
         raise ValueError("Owner, Soul and a one-word chat-app label are required")
     if type(history_count) is not int or not 0 <= history_count <= len(messages):
@@ -149,13 +148,16 @@ def _prepare(con: sqlite3.Connection | None, user_id: str, soul_id: str, label: 
     for m in messages:
         if m["source_message_id"] is None and keys[(m["timestamp"], m["name"], m["role"])] > 1:
             raise ValueError("Ambiguous messages at the same date/speaker/role; provide message IDs")
-    pending, seen_ids = [], set()
+    pending, seen_ids = [], {}
     for index, m in enumerate(messages):
         supplied_id = m["source_message_id"]
         if supplied_id is not None:
+            identity = (m["timestamp"], m["name"], m["role"], m["content"])
             if supplied_id in seen_ids:
+                if seen_ids[supplied_id] != identity:
+                    raise ValueError(f"Conflicting messages for ID {supplied_id}")
                 continue
-            seen_ids.add(supplied_id)
+            seen_ids[supplied_id] = identity
             matches = con.execute(
                 "SELECT position FROM imported_messages WHERE chat_id = ? AND supplied_id = ?",
                 (chat_id, supplied_id),
@@ -192,7 +194,7 @@ def store_upload(db_path: Path, *, user_id: str, soul_id: str, label: str,
         con.execute("BEGIN IMMEDIATE")
         upload = _prepare(con, user_id, soul_id, label.strip(), messages, history_count, title)
         con.execute("INSERT OR IGNORE INTO imported_chats VALUES (?, ?, ?, ?, ?)",
-                    (upload["chat_id"], user_id, soul_id, upload["label"], upload["title"]))
+                    (upload["chat_id"], upload["user_id"], upload["soul_id"], upload["label"], upload["title"]))
         con.executemany("INSERT INTO imported_messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
             (upload["chat_id"], m["position"], m["source_message_id"], m["timestamp"],
              m["source_day"], m["ts_ms"], m["name"], m["role"], m["content"],

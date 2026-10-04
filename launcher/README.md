@@ -94,7 +94,8 @@ Windows support will ship as a thin per-user installer (Inno Setup, compiled by 
 message array) and native Replika JSON into the client-owned
 `openalma/imports/chats.db`. Messages require dates and `user`/`assistant` roles;
 ISO datetimes require a timezone. Source names, IDs, calendar days and metadata
-are retained. Same owner/Soul/app label reuses the chat; replay keeps stored rows
+are retained. Replika roles require `meta.nature` (`Customer` or `Robot`); generic
+messages require an explicit role. Same owner/Soul/app label reuses the chat; replay keeps stored rows
 and their history/current choice. ID-less date/speaker/role conflicts refuse the
 whole upload. MCP owns processing checkpoints, not this source database.
 
