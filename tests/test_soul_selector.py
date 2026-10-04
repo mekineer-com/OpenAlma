@@ -37,4 +37,22 @@ select.value = 'Echo'; select.events.change();
 picker.setSouls([]);
 assert.equal(input.value, 'Echo');
 assert.equal(consent.value, 'false');
+function comboField() {
+  return {...field(), hidden:true, children:[], setAttribute(){}, appendChild(node){this.children.push(node);}};
+}
+global.document = {createElement: comboField};
+const nodes = Object.fromEntries(['[name=soul_id]', '.soul-options', '.soul-ready', '.soul-new', '[name=use_existing]'].map(key=>[key,comboField()]));
+const form = {...field(), querySelector:key=>nodes[key]};
+let saved=[], changed=0;
+global.submitSoulForm = (_form, done)=>done();
+bindSoulCombobox(form, ['KnownSoul'], name=>saved.push(name), ()=>changed++);
+nodes['[name=soul_id]'].value='NewSoul'; nodes['[name=soul_id]'].events.input();
+form.events.submit({preventDefault(){}});
+assert.deepEqual(saved, []); assert.equal(nodes['.soul-new'].hidden,false);
+form.events.submit({preventDefault(){}});
+assert.deepEqual(saved,['NewSoul']); assert.equal(nodes['.soul-ready'].hidden,false);
+nodes['.soul-options'].children[0].events.click();
+assert.equal(nodes['[name=soul_id]'].value,'KnownSoul'); assert.equal(changed,2);
+form.events.submit({preventDefault(){}});
+assert.deepEqual(saved,['NewSoul','KnownSoul']);
 ''', str(script)], check=True)

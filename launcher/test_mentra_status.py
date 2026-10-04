@@ -652,8 +652,8 @@ class MentraStatusTest(TestCase):
             ):
                 client = TestClient(app.app)
                 page = client.get("/hermes").text
-                self.assertIn('const knownSouls = new Set(["Codexia"])', page)
-                self.assertNotIn('const knownSouls = new Set(["Wrong Source"])', page)
+                self.assertIn('bindSoulCombobox(soulForm, ["Codexia"])', page)
+                self.assertNotIn('bindSoulCombobox(soulForm, ["Wrong Source"])', page)
                 with patch.object(services, "list_souls", side_effect=services.SoulServiceUnavailable("Soul service unavailable")):
                     unavailable = client.get("/hermes")
                     self.assertEqual(unavailable.status_code, 200)

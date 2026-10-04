@@ -10,9 +10,24 @@
 </style>
 <p class="muted">Import dated chat JSON. Preview and storage make no model calls. Processing history creates memories and revises dossiers; each batch costs model usage.</p>
 <p id="echo-error" class="failure" role="alert" hidden></p>
+<form method="post" action="/echo/soul" id="echo-soul-form" class="echo-form">
+  <fieldset id="echo-soul-picker">
+    <label for="echo-soul">Soul:</label>
+    <span class="soul-entry">
+      <span class="soul-combobox">
+        <input id="echo-soul" name="soul_id" placeholder="Soul name" required autocomplete="off"
+               aria-controls="echo-soul-options" aria-expanded="false">
+        <span id="echo-soul-options" class="soul-options" role="listbox" hidden></span>
+      </span>
+      <button class="btn" type="submit" aria-label="Use soul" title="Use soul">&#10148;</button>
+      <span class="soul-ready" title="Soul selected" hidden>&#10003;</span>
+      <span class="soul-new" hidden>New soul will be created. Press the arrow again to confirm.</span>
+    </span>
+    <input type="hidden" name="use_existing" value="false">
+  </fieldset>
+</form>
 <form id="echo-chat-form" class="echo-form">
   <fieldset id="echo-picker">
-    <p><label for="echo-soul">Soul</label> <select id="echo-soul" required><option value="">Loading Souls...</option></select></p>
     <p class="muted">Choose or enter the app this chat came from, such as Replika, Nomi or Kindroid. Use the app name, not your companion's name.</p>
     <label for="echo-label">Chat app</label>
     <span class="soul-entry">
@@ -55,7 +70,7 @@
   <button id="echo-retry" class="btn" hidden>Retry</button>
 </p>
 <label><input id="echo-continuous" type="checkbox"> Process continuously</label>
-<p class="muted">Leave unchecked to inspect each batch before paying for the next. Closing this page stops continuation, not work already accepted.</p>
+<p class="muted">Leave unchecked so you can review each batch before processing the next. You can review in the Approvals page of Atomic Mind Map.</p>
 <h2>Memorize</h2>
 <div id="memorize-meter"><p class="muted">Choose a chat to see its Soul's progress.</p></div>
 <h2>Results</h2>
@@ -70,6 +85,7 @@
 ]}</pre>
 </details>
 <script src="/static/window-position.js"></script>
+<script src="/static/soul-selector.js"></script>
 <script src="/static/echo.js"></script>
 {% include "_footer.html" %}
 </body>

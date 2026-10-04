@@ -112,7 +112,8 @@ whole upload. MCP owns processing checkpoints, not this source database.
 Preview uses `prepare_upload`; confirmation revalidates new current rows through
 MCP `/imports/validate` before `store_upload`, then `/imports/register` publishes
 the stored historical bound. Neither MCP endpoint runs a model. **Echo** is a
-capability in Services; Setup opens `/echo`. Select an existing Soul and choose
+capability in Services; Setup opens `/echo`. Choose or explicitly create a Soul
+with the same combobox used by Hermes, then choose
 or confirm a chat-app label, then preview the file and its history/current gap.
 Confirm storage never starts processing. A saved source with incomplete
 registration can be registered again without re-uploading or deleting it.

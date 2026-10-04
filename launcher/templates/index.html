@@ -101,7 +101,7 @@
       </tr>
       {% endfor %}
       <tr id="echo-row">
-        <td>Echo: Chat Importer</td>
+        <td>Echo Import</td>
         {% set imports = memorize|selectattr('import_running')|list %}
         <td id="echo-activity" class="muted">{% if imports %}Processing: {{ imports|map(attribute='soul_id')|join(', ') }}{% else %}Ready{% endif %}</td>
         <td class="svc-actions"><a class="btn" href="/echo">Setup</a></td>

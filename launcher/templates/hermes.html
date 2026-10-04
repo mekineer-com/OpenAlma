@@ -6,7 +6,7 @@
     .pair-card { border: 1px solid #333; border-radius: 4px; padding: 0.8rem; background: #202020; }
     .pair-card h3 { margin: 0 0 0.4rem 0; color: #f0f0f0; }
     .pair-card canvas { width: 220px; height: 220px; background: #fff; border: 8px solid #fff; display: block; }</style>
-  <h2>Hermes Channels Soul selector</h2>
+  <h2>Hermes Channels soul selector</h2>
   <p class="muted">Choose an existing soul or enter a new name. Stored in hermes-channels/data/config.json</p>
   {% if channels_error %}
   <p class="failure">Channels configuration needs repair: {{ channels_error }}</p>
@@ -125,84 +125,8 @@
 <script src="/static/vendor/qrcode.min.js"></script>
 <script src="/static/soul-selector.js"></script>
 <script>
-    const soulForm = document.getElementById("channels-soul-form");
-    if (soulForm) {
-      const soulInput = document.getElementById("soul_id");
-      const soulMenu = document.getElementById("channels-soul-options");
-      const soulReady = document.getElementById("channels-soul-ready");
-      const soulNew = document.getElementById("channels-soul-new");
-      const soulUseExisting = document.getElementById("soul-use-existing");
-      const knownSouls = new Set({{ soul_ids|tojson }});
-      let pendingNewSoul = "";
-
-      function closeSoulMenu() {
-        soulMenu.hidden = true;
-        soulInput.setAttribute("aria-expanded", "false");
-      }
-      function openSoulMenu() {
-        soulMenu.hidden = knownSouls.size === 0;
-        soulInput.setAttribute("aria-expanded", String(!soulMenu.hidden));
-      }
-      function addSoulOption(name) {
-        const option = document.createElement("button");
-        option.type = "button";
-        option.role = "option";
-        option.textContent = name;
-        option.addEventListener("mousedown", function(event) { event.preventDefault(); });
-        option.addEventListener("click", function() {
-          if (!soulReady.hidden && soulInput.value.trim() === name) {
-            closeSoulMenu();
-            return;
-          }
-          soulInput.value = name;
-          soulUseExisting.value = "true";
-          soulReady.hidden = true;
-          soulNew.hidden = true;
-          closeSoulMenu();
-        });
-        soulMenu.appendChild(option);
-      }
-      function saveSoul(name) {
-        void submitSoulForm(soulForm, function() {
-          if (!knownSouls.has(name)) {
-            knownSouls.add(name);
-            addSoulOption(name);
-          }
-          pendingNewSoul = "";
-          soulNew.hidden = true;
-          soulReady.hidden = false;
-          closeSoulMenu();
-        });
-      }
-      knownSouls.forEach(addSoulOption);
-      soulInput.addEventListener("focus", openSoulMenu);
-      soulInput.addEventListener("click", openSoulMenu);
-      soulInput.addEventListener("blur", closeSoulMenu);
-      soulInput.addEventListener("input", function() {
-        pendingNewSoul = "";
-        soulUseExisting.value = "false";
-        soulReady.hidden = true;
-        soulNew.hidden = true;
-        openSoulMenu();
-      });
-      soulForm.addEventListener("submit", function(event) {
-        event.preventDefault();
-        const name = soulInput.value.trim();
-        if (!name) return;
-        if (knownSouls.has(name)) {
-          soulUseExisting.value = "true";
-          saveSoul(name);
-          return;
-        }
-        soulUseExisting.value = "false";
-        if (pendingNewSoul !== name) {
-          pendingNewSoul = name;
-          soulNew.hidden = false;
-          return;
-        }
-        saveSoul(name);
-      });
-    }
+const soulForm = document.getElementById("channels-soul-form");
+if (soulForm) bindSoulCombobox(soulForm, {{ soul_ids|tojson }});
 
 function syncMemorize(chatId, policy) {
   var box = document.getElementById('memorize-' + chatId);

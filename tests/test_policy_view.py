@@ -90,6 +90,6 @@ def test_virgin_setup_shows_soul_picker_before_channel_policy():
         channels_configured=False, needs_setup=True, soul_ids=[],
     )
 
-    assert "Hermes Channels Soul selector" in html
+    assert "Hermes Channels soul selector" in html
     assert 'id="channels-soul-form"' in html
     assert "WhatsApp channel policy" not in html

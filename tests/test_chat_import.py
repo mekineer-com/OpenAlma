@@ -22,7 +22,7 @@ async function run(mode, continuous) {
     return fields.get(id);
   };
   let state={memorize_cursor:-1,history_end_index:2,pending_segment_ids:[],stage:'memorize',error:null};
-  const ctx={console,URLSearchParams,FormData,Option:function(){},renderMemorize(){},
+  const ctx={console,URLSearchParams,FormData,Option:function(){},renderMemorize(){},bindSoulCombobox(){},
     document:{getElementById:field},setTimeout(fn,ms){timers.set(++sequence,{fn,ms});return sequence;},
     clearTimeout(id){timers.delete(id);},fetch:async url=>{
       let data;
@@ -62,6 +62,9 @@ def test_echo_http_upload_reuses_source_and_never_starts_processing(tmp_path, mo
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
     monkeypatch.setattr(app.services, "read_owner", lambda: "TestOwner")
     monkeypatch.setattr(app.services, "list_souls", lambda: ["TestSoul"])
+    created = []
+    monkeypatch.setattr(app.services, "resolve_soul",
+        lambda name, existing: (created.append((name, existing)) or name))
     calls, refuse, register_fail = [], [False], [False]
     def mcp(path, payload=None, *, timeout=2):
         calls.append((path, payload, timeout))
@@ -77,6 +80,9 @@ def test_echo_http_upload_reuses_source_and_never_starts_processing(tmp_path, mo
         return {"ok": True}
     monkeypatch.setattr(app.services, "_mcp_request", mcp)
     client = TestClient(app.app)
+    assert client.post("/echo/soul", data={"soul_id": "TestNewSoul"}).json() == {"soul_id": "TestNewSoul"}
+    assert created == [("TestNewSoul", False)]
+    assert not chat_import.source_path(tmp_path).exists()
     raw = [{"id": str(i), "meta": {"nature": nature, "timestamp": day}, "content": {"text": "fictional"}}
            for i, (nature, day) in enumerate((("Customer", "2025-01-01"), ("Robot", "2025-01-03")))]
     fields = {"soul_id": "TestSoul", "label": "Replika", "all_history": "false", "history_count": "1"}

@@ -291,6 +291,11 @@ def echo_chats(soul_id: str) -> dict:
     return {"chats": chat_import.list_chats(path, user_id=scope["user_id"], soul_id=soul_id)}
 
 
+@app.post("/echo/soul")
+def echo_soul(soul_id: str = Form(), use_existing: bool = Form(default=False)) -> dict:
+    return {"soul_id": _resolve_soul(soul_id, use_existing)}
+
+
 def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
                  all_history: bool, confirmed_new: bool, *, save: bool) -> dict:
     path, scope = _echo_scope(soul_id, label)

@@ -9,6 +9,7 @@ const gap = document.getElementById('echo-history-count');
 const continuous = document.getElementById('echo-continuous');
 let knownChats = new Set(), pendingNewChat = '', selection = null, preview = null;
 let accepted = null, lastStatus = null, timer = null, busy = false;
+let selectedSoul = '';
 
 async function echoRequest(url, options) {
   const response = await fetch(url, {cache: 'no-store', ...options});
@@ -24,6 +25,7 @@ function showError(error) {
 function lockForm(locked) {
   busy = locked;
   document.getElementById('echo-picker').disabled = locked;
+  document.getElementById('echo-soul-picker').disabled = locked;
   document.getElementById('echo-upload').disabled = locked || !selection;
   document.getElementById('echo-process').disabled = locked || !lastStatus?.registered || lastStatus.running || lastStatus.import_state.error || lastStatus.import_state.stage === 'complete';
   document.getElementById('echo-retry').disabled = locked || lastStatus?.running;
@@ -60,12 +62,12 @@ function resetSelection() {
 }
 async function loadChats() {
   resetSelection();
-  const sid = soulChoice.value;
+  const sid = selectedSoul;
   knownChats = new Set();
   chatMenu.replaceChildren();
   if (!sid) return;
   const data = await echoRequest('/echo/chats?' + new URLSearchParams({soul_id: sid}));
-  if (sid !== soulChoice.value) return;
+  if (sid !== selectedSoul) return;
   knownChats = new Set(data.chats.map(chat => chat.label));
   knownChats.forEach(addChatOption);
 }
@@ -80,17 +82,16 @@ labelInput.addEventListener('focus', openChatMenu);
 labelInput.addEventListener('click', openChatMenu);
 labelInput.addEventListener('blur', closeChatMenu);
 labelInput.addEventListener('input', () => {resetSelection(); openChatMenu();});
-soulChoice.addEventListener('change', () => loadChats().catch(showError));
 document.getElementById('echo-chat-form').addEventListener('submit', event => {
   event.preventDefault();
   const label = labelInput.value.trim();
-  if (!soulChoice.value || !label || label.split(/\s+/).length !== 1) {
+  if (!selectedSoul || !label || label.split(/\s+/).length !== 1) {
     showError(new Error('Select a Soul and a one-word chat-app label.')); return;
   }
   if (!knownChats.has(label) && pendingNewChat !== label) {
     pendingNewChat = label; chatNew.hidden = false; return;
   }
-  selection = {soul_id: soulChoice.value, label, confirmed_new: !knownChats.has(label)};
+  selection = {soul_id: selectedSoul, label, confirmed_new: !knownChats.has(label)};
   chatNew.hidden = true; chatReady.hidden = false; closeChatMenu();
   lockForm(false);
   refreshStatus();
@@ -230,6 +231,7 @@ document.getElementById('echo-show-results').addEventListener('click', () => loa
 function pollMemorize() {return refreshStatus();}
 (async () => {
   const data = await echoRequest('/souls');
-  soulChoice.replaceChildren(new Option('Select Soul', ''), ...data.souls.map(name => new Option(name, name)));
-  if (data.souls.length === 1) {soulChoice.value = data.souls[0]; await loadChats();}
+  bindSoulCombobox(document.getElementById('echo-soul-form'), data.souls, name => {
+    selectedSoul = name; soulChoice.value = name; loadChats().catch(showError);
+  }, () => {selectedSoul = ''; resetSelection();});
 })().catch(showError);
