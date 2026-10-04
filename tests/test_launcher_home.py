@@ -31,6 +31,7 @@ def test_malformed_channels_config_keeps_home_available(tmp_path, monkeypatch):
     monkeypatch.setattr(app.soul, "CHANNELS_CONFIG_PATH", config)
     monkeypatch.setattr(app.policy, "list_whatsapp_chats", lambda: [])
     monkeypatch.setattr(app.policy, "read_channel_settings", lambda: {})
+    monkeypatch.setattr(app.policy, "ensure_channel_settings", lambda _chats: ({}, "excluded"))
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
     monkeypatch.setattr(app.services, "all_services", lambda: [other])
     monkeypatch.setattr(app.services, "is_installed", lambda _spec: True)
@@ -42,7 +43,8 @@ def test_malformed_channels_config_keeps_home_available(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     assert "Atomic Mind Map" in response.text
-    assert "Channels configuration needs repair" in response.text
+    assert "Channels configuration needs repair" not in response.text
+    assert "Channels configuration needs repair" in TestClient(app.app).get("/hermes").text
     assert config.read_text(encoding="utf-8") == "{broken"
 
 
@@ -93,13 +95,35 @@ def test_settings_shows_managed_embedding_model(tmp_path, monkeypatch):
     monkeypatch.setattr(app.settings, "read_paths", lambda: {})
     monkeypatch.setattr(app.settings, "next_apps_root", lambda _raw: tmp_path)
     monkeypatch.setattr(app.services, "all_services", lambda: [])
-    monkeypatch.setattr(app.services, "mentra_readiness", lambda _root: {"enabled": False})
+    monkeypatch.setattr(app.services, "mentra_readiness", lambda _root: pytest.fail("general Settings must not load Iris"))
     monkeypatch.setattr(app.services, "host_prerequisites", lambda _root: {"rows": []})
 
     html = TestClient(app.app).get("/settings").text
 
     assert '<select id="embedding-model" disabled>' in html
     assert '<option selected>gemini-embedding-2</option>' in html
+    assert "Iris &amp; Phone Setup" not in html and 'id="pair-panel"' not in html
+
+
+def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, monkeypatch):
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "all_services", lambda: [])
+    monkeypatch.setattr(app.services, "mentra_readiness", lambda _root: {"enabled": False})
+    monkeypatch.setattr(app.services, "list_souls", lambda: ["TestSoul"])
+    monkeypatch.setattr(app.soul, "CHANNELS_CONFIG_PATH", tmp_path / "missing-config.json")
+    monkeypatch.setattr(app.policy, "list_whatsapp_chats", lambda: [])
+    monkeypatch.setattr(app.policy, "read_channel_settings", lambda: {})
+    monkeypatch.setattr(app.policy, "read_default_policy", lambda: "excluded")
+    client = TestClient(app.app)
+    for page in ("/hermes", "/iris"):
+        response = client.get(page)
+        assert response.status_code == 200
+        assert '/static/vendor/qrcode.min.js' in response.text
+        assert '/static/launcher.js' in response.text
+        assert '/static/window-position.js' in response.text
+        assert 'aria-label="OpenAlma"' in response.text
+    assert 'id="pair-panel"' in client.get("/hermes").text
+    assert 'id="pair-panel"' not in client.get("/iris").text
 
 
 def test_launcher_saves_window_position(tmp_path, monkeypatch):
@@ -280,7 +304,7 @@ def test_uninstalled_iris_opens_phone_client_section_for_openalma_host(tmp_path,
     html = TestClient(app.app).get("/").text
 
     assert '<details class="not-installed" open>' in html
-    assert 'href="/settings">Install</a>' in html
+    assert 'href="/iris">Setup</a>' in html
     assert 'data-service="iris-server"' not in html
 
 

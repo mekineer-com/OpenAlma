@@ -177,41 +177,12 @@ def index(request: Request) -> HTMLResponse:
             if not services.is_installed(spec) and spec.name != "memu-server":
                 setup = setup_install.optional_setup_status(spec.name, setup_root)
                 not_installed.append({"name": spec.name, "label": spec.label} | setup)
-    channels_configured = soul.CHANNELS_CONFIG_PATH.exists()
-    chats = policy.list_whatsapp_chats()
-    current, default_policy = (
-        policy.ensure_channel_settings(chats)
-        if channels_configured
-        else (policy.read_channel_settings(), policy.read_default_policy())
-    )
-    chat_rows = []
-    for c in chats:
-        chat_id = str(c.get("id", ""))
-        saved = policy.settings_for_chat(chat_id, current)
-        chat_rows.append(
-            {
-                "id": chat_id,
-                "name": str(c.get("name", "")),
-                "type": str(c.get("type", "")),
-                "policy": str(saved.get("policy") or default_policy),
-                "memorize": bool(saved.get("memorize", default_policy != "excluded")),
-            }
-        )
-    visible_chats = [c for c in chat_rows if c["policy"] != "excluded"]
-    excluded_chats = [c for c in chat_rows if c["policy"] == "excluded"]
     owner_id: str | None = None
     owner_error = ""
     try:
         owner_id = services.read_owner()
     except services.OwnerServiceUnavailable as exc:
         owner_error = str(exc)
-    active_soul = ""
-    channels_error = ""
-    if channels_configured:
-        try:
-            active_soul = soul.read_active_soul_id()
-        except RuntimeError as exc:
-            channels_error = str(exc)
     soul_ids: list[str] = []
     soul_error = ""
     try:
@@ -233,15 +204,6 @@ def index(request: Request) -> HTMLResponse:
             ),
             "install_running": any(row.get("install_running") for row in rows + not_installed),
             "memorize": memorize,
-            "chats": chat_rows,
-            "visible_chats": visible_chats,
-            "excluded_chats": excluded_chats,
-            "channel_directory_path": str(policy.DIRECTORY_PATH),
-            "policies": policy.ALL_POLICIES,
-            "default_policy": default_policy,
-            "active_soul": active_soul,
-            "channels_configured": channels_configured,
-            "channels_error": channels_error,
             "soul_ids": soul_ids,
             "soul_error": soul_error,
             "apps_root": str(apps_root) if apps_root else "",
@@ -288,16 +250,61 @@ def memorize_retry(soul_id: str) -> dict:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@app.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request) -> HTMLResponse:
+@app.get("/hermes", response_class=HTMLResponse)
+def hermes_page(request: Request) -> HTMLResponse:
+    channels_configured = soul.CHANNELS_CONFIG_PATH.exists()
+    chats = policy.list_whatsapp_chats()
+    current, default_policy = (
+        policy.ensure_channel_settings(chats)
+        if channels_configured
+        else (policy.read_channel_settings(), policy.read_default_policy())
+    )
+    chat_rows = []
+    for c in chats:
+        chat_id = str(c.get("id", ""))
+        saved = policy.settings_for_chat(chat_id, current)
+        chat_rows.append(
+            {
+                "id": chat_id,
+                "name": str(c.get("name", "")),
+                "type": str(c.get("type", "")),
+                "policy": str(saved.get("policy") or default_policy),
+                "memorize": bool(saved.get("memorize", default_policy != "excluded")),
+            }
+        )
+    visible_chats = [c for c in chat_rows if c["policy"] != "excluded"]
+    excluded_chats = [c for c in chat_rows if c["policy"] == "excluded"]
+    active_soul = ""
+    channels_error = ""
+    if channels_configured:
+        try:
+            active_soul = soul.read_active_soul_id()
+        except RuntimeError as exc:
+            channels_error = str(exc)
+    soul_ids: list[str] = []
+    soul_error = ""
+    try:
+        soul_ids = services.list_souls()
+    except (services.SoulServiceUnavailable, ValueError) as exc:
+        soul_error = str(exc)
+    return templates.TemplateResponse(request, "hermes.html", {
+        "page_title": "Hermes setup — OpenAlma",
+        "chats": chat_rows,
+        "visible_chats": visible_chats,
+        "excluded_chats": excluded_chats,
+        "channel_directory_path": str(policy.DIRECTORY_PATH),
+        "policies": policy.ALL_POLICIES,
+        "default_policy": default_policy,
+        "active_soul": active_soul,
+        "channels_configured": channels_configured,
+        "channels_error": channels_error,
+        "soul_ids": soul_ids, "soul_error": soul_error,
+    })
+
+
+@app.get("/iris", response_class=HTMLResponse)
+def iris_page(request: Request) -> HTMLResponse:
     apps_root = settings.apps_root()
-    stored = settings.read_paths().get("apps_root") or ""
-    candidate = settings.next_apps_root(stored)
-    setup_root = settings.setup_apps_root()
-    editable = [
-        {"key": key, "label": CONFIG_LABELS.get(key, key)}
-        for key in _editable_configs(apps_root)
-    ]
     iris_spec = next((spec for spec in services.all_services() if spec.name == "iris-server"), None)
     iris = services.status(iris_spec) if iris_spec else {}
     iris_setup = iris.get("setup") or services.mentra_readiness(apps_root)
@@ -313,6 +320,22 @@ def settings_page(request: Request) -> HTMLResponse:
             }
         except (OSError, ValueError):
             pass
+    return templates.TemplateResponse(request, "iris.html", {
+        "page_title": "Iris setup", "iris": iris, "iris_setup": iris_setup,
+        "iris_connection": iris_connection,
+    })
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request) -> HTMLResponse:
+    apps_root = settings.apps_root()
+    stored = settings.read_paths().get("apps_root") or ""
+    candidate = settings.next_apps_root(stored)
+    setup_root = settings.setup_apps_root()
+    editable = [
+        {"key": key, "label": CONFIG_LABELS.get(key, key)}
+        for key in _editable_configs(apps_root)
+    ]
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -326,9 +349,6 @@ def settings_page(request: Request) -> HTMLResponse:
             "editable_configs": editable,
             "settings_path": str(settings.SETTINGS_PATH),
             "launcher_log_path": str(settings.LAUNCHER_LOG_PATH),
-            "iris": iris,
-            "iris_setup": iris_setup,
-            "iris_connection": iris_connection,
             "host_prerequisites": services.host_prerequisites(apps_root or setup_root),
         },
     )
@@ -501,7 +521,7 @@ def iris_install(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return RedirectResponse("/settings", status_code=303)
+    return RedirectResponse("/iris", status_code=303)
 
 
 @app.get("/souls")
@@ -585,7 +605,7 @@ async def policy_save(request: Request) -> RedirectResponse:
                 }
     if updates:
         policy.write_channel_settings(updates)
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("/hermes", status_code=303)
 
 
 @app.post("/soul")
@@ -599,7 +619,7 @@ def soul_save(soul_id: str = Form(default=""), use_existing: bool = Form(default
     ):
         raise HTTPException(status_code=409, detail="Stop Hermes Channels before changing its Soul")
     soul.set_active_soul_id(_resolve_soul(soul_id, use_existing))
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("/hermes", status_code=303)
 
 
 @app.post("/owner")

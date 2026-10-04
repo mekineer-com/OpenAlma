@@ -12,7 +12,7 @@ def test_excluded_whatsapp_chats_are_collapsed():
         loader=jinja2.FileSystemLoader(template_dir),
         autoescape=True,
     )
-    html = env.get_template("index.html").render(
+    html = env.get_template("hermes.html").render(
         services=[],
         chats=[
             {"id": "visible@g.us", "name": "Visible", "type": "group", "policy": "full", "memorize": True},
@@ -61,7 +61,7 @@ def test_empty_policy_view_shows_actual_channel_directory_path():
         loader=jinja2.FileSystemLoader(template_dir),
         autoescape=True,
     )
-    html = env.get_template("index.html").render(
+    html = env.get_template("hermes.html").render(
         services=[],
         chats=[],
         visible_chats=[],
@@ -85,7 +85,7 @@ def test_virgin_setup_hides_both_channels_sections():
     template_dir = Path(__file__).resolve().parents[1] / "launcher" / "templates"
     html = jinja2.Environment(
         loader=jinja2.FileSystemLoader(template_dir), autoescape=True,
-    ).get_template("index.html").render(
+    ).get_template("hermes.html").render(
         services=[], chats=[], visible_chats=[], excluded_chats=[],
         channels_configured=False, needs_setup=True, soul_ids=[],
     )

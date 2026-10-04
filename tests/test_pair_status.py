@@ -46,7 +46,7 @@ def test_whatsapp_pair_status_uses_auth_dir_when_status_missing(tmp_path, monkey
 
 
 def test_settings_template_contains_inline_whatsapp_pairing():
-    text = (Path(__file__).resolve().parents[1] / "launcher" / "templates" / "settings.html").read_text(encoding="utf-8")
+    text = (Path(__file__).resolve().parents[1] / "launcher" / "templates" / "hermes.html").read_text(encoding="utf-8")
 
     assert 'id="pair-whatsapp"' in text
     assert 'id="pair-panel"' in text

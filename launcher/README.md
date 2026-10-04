@@ -13,6 +13,11 @@ A small local web UI that starts, stops, and configures the local OpenAlma servi
 It also includes a GUI for the per-chat WhatsApp policy file (`CHANNELS_HOME/memu.json`)
 and shortcuts to open the rarely-edited config files in your default editor.
 
+Services remains the central overview. Hermes and Iris each have one Setup link
+to their own pages (`/hermes`, `/iris`); general Settings no longer contains their
+client controls. Installation/repair remains on Iris's setup page. These pages
+share the existing launcher header and browser-position behavior.
+
 ## Setup
 
 ```sh

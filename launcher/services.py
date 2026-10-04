@@ -744,7 +744,7 @@ def iris_install_env(target: dict[str, str] | None) -> dict[str, str]:
     }
     for key, value in values.items():
         if not value or any(char in value for char in "\r\n"):
-            raise ValueError(f"Set a valid Iris install {key} in Settings")
+            raise ValueError(f"Set a valid Iris install {key} on the Iris setup page")
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", values["DEVICE_SESSION_ID"]):
         raise ValueError("Iris device ID must be 1-128 letters, digits, dots, underscores or hyphens")
     for key in ("USER_ID", "SOUL_ID"):
@@ -1164,7 +1164,7 @@ def _iris_product_status(
     action_label = (
         ("Update" if mismatch else "Repair" if installed_package else "Install")
         if action == "start"
-        else "Cancel" if action == "stop" else "Settings" if action == "settings" else ""
+        else "Cancel" if action == "stop" else "Setup" if action == "settings" else ""
     )
     return {
         "running": runtime.running,

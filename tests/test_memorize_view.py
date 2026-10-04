@@ -11,13 +11,14 @@ def _render(
     memorize: dict | list,
     not_installed_services: list[dict] | None = None,
     services: list[dict] | None = None,
+    template_name: str = "index.html",
 ) -> str:
     template_dir = Path(__file__).resolve().parents[1] / "launcher" / "templates"
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(template_dir),
         autoescape=True,
     )
-    return env.get_template("index.html").render(
+    return env.get_template(template_name).render(
         services=services or [],
         not_installed_services=not_installed_services or [],
         chats=[],
@@ -54,9 +55,9 @@ def test_memorize_gauge_under_threshold():
 def test_launcher_heading_uses_accessible_spiral_mark():
     html = _render({})
 
-    assert '<h1 aria-label="OpenAlma"><svg class="brand-mark"' in html
+    assert '<h1 aria-label="OpenAlma"><a href="/"><svg class="brand-mark"' in html
     assert 'aria-hidden="true"' in html
-    assert "</svg>penAlma</h1>" in html
+    assert "</svg>penAlma</a></h1>" in html
 
 
 def test_memorize_gauge_over_threshold_shows_sleep_gap_badge():
@@ -144,7 +145,7 @@ def test_memorize_poll_renderer_executes_all_consolidation_states():
             r"""
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const text = fs.readFileSync(process.argv[1], 'utf8');
-const script = text.slice(text.indexOf('function esc(text)'), text.indexOf('function syncMemorize'))
+const script = text.slice(text.indexOf('function esc(text)'), text.indexOf('var pendingStarts'))
   + text.slice(text.indexOf('function fmt(n)'), text.indexOf("document.querySelectorAll('.snapshot-time')"));
 const box = {innerHTML: ''};
 const fetches = []; let polls = 0;
@@ -213,7 +214,7 @@ def test_memorize_owner_error_is_visible():
 
 
 def test_channels_soul_selector_is_one_combobox():
-    html = _render({})
+    html = _render({}, template_name="hermes.html")
 
     assert 'id="channels-soul-form"' in html
     assert 'id="channels-soul-options"' in html
