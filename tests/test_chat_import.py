@@ -57,6 +57,9 @@ def test_conversion_date_identity_and_metadata(tmp_path):
     chat_import.store_upload(db, **scope, messages=no_ids, history_count=0)
     replay, _, _ = chat_import.normalize_messages([{"role": "user", "content": "hi", "timestamp": "2025-01-01T00:00:00Z"}])
     assert chat_import.store_upload(db, **scope, messages=replay, history_count=1)["duplicates"] == 1
+    day_only, _, _ = chat_import.normalize_messages([{"role": "user", "content": "hi", "timestamp": "2025-01-01"}])
+    assert day_only[0]["timestamp"] == replay[0]["timestamp"]
+    assert chat_import.store_upload(db, **scope, messages=day_only, history_count=1)["duplicates"] == 1
     with pytest.raises(ValueError, match="Ambiguous"):
         chat_import.store_upload(db, **scope, messages=replay * 2, history_count=1)
     dated, _, _ = chat_import.normalize_messages([{"id": str(i), "role": "user", "content": "same",

@@ -39,7 +39,7 @@ def normalize_date(value: str) -> tuple[str, str, int]:
     if len(value) == 10:
         day = date.fromisoformat(value).isoformat()
         dt = datetime.combine(date.fromisoformat(day), datetime.min.time(), UTC)
-        return day, day, int(dt.timestamp() * 1000)
+        return dt.isoformat(), day, int(dt.timestamp() * 1000)
     dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if dt.tzinfo is None:
         raise ValueError("Imported timestamps need an explicit timezone; date-only values are allowed")
