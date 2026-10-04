@@ -81,7 +81,7 @@ def test_empty_policy_view_shows_actual_channel_directory_path():
     assert "New rows default to" in html
 
 
-def test_virgin_setup_hides_both_channels_sections():
+def test_virgin_setup_shows_soul_picker_before_channel_policy():
     template_dir = Path(__file__).resolve().parents[1] / "launcher" / "templates"
     html = jinja2.Environment(
         loader=jinja2.FileSystemLoader(template_dir), autoescape=True,
@@ -90,5 +90,6 @@ def test_virgin_setup_hides_both_channels_sections():
         channels_configured=False, needs_setup=True, soul_ids=[],
     )
 
-    assert "Hermes Channels Soul selector" not in html
+    assert "Hermes Channels Soul selector" in html
+    assert 'id="channels-soul-form"' in html
     assert "WhatsApp channel policy" not in html

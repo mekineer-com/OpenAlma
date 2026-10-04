@@ -18,6 +18,8 @@ DEFAULT_REPLY_PREFIX_TEMPLATE = "✦ *{soul}*: "
 def _load_channels_config() -> dict:
     try:
         data = json.loads(CHANNELS_CONFIG_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
     except (OSError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"Failed to read {CHANNELS_CONFIG_PATH}: {exc}") from exc
     if not isinstance(data, dict):

@@ -1,4 +1,6 @@
 import subprocess
+import json
+import re
 from pathlib import Path
 
 import pytest
@@ -58,6 +60,33 @@ def test_launcher_heading_uses_accessible_spiral_mark():
     assert '<h1 aria-label="OpenAlma"><a href="/"><svg class="brand-mark"' in html
     assert 'aria-hidden="true"' in html
     assert "</svg>penAlma</a></h1>" in html
+
+
+def test_initial_and_polled_setup_actions_match():
+    cases = [
+        {"name": "iris-server", "action_kind": "install", "action_label": "Install"},
+        {"name": "iris-server", "action_kind": "install", "action_label": "Update"},
+        {"name": "iris-server", "action_kind": "start", "action_label": "Update"},
+        {"name": "iris-server", "action_kind": "stop", "action_label": "Cancel"},
+        {"name": "channels-daemon", "startable": True},
+        {"name": "channels-daemon", "running": True, "stoppable": True, "pairing_required": True},
+    ]
+    script = r"""
+const fs=require('fs'),vm=require('vm'); const text=fs.readFileSync(process.argv[1],'utf8');
+vm.runInThisContext(text.slice(text.indexOf('function esc(text)'),text.indexOf('var pendingStarts')));
+vm.runInThisContext(text.slice(text.indexOf('function actionHtml'),text.indexOf('async function openService')));
+console.log(JSON.stringify(JSON.parse(process.argv[2]).map(row=>actionHtml(row.name,row))));
+"""
+    path = Path(__file__).resolve().parents[1] / "launcher/templates/index.html"
+    polled = json.loads(subprocess.check_output(["node", "-e", script, str(path), json.dumps(cases)], text=True))
+    labels = lambda html: re.findall(r">([^<>]+)</(?:button|a)>" , html)
+    for row, dynamic in zip(cases, polled):
+        initial = _render({}, services=[row]).split('<td class="svc-actions">', 1)[1].split("</td>", 1)[0]
+        assert labels(initial) == labels(dynamic)
+    assert labels(polled[0]) == ["Install"]
+    assert labels(polled[1]) == ["Update", "Setup"]
+    assert labels(polled[2]) == ["Update", "Setup"]
+    assert 'href="/hermes?pair=1"' in polled[-1]
 
 
 def test_memorize_gauge_over_threshold_shows_sleep_gap_badge():

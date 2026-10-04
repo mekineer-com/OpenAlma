@@ -222,9 +222,10 @@ class MentraStatusTest(TestCase):
         self.assertIsNone(openalma["action_kind"])
         self.assertEqual(openalma["action_label"], "")
         from app import templates
-        page = templates.get_template("settings.html").render(
+        page = templates.get_template("iris.html").render(
             iris_setup={"enabled": True, "ready": True, "rows": []},
             iris=openalma,
+            iris_connection={},
             host_prerequisites={"rows": []},
         )
         self.assertIn(">Repair<", page)
@@ -292,14 +293,15 @@ class MentraStatusTest(TestCase):
             )
             self.assertEqual(product["action_label"], "Cancel")
             from app import templates
-            template = templates.get_template("settings.html")
+            template = templates.get_template("iris.html")
             page = template.render(
                 iris_setup=result,
                 iris=product,
+                iris_connection={},
                 host_prerequisites={"rows": [{"label": "Fictional host check", "state": "ready", "detail": "Ready"}]},
             )
             self.assertIn("irisAction('stop')", page)
-            self.assertLess(page.index("Fictional host check"), page.index("Iris &amp; Phone Setup"))
+            self.assertNotIn("Fictional host check", page)
         finally:
             config.unlink()
             config.parent.rmdir()
@@ -327,7 +329,7 @@ class MentraStatusTest(TestCase):
     def test_running_installer_shows_stock_steps_and_exact_phone_id(self) -> None:
         from app import templates
 
-        page = templates.get_template("settings.html").render(
+        page = templates.get_template("iris.html").render(
             iris_setup={"enabled": True, "ready": True, "rows": []},
             iris={
                 "running": True,
@@ -649,11 +651,11 @@ class MentraStatusTest(TestCase):
                 patch.object(services, "read_owner", return_value="Fictional User"),
             ):
                 client = TestClient(app.app)
-                page = client.get("/").text
+                page = client.get("/hermes").text
                 self.assertIn('const knownSouls = new Set(["Codexia"])', page)
                 self.assertNotIn('const knownSouls = new Set(["Wrong Source"])', page)
                 with patch.object(services, "list_souls", side_effect=services.SoulServiceUnavailable("Soul service unavailable")):
-                    unavailable = client.get("/")
+                    unavailable = client.get("/hermes")
                     self.assertEqual(unavailable.status_code, 200)
                     self.assertIn("Souls unavailable", unavailable.text)
                     self.assertNotIn('<form method="post" action="/soul">', unavailable.text)
@@ -663,7 +665,9 @@ class MentraStatusTest(TestCase):
                     self.assertEqual(client.post("/soul", data={"soul_id": "New Soul"}).status_code, 503)
                 self.assertEqual(json.loads(config.read_text())["soul_id"], "Old Soul")
                 with patch.object(services, "resolve_soul", return_value="Codexia") as resolve:
-                    self.assertEqual(client.post("/soul", data={"soul_id": "Codexia", "use_existing": "true"}, follow_redirects=False).status_code, 303)
+                    saved = client.post("/soul", data={"soul_id": "Codexia", "use_existing": "true"}, follow_redirects=False)
+                    self.assertEqual(saved.status_code, 303)
+                    self.assertEqual(saved.headers["location"], "/hermes")
                 resolve.assert_called_once_with("Codexia", True)
                 with (
                     patch.object(services, "status", return_value={"state": "healthy", "running": True}),
@@ -787,7 +791,7 @@ class MentraStatusTest(TestCase):
                 self.assertIn("waiting for phone installation", running_home)
                 self.assertIn(">Cancel<", running_home)
                 self.assertNotIn("Not installed (1)", running_home)
-                self.assertIn('action="/iris/install"', client.get("/settings").text)
+                self.assertIn('action="/iris/install"', client.get("/iris").text)
                 with (
                     patch.object(services, "_read_mentra_status", return_value={
                         "state": "ready",
@@ -804,7 +808,9 @@ class MentraStatusTest(TestCase):
                 self.assertIn('data-soul="Fictional Soul"', installed_home)
                 self.assertIn('data-device="test-phone"', installed_home)
                 target = {"soul_id": "Fictional Soul", "device_session_id": "test-phone"}
-                self.assertEqual(client.post("/iris/install", data=target, follow_redirects=False).status_code, 303)
+                saved = client.post("/iris/install", data=target, follow_redirects=False)
+                self.assertEqual(saved.status_code, 303)
+                self.assertEqual(saved.headers["location"], "/iris")
                 start.assert_called_once_with(iris, install_target=target)
                 start.reset_mock()
                 response = client.post(

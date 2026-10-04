@@ -276,11 +276,10 @@ def hermes_page(request: Request) -> HTMLResponse:
     excluded_chats = [c for c in chat_rows if c["policy"] == "excluded"]
     active_soul = ""
     channels_error = ""
-    if channels_configured:
-        try:
-            active_soul = soul.read_active_soul_id()
-        except RuntimeError as exc:
-            channels_error = str(exc)
+    try:
+        active_soul = soul.read_active_soul_id()
+    except RuntimeError as exc:
+        channels_error = str(exc)
     soul_ids: list[str] = []
     soul_error = ""
     try:

@@ -40,6 +40,17 @@ def test_read_active_soul_id(tmp_path, monkeypatch):
     assert soul.read_active_soul_id() == "Echo"
 
 
+def test_fresh_channels_config_is_created_by_soul_selection(tmp_path, monkeypatch):
+    config = tmp_path / "channels" / "config.json"
+    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", config)
+    monkeypatch.setattr(soul, "HERMES_STATE_DB_PATH", tmp_path / "channels" / "state.db")
+    assert soul.read_active_soul_id() == "" and not config.exists()
+    soul.set_active_soul_id("TestSoul")
+    saved = json.loads(config.read_text())
+    assert saved["soul_id"] == "TestSoul" and saved["souls"] == ["TestSoul"]
+    assert "TestSoul" in saved["reply_prefix"]
+
+
 def test_set_active_soul_id_updates_soul_id_and_souls(tmp_path, monkeypatch):
     cfg = tmp_path / "config.json"
     state_db = tmp_path / "state.db"

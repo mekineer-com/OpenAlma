@@ -122,8 +122,21 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
         assert '/static/launcher.js' in response.text
         assert '/static/window-position.js' in response.text
         assert 'aria-label="OpenAlma"' in response.text
+        assert 'class="client-heading"' in response.text
+        assert f'/static/{page[1:]}-logo.svg' in response.text
+        for link in ("https://openalma.org", "https://github.com/mekineer-com/OpenAlma", "https://discord.gg/MyhGFhdN3b"):
+            assert f'href="{link}"' in response.text
+        assert 'aria-label="OpenAlma community"' in response.text
     assert 'id="pair-panel"' in client.get("/hermes").text
     assert 'id="pair-panel"' not in client.get("/iris").text
+
+
+def test_policy_save_returns_to_hermes(monkeypatch):
+    saved = []
+    monkeypatch.setattr(app.policy, "write_default_policy", lambda value: saved.append(value))
+    response = TestClient(app.app).post("/policy", data={"default_policy": "excluded"}, follow_redirects=False)
+    assert response.status_code == 303 and response.headers["location"] == "/hermes"
+    assert saved == ["excluded"]
 
 
 def test_launcher_saves_window_position(tmp_path, monkeypatch):

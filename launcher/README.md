@@ -18,6 +18,10 @@ to their own pages (`/hermes`, `/iris`); general Settings no longer contains the
 client controls. Installation/repair remains on Iris's setup page. These pages
 share the existing launcher header and browser-position behavior.
 
+Launcher verification includes the launcher-local Iris tests as well as `tests/`:
+`launcher/.venv/bin/python -m pytest -q tests/ launcher/test_mentra_status.py`
+(run from the OpenAlma repository root).
+
 ## Setup
 
 ```sh
@@ -75,9 +79,9 @@ Windows support will ship as a thin per-user installer (Inno Setup, compiled by 
 - Graceful Stop never force-kills. If a service is still stopping after 30 seconds, the separately confirmed Force Stop action becomes available as manual recovery.
 - Packaged repair, update, and uninstall require every OpenAlma service to be stopped, even when the launcher window is already closed. The installer refuses rather than force-killing a service or deleting around locked data. If damaged launcher files prevent verification, only normal data-preserving uninstall remains available; Remove Everything stays disabled.
 - If a core update cannot finish rolling back, the launcher exposes one Recover action. It restores the recorded Soul backup and previous core commits, validates them, and leaves Update for a separate retry; package restoration may require internet access.
-- Iris connection settings belong to `mcp-memu-server/config.json`: `mentra.public_base_url` and `mentra.integration_bearer_token`. Settings checks host health and private ingress; static earcons are intentionally public. "Host ready" is not proof that the phone is connected.
-- Install takes a soul and phone ID in Settings and discovers the shared owner from mcp. Install/Update generates Iris `.env.local` from these inputs before building; editing that artifact does not affect host readiness. An existing artifact gets a one-time `.orig` backup. Same-version Repair is shown only when OpenAlma Mentra has reported exact-acknowledgement support; stock Mentra cannot prove that a repair occurred.
-- While an offer is live, Settings keeps the QR fallback visible, shows its exact Phone ID and connection values, and includes stock Mentra's developer-menu steps. A fresh exact-device Iris report stops first-install or version-changing-update offers automatically; same-version presence alone never closes Repair.
+- Iris connection settings belong to `mcp-memu-server/config.json`: `mentra.public_base_url` and `mentra.integration_bearer_token`. The Iris setup page checks host health and private ingress; static earcons are intentionally public. "Host ready" is not proof that the phone is connected.
+- Install takes a soul and phone ID on the Iris setup page and discovers the shared owner from mcp. Install/Update generates Iris `.env.local` from these inputs before building; editing that artifact does not affect host readiness. An existing artifact gets a one-time `.orig` backup. Same-version Repair is shown only when OpenAlma Mentra has reported exact-acknowledgement support; stock Mentra cannot prove that a repair occurred.
+- While an offer is live, the Iris setup page keeps the QR fallback visible, shows its exact Phone ID and connection values, and includes stock Mentra's developer-menu steps. A fresh exact-device Iris report stops first-install or version-changing-update offers automatically; same-version presence alone never closes Repair.
 - Hermes uses one Iris-style editable soul field with attached existing-soul suggestions and an explicit arrow action. First Iris install retains its editable field and existing-soul dropdown. Both use the local MCP `/souls` API with user context. Lookup failure displays unavailable and preserves the current Channels configuration. Install config/target validation precedes soul creation; later build failures can still leave the created soul available for retry.
 - Deploy the status endpoint, launcher, and Iris release wrapper together: status now requires the existing bearer. No phone bundle update is needed for this host-side change.
 - Stop remains graceful and unbounded. If mcp reports no completed work for 30 seconds, the launcher reveals the separately confirmed Force Stop recovery action but never triggers it automatically.

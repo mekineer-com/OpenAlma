@@ -1,10 +1,11 @@
+{% set setup_title = "Hermes" %}
+{% set setup_logo = "/static/hermes-logo.svg" %}
 {% include "_index_head.html" %}
 {% include "_header.html" %}
 <style>    .pair-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-top: 1rem; }
     .pair-card { border: 1px solid #333; border-radius: 4px; padding: 0.8rem; background: #202020; }
     .pair-card h3 { margin: 0 0 0.4rem 0; color: #f0f0f0; }
     .pair-card canvas { width: 220px; height: 220px; background: #fff; border: 8px solid #fff; display: block; }</style>
-  {% if channels_configured %}
   <h2>Hermes Channels Soul selector</h2>
   <p class="muted">Choose an existing soul or enter a new name. Stored in hermes-channels/data/config.json</p>
   {% if channels_error %}
@@ -28,6 +29,7 @@
     <input id="soul-use-existing" type="hidden" name="use_existing" value="false">
   </form>
   {% endif %}
+  {% if channels_configured %}
   <h2>WhatsApp channel policy</h2>
   <form method="post" action="/policy">
     <p>
@@ -101,7 +103,7 @@
   </form>
   {% endif %}
 
-{% if not channels_configured %}<p class="muted">Install Hermes Channels from Services to configure it.</p>{% endif %}
+{% if not channels_configured %}<p class="muted">Choose a Soul above to create the Hermes settings.</p>{% endif %}
   <h2>WhatsApp pairing</h2>
   <p><button class="btn" type="button" id="pair-whatsapp">Pair WhatsApp</button></p>
   <section id="pair-panel" hidden>
@@ -286,5 +288,6 @@ setInterval(function() { fetch('/souls', {cache:'no-store'}).then(function(r) { 
 {% endif %}
 </script>
 <script src="/static/window-position.js"></script>
+{% include "_footer.html" %}
 </body>
 </html>
