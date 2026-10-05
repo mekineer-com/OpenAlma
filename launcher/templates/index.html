@@ -151,9 +151,11 @@
       <div class="meter"><div class="meter-fill" style="width: {{ [meter.pct, 100]|min }}%"></div></div>
       {% if meter.paused %}
         <p class="consolidation-warning" role="alert">
-          Paused: {{ 'Memorize' if meter.retry_operation == 'memorize' else 'Consolidation' }} failed.
+          Paused: {% if meter.retry_operation == 'import' %}{{ 'Import failed.' if meter.pause_reason == 'Import failed. Retry in Echo.' else 'waiting for import.' }}{% elif meter.pause_reason == 'Waiting for Memorize after import.' %}waiting for Memorize.{% else %}{{ 'Memorize' if meter.retry_operation == 'memorize' else 'Consolidation' }} failed.{% endif %}
           <span title="{{ meter.pause_reason }}">!</span>
+          {% if meter.retry_operation == 'import' %}<a class="btn" href="/echo">Echo</a>{% else %}
           <button type="button" class="btn" data-soul="{{ meter.soul_id }}" onclick="retryConsolidation(this)" {% if meter.memorize_running or meter.consolidation_running %}disabled{% endif %}>{{ 'Retrying...' if meter.memorize_running or meter.consolidation_running else 'Retry' }}</button>
+          {% endif %}
         </p>
       {% elif meter.consolidation_state == "overdue" %}
         <p class="consolidation-warning" role="status">Weekly reflection will occur after the coming Memorize. {{ meter.pending_consolidation_segments }} memorized {{ "segment" if meter.pending_consolidation_segments == 1 else "segments" }} already in queue.</p>

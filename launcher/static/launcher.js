@@ -43,8 +43,13 @@ function memorizeHtml(data) {
   html += '<div class="meter"><div class="meter-fill" style="width: ' + Math.min(pct, 100) + '%"></div></div>';
   if (data.paused) {
     var running = data.memorize_running || data.consolidation_running;
-    html += '<p class="consolidation-warning" role="alert">Paused: ' + (data.retry_operation === 'memorize' ? 'Memorize' : 'Consolidation') + ' failed. <span title="' + esc(data.pause_reason) + '">!</span> ';
-    html += '<button type="button" class="btn" data-soul="' + esc(data.soul_id) + '" onclick="retryConsolidation(this)"' + (running ? ' disabled' : '') + '>' + (running ? 'Retrying...' : 'Retry') + '</button></p>';
+    html += '<p class="consolidation-warning" role="alert">Paused: ' +
+      (data.retry_operation === 'import' ? (data.pause_reason === 'Import failed. Retry in Echo.' ? 'Import failed.' : 'waiting for import.') :
+       data.pause_reason === 'Waiting for Memorize after import.' ? 'waiting for Memorize.' :
+       (data.retry_operation === 'memorize' ? 'Memorize' : 'Consolidation') + ' failed.') +
+      ' <span title="' + esc(data.pause_reason) + '">!</span> ';
+    html += data.retry_operation === 'import' ? '<a class="btn" href="/echo">Echo</a></p>' :
+      '<button type="button" class="btn" data-soul="' + esc(data.soul_id) + '" onclick="retryConsolidation(this)"' + (running ? ' disabled' : '') + '>' + (running ? 'Retrying...' : 'Retry') + '</button></p>';
   } else if (data.consolidation_state === 'overdue') {
     var overdueSegments = Number(data.pending_consolidation_segments || 0);
     html += '<p class="consolidation-warning" role="status">Weekly reflection will occur after the coming Memorize. ' + fmt(overdueSegments) + ' memorized ' + (overdueSegments === 1 ? 'segment' : 'segments') + ' already in queue.</p>';

@@ -192,6 +192,11 @@ context.renderMemorize({souls: [{...base, paused: true, retry_operation: 'consol
 assert.match(box.innerHTML, /Retry<\/button>/);
 assert.match(box.innerHTML, /&lt;bad&gt;/);
 assert.doesNotMatch(box.innerHTML, /<bad>/);
+context.renderMemorize({souls: [{...base, paused: true, retry_operation: 'import', pause_reason: 'Waiting for import before Memorize.'}]});
+assert.match(box.innerHTML, /href="\/echo"/);
+assert.doesNotMatch(box.innerHTML, /Consolidation failed|Retry<\/button>/);
+context.renderMemorize({souls: [{...base, paused: true, retry_operation: 'memorize', pause_reason: 'Waiting for Memorize after import.'}]});
+assert.match(box.innerHTML, /waiting for Memorize/);
 context.renderMemorize({souls: [{...base, threshold: 0, paused: true, retry_operation: 'memorize', soul_id: 'First Soul'}]});
 assert.match(box.innerHTML, /Paused: Memorize failed/);
 assert.match(box.innerHTML, /Retry<\/button>/);
@@ -239,6 +244,13 @@ def test_multi_soul_meters_are_named_and_retry_stays_paused():
 
 def test_memorize_owner_error_is_visible():
     assert "OpenAlma owner mismatch" in _render({"error": "OpenAlma owner mismatch"})
+
+
+def test_import_wait_uses_echo_not_consolidation_retry():
+    html = _render({"threshold": 6000, "summed_unmemorized_tokens": 0, "pct": 0,
+                    "paused": True, "retry_operation": "import", "pause_reason": "Waiting for import before Memorize."})
+    assert 'href="/echo"' in html and "waiting for import" in html
+    assert "Consolidation failed" not in html and "retryConsolidation(this)" not in html
 
 
 def test_channels_soul_selector_is_one_combobox():
