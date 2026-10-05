@@ -1,26 +1,19 @@
 # OpenAlma Launcher
 
-Mentra Iris has a permanent Services row for installation and phone status. Its temporary installer serves port 6789 only while installing/updating; it is not the conversation server. The launcher does not remotely stop phone conversations. memU Stop is blocked while any Iris sitting/start claim is busy. Unknown status requires an explicit interruption-risk confirmation, so a hung server or broken credential cannot trap the operator.
+One place to open your companion's chats, explore her memories, and manage
+OpenAlma. Start the apps you want to use and leave the rest stopped:
 
-A small local web UI that starts, stops, and configures the local OpenAlma services:
-
-- `mcp-memu-server` (memory engine)
-- Mentra Iris private installer
+- OpenAlma's memory services
+- Iris for voice and photos
 - Atomic Mind Map
 - Hermes Channels
 - SillyTavern
 
-It also includes a GUI for the per-chat WhatsApp policy file (`CHANNELS_HOME/memu.json`)
-and shortcuts to open the rarely-edited config files in your default editor.
+Use **Setup** beside an app to configure it. Hermes lets you choose which
+WhatsApp chats your companion can hear and answer; Iris connects her to your
+phone or smartglasses. **Settings** holds general OpenAlma preferences.
 
-Services remains the central overview. Hermes and Iris each have one Setup link
-to their own pages (`/hermes`, `/iris`); general Settings no longer contains their
-client controls. Installation/repair remains on Iris's setup page. These pages
-share the existing launcher header and browser-position behavior.
-
-Launcher verification includes the launcher-local Iris tests as well as `tests/`:
-`launcher/.venv/bin/python -m pytest -q tests/ launcher/test_mentra_status.py`
-(run from the OpenAlma repository root).
+For a guided installation, start with [Getting started](https://openalma.org/getting-started.html).
 
 ## Setup
 
@@ -36,15 +29,10 @@ python3 -m venv .venv
 .venv/bin/python run.py
 ```
 
-The launcher serves on `http://127.0.0.1:8765` and opens a chromeless window
-(Chrome / Edge / Brave / Chromium / Vivaldi). If no Chromium-family browser is
-installed, it falls back to opening the URL in your default browser. Its dedicated
-Chromium profile persists page zoom and, where the window manager permits it,
-window bounds. Reopening the shortcut raises the existing Chromium app window.
-If the browser survived a previous launcher exit, startup reuses it and watches
-the actual profile-owning browser process, not Chromium's forwarding child.
-Malformed or unreadable path settings stay untouched: Windows uses its startup
-error dialog; Linux opens an error page in the default browser.
+The launcher opens its own window when a Chromium-based browser is available,
+or a page in your default browser otherwise. You can also visit
+`http://127.0.0.1:8765`. Its own window remembers your zoom and, where supported,
+its size and position. Opening the shortcut again brings that window forward.
 
 Flags:
 
@@ -60,94 +48,33 @@ update-desktop-database ~/.local/share/applications/ 2>/dev/null || true
 
 ## Windows (unreleased)
 
-Windows support will ship as a thin per-user installer (Inno Setup, compiled by the Windows CI workflow at release tags). It is not published yet — it arrives with the next coordinated release. Platform behavior beyond the shared Notes below:
-
-- Terminal-free: launching never opens a console; no-console subprocess flags are shared with child services.
-- Exact single-instance server identity — a second launch raises the existing launcher window rather than starting another server.
-- Prefers a Chromium-family chromeless window and falls back to the default browser; an explicit Exit action; favicon/log access from the UI.
-- A shared `.openalma-root` marker lets a packaged installer adopt a launcher-managed manual Apps root without guessing ownership.
-- Coordinated updates: numeric launcher upgrades with exact-tag matching; readiness requires every OpenAlma service stopped; the core (memU + mcp-memu-server) updates first with optional clients separate; a WAL-safe Soul backup (space/retention policy) precedes migration; rollback is database-first, and one Recover action restores the recorded backup and previous core commits if rollback cannot finish.
-- Branding: the 2-turn spiral icon (16–256 px) covers Setup, uninstall, Start Menu, and Desktop.
+The upcoming Windows installer will let you open OpenAlma from the Start menu
+without a terminal window. It is not published yet.
 
 ## Notes
 
-- On first use, confirm your name and, when no Souls exist, the first Soul's name together. If only the owner is saved, the launcher resumes at the unfinished Soul step.
-- Changing Apps root is saved for the next launcher start; active service and Channels paths do not switch mid-run.
-- Settings separates application setup gaps from runtime tools. Optional-client requirements appear only for clients whose checkout is present; Iris installation remains unavailable until its current `node`, `bun`, and `ip` release path can run.
-- Stop Hermes Channels before selecting another Soul; restart it to load the new exact selection.
-- WhatsApp Channel Policy stores a default for newly discovered rows (initially `excluded`). Existing legacy chats are first frozen as explicit `full` rows, and changing the selector later affects only chats discovered afterward.
-- Graceful Stop never force-kills. If a service is still stopping after 30 seconds, the separately confirmed Force Stop action becomes available as manual recovery.
-- Packaged repair, update, and uninstall require every OpenAlma service to be stopped, even when the launcher window is already closed. The installer refuses rather than force-killing a service or deleting around locked data. If damaged launcher files prevent verification, only normal data-preserving uninstall remains available; Remove Everything stays disabled.
-- If a core update cannot finish rolling back, the launcher exposes one Recover action. It restores the recorded Soul backup and previous core commits, validates them, and leaves Update for a separate retry; package restoration may require internet access.
-- Iris connection settings belong to `mcp-memu-server/config.json`: `mentra.public_base_url` and `mentra.integration_bearer_token`. The Iris setup page checks host health and private ingress; static earcons are intentionally public. "Host ready" is not proof that the phone is connected.
-- Install takes a soul and phone ID on the Iris setup page and discovers the shared owner from mcp. Install/Update generates Iris `.env.local` from these inputs before building; editing that artifact does not affect host readiness. An existing artifact gets a one-time `.orig` backup. Same-version Repair is shown only when OpenAlma Mentra has reported exact-acknowledgement support; stock Mentra cannot prove that a repair occurred.
-- While an offer is live, the Iris setup page keeps the QR fallback visible, shows its exact Phone ID and connection values, and includes stock Mentra's developer-menu steps. A fresh exact-device Iris report stops first-install or version-changing-update offers automatically; same-version presence alone never closes Repair.
-- Hermes uses one Iris-style editable soul field with attached existing-soul suggestions and an explicit arrow action. First Iris install retains its editable field and existing-soul dropdown. Both use the local MCP `/souls` API with user context. Lookup failure displays unavailable and preserves the current Channels configuration. Install config/target validation precedes soul creation; later build failures can still leave the created soul available for retry.
-- Deploy the status endpoint, launcher, and Iris release wrapper together: status now requires the existing bearer. No phone bundle update is needed for this host-side change.
-- Stop remains graceful and unbounded. If mcp reports no completed work for 30 seconds, the launcher reveals the separately confirmed Force Stop recovery action but never triggers it automatically.
-- The Memory view reports consolidation health: running, waiting (continue a conversation to trigger the next attempt), or failed with the recorded error and a Retry button. Retry appears only in the failed state — failed consolidations never restart automatically.
-- Memorize shows each existing Soul independently of Hermes, naming every meter when there is more than one. Paused rows retain the failure while Retry runs; Retry targets that row's failed operation. Other Souls remain independent.
-- Settings shows the server's embedding model for all Souls (read-only, currently `gemini-embedding-2`). Managed per-Soul model switching is not offered.
+- On first use, confirm your name and choose or create your companion's Soul.
+- Each Soul has its own memory progress and recovery controls.
+- Stop Hermes before switching its Soul, then start it again.
+- New WhatsApp chats are excluded until you choose to include them. Changing
+  the default for new chats does not change the choices for existing chats.
+- **Stop** gives an app time to finish safely. If it gets stuck, you can choose
+  **Force Stop** after 30 seconds; OpenAlma will not do that automatically.
+- Finish your Iris conversation before stopping the memory services.
+- If memory processing fails, the launcher shows the problem and a **Retry**
+  button. You decide when to try again; other Souls can continue independently.
+- Closing the launcher does not stop the apps it started. Stop them first if
+  you want to shut down OpenAlma completely.
+- Stop all OpenAlma apps before updating, repairing or uninstalling. If an update
+  needs recovery, follow the launcher's **Recover** action.
 
-- The launcher tracks PIDs in `~/.cache/openalma-launcher/`. Stopping the
-  launcher does not stop the services it started — they keep running.
-- The active soul lives in the channels config
-  (`hermes-channels/data/config.json`: `soul_id`, `souls`,
-  `reply_prefix_template`). The retired hermes-agent had its own "SOUL.md"
-  persona file — unrelated to the memU soul concept; they shared a name only
-  by accident.
+## Echo (In Development)
 
-## Chat Import Foundation
+Echo brings chat exports into OpenAlma so your companion does not have to start
+over. Choose her Soul and the app the chat came from, then **Preview** the dates
+and messages before choosing **Import**. Messages already imported are skipped.
 
-`chat_import.py` converts generic JSON (`messages` plus optional `title`, or a
-message array) and native Replika JSON into the client-owned
-`openalma/imports/chats.db`. Messages require dates and `user`/`assistant` roles;
-ISO datetimes require a timezone. Source names, IDs, calendar days and metadata
-are retained. Replika roles require `meta.nature` (`Customer` or `Robot`); generic
-messages require an explicit role. Native `Customer` rows use the selected
-owner's `user_id`, not the literal role label. Same owner/Soul/app label reuses the chat; replay keeps stored rows
-and their history/current choice. ID-less date/speaker/role conflicts refuse the
-whole upload. MCP owns processing checkpoints, not this source database.
-
-Preview uses `prepare_upload`; confirmation revalidates new current rows through
-MCP `/imports/validate` before `store_upload`, then `/imports/register` publishes
-the stored historical bound. Neither MCP endpoint runs a model. **Echo** is a
-capability in Services; Setup opens `/echo`. Choose or explicitly create a Soul
-with the same combobox used by Hermes, then choose
-or confirm a chat-app label, then preview the file and its history/current gap.
-Confirm storage never starts processing. A saved source with incomplete
-registration can be registered again without re-uploading or deleting it.
-
-Echo now labels that confirmation **Import**: one action stores new source rows,
-with the selected current portion joining ordinary unmemorized context. Replay
-skips stored messages before guidance/work. One imported app belongs to each
-Soul; labels match Unicode case-insensitively and retain canonical display.
-Saved conversation segments determine whether initial historical processing is
-supported. The first registered historical bound remains fixed through its
-batches; later historical uploads remain saved and unmemorized. Preview shows
-the Soul-wide pending period but checks processed overlap only for this chat;
-if that period changes before confirmation, preview again. A small shared
-launcher middleware checks mutation Host/Origin/fetch metadata, preserving local
-CLI requests and explicit `--host`; it does not add an MCP guard.
-
-Custom labels retain their spelling; picker/status resolves Unicode aliases at
-the Python lookup rather than normalizing separately in JavaScript. Required
-date guidance refuses unreadable sources instead of presenting an incomplete
-period. Duplicate-only previews show their notice without unqueried date claims,
-including when another upload inserts the candidates during validation.
-Retained old source stores with multiple chats per Soul need the separately
-authorized one-time uniqueness preparation; no runtime conversion is provided.
-
-The revised pause/handoff, server-owned continuation and per-file meters are
-still pending. The browser-owned processing described below is the original
-implementation, not completion of that revised flow.
-
-Process one historical batch, inspect current dossier prose, then decide whether
-to continue. **Process continuously** defaults off and lives only in the open
-page. It requires an acknowledged start and advancement of that chat's checkpoint;
-errors or uncertain acknowledgement stop it without automatically retrying a
-paid operation. Closing the page stops continuation, not an accepted batch.
-The ordinary current suffix still joins cross-conversation Memorize. Echo
-reuses the existing Memorize display; it is not a service process or installer.
-Existing Soul databases require the separately approved stopped/backed-up
-Resource date-column preparation before restarting with the new engine schema.
+Messages in the current period join the unmemorized chat; older messages are
+archived. Past conversations can currently become memories only before a Soul
+has memorized conversations of her own. Echo's processing controls are still
+being finished; it is not yet ready for everyday use.
