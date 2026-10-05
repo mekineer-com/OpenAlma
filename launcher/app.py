@@ -269,7 +269,8 @@ def memorize_retry(soul_id: str) -> dict:
 
 
 def _echo_require_server() -> None:
-    if not services.is_running(_find_service("memu-server")):
+    state = services._runtime_state(_find_service("memu-server"))
+    if not state.running or state.port_blocked:
         raise HTTPException(status_code=503, detail="Start this installation's memU Server before using Echo")
 
 

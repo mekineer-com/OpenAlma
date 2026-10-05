@@ -16,16 +16,18 @@ def echo_owned_server(monkeypatch):
     import app
     monkeypatch.setattr(app, "_find_service", lambda name: SimpleNamespace(name=name))
     monkeypatch.setattr(app.services, "is_running", lambda _spec: True)
+    monkeypatch.setattr(app.services, "_runtime_state", lambda _spec: SimpleNamespace(running=True, port_blocked=False))
 
 
-@pytest.mark.parametrize("owned", [False, True])
-def test_echo_refuses_foreign_server_or_source(tmp_path, monkeypatch, owned):
+@pytest.mark.parametrize("owned,blocked", [(False, False), (True, False), (True, True)])
+def test_echo_refuses_foreign_server_or_source(tmp_path, monkeypatch, owned, blocked):
     import app
     from fastapi.testclient import TestClient
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
     monkeypatch.setattr(app.services, "read_owner", lambda: "TestOwner")
     monkeypatch.setattr(app.services, "list_souls", lambda: ["TestSoul"])
     monkeypatch.setattr(app.services, "is_running", lambda _spec: owned)
+    monkeypatch.setattr(app.services, "_runtime_state", lambda _spec: SimpleNamespace(running=owned, port_blocked=blocked))
     rows, _, _ = chat_import.normalize_messages([{"role": "user", "content": "fictional", "timestamp": "2025-01-01"}])
     chat_import.store_upload(chat_import.source_path(tmp_path), user_id="TestOwner", soul_id="TestSoul",
                              label="TestApp", messages=rows, history_count=1)
@@ -39,7 +41,7 @@ def test_echo_refuses_foreign_server_or_source(tmp_path, monkeypatch, owned):
     assert client.get("/echo/status", params=scope).status_code == 503
     assert client.get("/echo/progress").status_code == 503
     assert client.post("/echo/process", data=scope).status_code == 503
-    if not owned:
+    if not owned or blocked:
         assert calls == []
 
 
