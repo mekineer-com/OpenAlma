@@ -15,7 +15,6 @@ import chat_import
 def echo_owned_server(monkeypatch):
     import app
     monkeypatch.setattr(app, "_find_service", lambda name: SimpleNamespace(name=name))
-    monkeypatch.setattr(app.services, "is_running", lambda _spec: True)
     monkeypatch.setattr(app.services, "_runtime_state", lambda _spec: SimpleNamespace(running=True, port_blocked=False))
 
 
@@ -26,7 +25,6 @@ def test_echo_refuses_foreign_server_or_source(tmp_path, monkeypatch, owned, blo
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
     monkeypatch.setattr(app.services, "read_owner", lambda: "TestOwner")
     monkeypatch.setattr(app.services, "list_souls", lambda: ["TestSoul"])
-    monkeypatch.setattr(app.services, "is_running", lambda _spec: owned)
     monkeypatch.setattr(app.services, "_runtime_state", lambda _spec: SimpleNamespace(running=owned, port_blocked=blocked))
     rows, _, _ = chat_import.normalize_messages([{"role": "user", "content": "fictional", "timestamp": "2025-01-01"}])
     chat_import.store_upload(chat_import.source_path(tmp_path), user_id="TestOwner", soul_id="TestSoul",
