@@ -50,7 +50,8 @@ async function run(mode, continuous) {
   else {assert(!next);assert.equal(results,mode==='advance'?1:0);}
   if(mode!=='advance')assert.equal(field('echo-continuous').checked,false);
   if(mode==='advance'&&!continuous) {
-    vm.runInContext('selectedSoul="TestSoul";knownChats=new Set(["Stra\\u00dfe"]);selection=null;',ctx);
+    vm.runInContext('selectedSoul="TestSoul";knownChats=new Set(["Stra\\u00dfe"]);',ctx);
+    ctx.resetSelection();
     field('echo-label').value='STRASSE';
     await field('echo-chat-form').events.submit({preventDefault(){}});
     await new Promise(resolve=>setImmediate(resolve));
@@ -58,6 +59,10 @@ async function run(mode, continuous) {
     assert.equal(field('echo-chat-new').hidden,true);
     assert.equal(field('echo-register').hidden,false);
     assert.equal(field('echo-process').disabled,false);
+    vm.runInContext('busy=true;',ctx);
+    await field('echo-chat-form').events.submit({preventDefault(){}});
+    assert.equal(vm.runInContext('busy',ctx),true);
+    vm.runInContext('busy=false;',ctx);
     ctx.showPreview({label:'Stra\u00dfe',saved:false,total_messages:1,duplicates:1,notice:'Messages already exist',
       stats:{skipped_non_text:0,skipped_empty:0},history:{count:0},current:{count:0},guidance:{},possible_overlap:false});
     assert.equal(field('echo-counts').textContent,'Messages already exist');

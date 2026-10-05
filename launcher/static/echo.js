@@ -94,7 +94,7 @@ document.getElementById('echo-chat-form').addEventListener('submit', async event
   try {
     status = await echoRequest('/echo/status?' + new URLSearchParams({soul_id: soul, label: entered}));
   } catch (error) {showError(error); return;}
-  if (soul !== selectedSoul || entered !== labelInput.value.trim()) return;
+  if (soul !== selectedSoul || entered !== labelInput.value.trim() || !chatReady.hidden) return;
   const label = status.stored ? status.label : entered;
   if (status.stored) {knownChats.add(label); labelInput.value = label;}
   if (!knownChats.has(label) && pendingNewChat !== label) {
