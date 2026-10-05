@@ -55,4 +55,14 @@ nodes['.soul-options'].children[0].events.click();
 assert.equal(nodes['[name=soul_id]'].value,'KnownSoul'); assert.equal(changed,2);
 form.events.submit({preventDefault(){}});
 assert.deepEqual(saved,['NewSoul','KnownSoul']);
+const replies=[];
+global.submitSoulForm = (_form, done)=>replies.push(done);
+nodes['[name=soul_id]'].value='LateSoul'; nodes['[name=soul_id]'].events.input();
+form.events.submit({preventDefault(){}}); form.events.submit({preventDefault(){}});
+nodes['[name=soul_id]'].value='CurrentSoul'; nodes['[name=soul_id]'].events.input();
+form.events.submit({preventDefault(){}}); form.events.submit({preventDefault(){}});
+replies[1](); replies[0]();
+assert.deepEqual(saved,['NewSoul','KnownSoul','CurrentSoul']);
+assert.equal(nodes['[name=soul_id]'].value,'CurrentSoul');
+assert.equal(nodes['.soul-ready'].hidden,false);
 ''', str(script)], check=True)
