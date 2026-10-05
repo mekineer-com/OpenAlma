@@ -115,7 +115,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
             soul_id TEXT NOT NULL,
             label TEXT NOT NULL,
             title TEXT,
-            UNIQUE(user_id, soul_id, label)
+            UNIQUE(user_id, soul_id)
         );
         CREATE TABLE IF NOT EXISTS imported_messages (
             chat_id TEXT NOT NULL REFERENCES imported_chats(chat_id),
@@ -153,9 +153,16 @@ def _prepare(con: sqlite3.Connection | None, user_id: str, soul_id: str, label: 
         else m for m in messages
     ]
     chat = con.execute(
-        "SELECT * FROM imported_chats WHERE user_id = ? AND soul_id = ? AND label = ?",
-        (user_id, soul_id, label),
+        "SELECT * FROM imported_chats WHERE user_id = ? AND soul_id = ?",
+        (user_id, soul_id),
     ).fetchone() if con is not None else None
+    if chat is not None:
+        if chat["label"].casefold() != label.casefold():
+            raise ValueError("Each Soul can import only one chat app")
+        label = chat["label"]
+    else:
+        label = {"whatsapp": "WhatsApp", "smartglasses": "Smartglasses"}.get(
+            label.casefold(), label.capitalize() if label.islower() or label.isupper() else label)
     chat_id = chat["chat_id"] if chat is not None else uuid4().hex
     position = con.execute(
         "SELECT COALESCE(MAX(position), -1) + 1 FROM imported_messages WHERE chat_id = ?", (chat_id,),

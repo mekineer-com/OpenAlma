@@ -650,7 +650,7 @@ class MentraStatusTest(TestCase):
                 patch.object(services, "list_souls", return_value=["Codexia"]),
                 patch.object(services, "read_owner", return_value="Fictional User"),
             ):
-                client = TestClient(app.app)
+                client = TestClient(app.app, base_url="http://127.0.0.1")
                 page = client.get("/hermes").text
                 self.assertIn('bindSoulCombobox(soulForm, ["Codexia"])', page)
                 self.assertNotIn('bindSoulCombobox(soulForm, ["Wrong Source"])', page)
@@ -701,7 +701,7 @@ class MentraStatusTest(TestCase):
             patch.object(services, "read_owner", return_value="Fictional User"),
             patch.object(services, "list_souls", return_value=[]),
         ):
-            client = TestClient(app.app)
+            client = TestClient(app.app, base_url="http://127.0.0.1")
             self.assertIn("Welcome back, <strong>Fictional User</strong>", client.get("/").text)
             with (
                 patch.object(services, "read_owner", return_value=None),
@@ -868,7 +868,7 @@ class MentraStatusTest(TestCase):
                         stop_thread = services._STOP_THREADS[spec.name]
                     stop_thread.join(timeout=2)
                 with patch.object(services, "stop", side_effect=ValueError("unexpected failure")):
-                    response = TestClient(app.app, raise_server_exceptions=False).post("/service/memu-server/stop")
+                    response = TestClient(app.app, base_url="http://127.0.0.1", raise_server_exceptions=False).post("/service/memu-server/stop")
                     self.assertEqual(response.status_code, 500)
                 with patch.object(services, "stop", side_effect=RuntimeError("shutdown rejected")):
                     response = client.post("/service/memu-server/stop")

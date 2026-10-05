@@ -13,7 +13,7 @@ let selectedSoul = '';
 
 async function echoRequest(url, options) {
   const response = await fetch(url, {cache: 'no-store', ...options});
-  const data = await response.json();
+  const data = await response.json().catch(() => {throw new Error(`Import request failed (${response.status})`);});
   if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Import request failed');
   return data;
 }
@@ -43,6 +43,7 @@ function invalidatePreview() {
   preview = null;
   document.getElementById('echo-confirm').disabled = true;
   document.getElementById('echo-preview').hidden = true;
+  document.getElementById('echo-limitation').hidden = true;
 }
 function resetSelection() {
   selection = null;
@@ -84,7 +85,8 @@ labelInput.addEventListener('blur', closeChatMenu);
 labelInput.addEventListener('input', () => {resetSelection(); openChatMenu();});
 document.getElementById('echo-chat-form').addEventListener('submit', event => {
   event.preventDefault();
-  const label = labelInput.value.trim();
+  const entered = labelInput.value.trim();
+  const label = [...knownChats].find(name => name.toLowerCase() === entered.toLowerCase()) || entered;
   if (!selectedSoul || !label || label.split(/\s+/).length !== 1) {
     showError(new Error('Select a Soul and a one-word chat-app label.')); return;
   }
@@ -102,10 +104,13 @@ function uploadForm() {
   form.append('file', fileInput.files[0]);
   form.append('all_history', allHistory.checked);
   form.append('history_count', gap.value);
+  form.append('preview_pending_start_day', preview?.guidance.pending_start_day || '');
   return form;
 }
 function showPreview(data) {
   preview = data;
+  selection.label = data.label;
+  labelInput.value = data.label;
   gap.max = data.total_messages;
   if (allHistory.checked) gap.value = data.total_messages;
   document.getElementById('echo-gap-count').textContent = gap.value;
@@ -114,11 +119,12 @@ function showPreview(data) {
   const range = group => `${group.count} messages${group.count ? ` (${group.start} to ${group.end})` : ''}`;
   document.getElementById('echo-ranges').textContent = `New history: ${range(data.history)}. New current context: ${range(data.current)}.`;
   const guide = data.guidance;
-  document.getElementById('echo-guidance').textContent = (guide.pending_start_day ? `This chat's pending context starts ${guide.pending_start_day}. ` : 'No stored pending context for this chat. ') + (guide.processed_start_day ? `Previously processed dates: ${guide.processed_start_day} to ${guide.processed_end_day}.` : 'No processed dates recorded for this chat.');
+  document.getElementById('echo-guidance').textContent = (guide.pending_start_day ? `This Soul's unmemorized period starts ${guide.pending_start_day}. ` : 'No unmemorized period recorded for this Soul. ') + (guide.processed_start_day ? `Previously processed dates for this chat: ${guide.processed_start_day} to ${guide.processed_end_day}.` : 'No processed dates recorded for this chat.');
+  document.getElementById('echo-limitation').hidden = !guide.deferred_history;
   document.getElementById('echo-overlap').hidden = !data.possible_overlap;
   document.getElementById('echo-before').textContent = data.before_gap || '(none)';
   document.getElementById('echo-after').textContent = data.after_gap || '(none)';
-  document.getElementById('echo-confirm').disabled = data.saved;
+  document.getElementById('echo-confirm').disabled = data.saved || !data.history.count && !data.current.count;
 }
 fileInput.addEventListener('change', () => {
   invalidatePreview(); allHistory.checked = true; gap.max = 0; gap.value = 0;
@@ -128,6 +134,7 @@ gap.addEventListener('input', () => {invalidatePreview(); document.getElementByI
 allHistory.addEventListener('change', () => {invalidatePreview(); document.getElementById('echo-gap').hidden = allHistory.checked;});
 async function upload(save) {
   if (!selection || !fileInput.files.length || busy || (save && !preview)) return;
+  if (save && !confirm('If you have multiple files from this chat, combine them before importing. Once this Soul has memories, older messages from later imports are saved but cannot yet be memorized.')) return;
   const body = uploadForm();
   document.getElementById('echo-error').hidden = true;
   lockForm(true);
@@ -137,7 +144,7 @@ async function upload(save) {
     if (save) {
       if (!knownChats.has(selection.label)) addChatOption(selection.label);
       knownChats.add(selection.label);
-      document.getElementById('echo-status').textContent = 'Source stored and registered. Historical processing is a separate action.';
+      document.getElementById('echo-counts').textContent = data.notice;
     }
   } catch (error) {showError(error); invalidatePreview();}
   finally {lockForm(false); await refreshStatus();}
@@ -163,11 +170,12 @@ async function refreshStatus() {
     const data = await readStatus();
     if (!data) return;
     lastStatus = data;
-    document.getElementById('echo-register').hidden = !data.stored || data.registered;
+    document.getElementById('echo-register').hidden = !data.stored;
     document.getElementById('echo-retry').hidden = !data.registered || !data.import_state.error;
     document.getElementById('echo-show-results').disabled = !data.registered;
+    if (data.stored) document.getElementById('echo-limitation').hidden = !data.deferred_history;
     const state = data.import_state;
-    document.getElementById('echo-status').textContent = !data.stored ? 'No source stored yet.' : !data.registered ? 'Source stored; register it to process.' : state.error ? `Import failed: ${state.error}` : data.running ? `Soul memory work: ${data.progress.phase || 'running'}` : state.stage === 'complete' ? 'Historical processing complete. Current rows remain ordinary chat context.' : `History checkpoint ${state.memorize_cursor + 1} / ${state.history_end_index}; ${state.pending_segment_ids.length} segments awaiting consolidation.`;
+    document.getElementById('echo-status').textContent = !data.stored ? 'No source stored yet.' : !data.registered ? 'Source stored; register it to process.' : state.error ? `Import failed: ${state.error}` : data.running ? `Soul memory work: ${data.progress.phase || 'running'}` : state.stage === 'complete' ? (data.deferred_history ? 'History saved, not memorized. Current rows remain ordinary chat context.' : 'Historical processing complete. Current rows remain ordinary chat context.') : `History checkpoint ${state.memorize_cursor + 1} / ${state.history_end_index}; ${state.pending_segment_ids.length} segments awaiting consolidation.`;
     if (data.meter) renderMemorize({souls: [{...data.meter, soul_id: selection.soul_id}]});
     if (accepted && data.registered && !data.running) {
       const before = accepted;

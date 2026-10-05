@@ -285,6 +285,6 @@ def test_retry_reports_unavailable_server_at_each_read(monkeypatch):
             def unavailable(*_args):
                 raise app.services.OwnerServiceUnavailable("Owner service unavailable")
             patch.setattr(app.services, method, unavailable)
-            response = TestClient(app.app).post("/memorize/retry?soul_id=TestSoul")
+            response = TestClient(app.app, base_url="http://127.0.0.1").post("/memorize/retry?soul_id=TestSoul")
             assert response.status_code == 503
             assert response.json()["detail"] == "Owner service unavailable"

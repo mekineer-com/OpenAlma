@@ -66,12 +66,13 @@ def test_echo_http_upload_reuses_source_and_never_starts_processing(tmp_path, mo
     monkeypatch.setattr(app.services, "resolve_soul",
         lambda name, existing: (created.append((name, existing)) or name))
     calls, refuse, register_fail = [], [False], [False]
+    pending_day = ["2025-01-03"]
     def mcp(path, payload=None, *, timeout=2):
         calls.append((path, payload, timeout))
         if path == "/imports/validate":
             if refuse[0]:
                 raise HTTPException(status_code=400, detail="Context too large")
-            return {"pending_start_day": "2025-01-03", "processed_start_day": "2024-01-01",
+            return {"pending_start_day": pending_day[0], "processed_start_day": "2024-01-01",
                     "processed_end_day": "2025-01-01"}
         assert path == "/imports/register"  # Storage must never Process implicitly.
         assert chat_import.list_chats(chat_import.source_path(tmp_path), user_id="TestOwner", soul_id="TestSoul")
@@ -79,13 +80,14 @@ def test_echo_http_upload_reuses_source_and_never_starts_processing(tmp_path, mo
             raise HTTPException(status_code=503, detail="Offline")
         return {"ok": True}
     monkeypatch.setattr(app.services, "_mcp_request", mcp)
-    client = TestClient(app.app)
+    client = TestClient(app.app, base_url="http://127.0.0.1")
     assert client.post("/echo/soul", data={"soul_id": "TestNewSoul"}).json() == {"soul_id": "TestNewSoul"}
     assert created == [("TestNewSoul", False)]
     assert not chat_import.source_path(tmp_path).exists()
     raw = [{"id": str(i), "meta": {"nature": nature, "timestamp": day}, "content": {"text": "fictional"}}
            for i, (nature, day) in enumerate((("Customer", "2025-01-01"), ("Robot", "2025-01-03")))]
-    fields = {"soul_id": "TestSoul", "label": "Replika", "all_history": "false", "history_count": "1"}
+    fields = {"soul_id": "TestSoul", "label": "Replika", "all_history": "false", "history_count": "1",
+              "preview_pending_start_day": "2025-01-03"}
     def upload(route, rows=raw, **extra):
         return client.post(route, data={**fields, **extra}, files={"file": ("chat.json", json.dumps(rows), "application/json")})
     preview = upload("/echo/preview")
@@ -93,6 +95,11 @@ def test_echo_http_upload_reuses_source_and_never_starts_processing(tmp_path, mo
     assert preview.json()["history"]["count"] == preview.json()["current"]["count"] == 1
     assert not chat_import.source_path(tmp_path).exists()
     assert calls[-1][2] == 60 and calls[-1][1]["current_messages"][0]["role"] == "assistant"
+    pending_day[0] = "2025-01-04"
+    changed = upload("/echo/confirm", confirmed_new="true")
+    assert changed.status_code == 409 and "Preview again" in changed.json()["detail"]
+    assert not chat_import.source_path(tmp_path).exists()
+    pending_day[0] = "2025-01-03"
     assert upload("/echo/confirm").status_code == 409
     refuse[0] = True
     assert upload("/echo/confirm", confirmed_new="true").status_code == 400
@@ -100,7 +107,9 @@ def test_echo_http_upload_reuses_source_and_never_starts_processing(tmp_path, mo
     refuse[0] = False
     saved = upload("/echo/confirm", confirmed_new="true")
     assert saved.status_code == 200 and saved.json()["saved"]
-    assert upload("/echo/confirm", all_history="true").json()["duplicates"] == 2
+    before = len(calls)
+    replay = upload("/echo/confirm", all_history="true")
+    assert replay.json()["notice"] == "Messages already exist" and len(calls) == before
     db = chat_import.source_path(tmp_path)
     with sqlite3.connect(db) as con:
         rows = con.execute("SELECT speaker, historical, raw_json FROM imported_messages ORDER BY position").fetchall()
@@ -110,6 +119,7 @@ def test_echo_http_upload_reuses_source_and_never_starts_processing(tmp_path, mo
     assert client.get("/echo/chats", params={"soul_id": "OtherSoul"}).status_code == 404
     register_fail[0] = True
     more = [*raw, {"id": "2", "role": "user", "timestamp": "2025-01-04", "content": "new fictional row"}]
+    assert upload("/echo/preview", more, all_history="true").json()["possible_overlap"] is False
     failure = upload("/echo/confirm", more, all_history="true")
     assert failure.status_code == 503 and "Source saved" in failure.json()["detail"]
     with sqlite3.connect(db) as con:
@@ -150,6 +160,22 @@ def test_source_replay_split_and_atomic_conflict(tmp_path):
     assert other["chat_id"] != first["chat_id"]
 
 
+def test_chat_label_casefold_and_one_app_per_soul(tmp_path):
+    db = tmp_path / "imports.db"
+    rows, _, _ = chat_import.normalize_messages([{"id": "one", "role": "user", "content": "fictional",
+                                                 "timestamp": "2025-01-01"}])
+    scope = {"user_id": "TestOwner", "soul_id": "TestSoul"}
+    first = chat_import.store_upload(db, **scope, label="replika", messages=rows, history_count=1)
+    replay = chat_import.store_upload(db, **scope, label="REPLIKA", messages=rows, history_count=0)
+    assert replay["chat_id"] == first["chat_id"] and replay["label"] == "Replika" and not replay["messages"]
+    with pytest.raises(ValueError, match="one chat app"):
+        chat_import.store_upload(db, **scope, label="Nomi", messages=rows, history_count=1)
+    unicode_scope = {**scope, "soul_id": "UnicodeSoul"}
+    original = chat_import.store_upload(db, **unicode_scope, label="Stra\u00dfe", messages=rows, history_count=1)
+    assert chat_import.prepare_upload(db, **unicode_scope, label="STRASSE", messages=rows,
+                                     history_count=0)["chat_id"] == original["chat_id"]
+
+
 def test_conversion_date_identity_and_metadata(tmp_path):
     raw = [{"id": "a", "meta": {"nature": "Customer", "timestamp": "2025-01-01T00:30:00+02:00"},
             "name": "TestSpeaker", "content": {"type": "text", "text": "hello"}},
@@ -186,10 +212,10 @@ def test_conversion_date_identity_and_metadata(tmp_path):
          "timestamp": "2025-03-01"} for i, primary in enumerate((None, "", "  ", 0))])
     assert [m["source_message_id"] for m in aliases] == ["0", "1", "2", "0"]
     distinct = aliases[:3]
-    added = chat_import.store_upload(db, **{**scope, "label": "Kindroid", "user_id": " TestOwner ", "soul_id": " TestSoul "},
+    added = chat_import.store_upload(db, **{**scope, "label": "Kindroid", "user_id": " TestOwner ", "soul_id": " OtherSoul "},
                                      messages=distinct, history_count=3)
-    assert added["user_id"] == "TestOwner" and added["soul_id"] == "TestSoul"
-    assert chat_import.store_upload(db, **{**scope, "label": "Kindroid"}, messages=distinct, history_count=0)["duplicates"] == 3
+    assert added["user_id"] == "TestOwner" and added["soul_id"] == "OtherSoul"
+    assert chat_import.store_upload(db, **{**scope, "label": "Kindroid", "soul_id": "OtherSoul"}, messages=distinct, history_count=0)["duplicates"] == 3
     with pytest.raises(ValueError, match="Conflicting messages for ID"):
         chat_import.store_upload(db, **scope, messages=[aliases[0], aliases[3]], history_count=2)
 

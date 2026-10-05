@@ -224,6 +224,7 @@ def main() -> None:
         _open_existing_launcher(url)
         return
 
+    launcher_app.app.state.launcher_host = args.host
     config = uvicorn.Config(
         launcher_app.app, host=args.host, port=args.port, log_level="info", access_log=False
     )

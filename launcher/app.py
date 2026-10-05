@@ -8,7 +8,7 @@ import webbrowser
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -30,6 +30,19 @@ CONFIG_LABELS: dict[str, str] = {
 
 app = FastAPI(title="OpenAlma")
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
+
+
+@app.middleware("http")
+async def browser_mutations(request: Request, call_next):
+    if request.method not in {"GET", "HEAD"}:
+        host = getattr(app.state, "launcher_host", "127.0.0.1")
+        origin = request.headers.get("origin")
+        site = request.headers.get("sec-fetch-site")
+        trusted = host in {"0.0.0.0", "::"} or request.url.hostname in {host, "127.0.0.1", "localhost", "::1"}
+        if (not trusted or origin is not None and origin != f"{request.url.scheme}://{request.url.netloc}"
+                or site is not None and site not in {"same-origin", "none"}):
+            return JSONResponse(status_code=403, content={"detail": "Use the OpenAlma launcher page for this action"})
+    return await call_next(request)
 
 
 @app.get("/favicon.svg", include_in_schema=False)
@@ -297,7 +310,7 @@ def echo_soul(soul_id: str = Form(), use_existing: bool = Form(default=False)) -
 
 
 def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
-                 all_history: bool, confirmed_new: bool, *, save: bool) -> dict:
+                 all_history: bool, confirmed_new: bool, *, save: bool, preview_pending_start_day: str = "") -> dict:
     path, scope = _echo_scope(soul_id, label)
     try:
         messages, title, stats = chat_import.normalize_messages(json.load(file.file))
@@ -305,8 +318,19 @@ def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
             raise ValueError("The file has no text messages to import")
         count = len(messages) if all_history else history_count
         upload = chat_import.prepare_upload(path, **scope, messages=messages, history_count=count, title=title)
+        scope["label"] = upload["label"]
+        def dates(rows):
+            days = [row["source_day"] for row in rows]
+            return {"count": len(rows), "start": min(days, default=None), "end": max(days, default=None)}
+        if not upload["messages"]:
+            return {"conversation_id": upload["conversation_id"], "label": upload["label"], "saved": save,
+                "total_messages": len(messages), "duplicates": upload["duplicates"], "stats": stats,
+                "history": dates([]), "current": dates([]), "possible_overlap": False,
+                "before_gap": "", "after_gap": "", "notice": "Messages already exist",
+                "guidance": {"pending_start_day": None, "processed_start_day": None, "processed_end_day": None}}
         if save and not confirmed_new and not any(
-            chat["label"] == scope["label"] for chat in chat_import.list_chats(path, user_id=scope["user_id"], soul_id=soul_id)
+            chat["label"].casefold() == scope["label"].casefold()
+            for chat in chat_import.list_chats(path, user_id=scope["user_id"], soul_id=soul_id)
         ):
             raise HTTPException(status_code=409, detail="Confirm creation of this chat with the arrow first")
         guidance = _echo_request("/imports/validate", {**scope, "conversation_id": upload["conversation_id"],
@@ -314,6 +338,9 @@ def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
                 {key: row[key] for key in ("role", "content", "name", "timestamp", "source_day", "position")}
                 for row in upload["messages"] if not row["historical"]
             ]}, timeout=60)
+        if save and any(not row["historical"] for row in upload["messages"]) and (
+                preview_pending_start_day != (guidance["pending_start_day"] or "")):
+            raise HTTPException(status_code=409, detail="The current period changed. Preview again.")
         if save:
             upload = chat_import.store_upload(path, **scope, messages=messages, history_count=count, title=title)
             try:
@@ -321,12 +348,9 @@ def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
             except HTTPException as exc:
                 raise HTTPException(status_code=exc.status_code,
                     detail="Source saved; registration incomplete. Use Register chat.") from exc
-        def dates(rows):
-            days = [row["source_day"] for row in rows]
-            return {"count": len(rows), "start": min(days, default=None), "end": max(days, default=None)}
-        incoming = dates(messages)
+        incoming = dates(upload["messages"])
         processed_start, processed_end = guidance["processed_start_day"], guidance["processed_end_day"]
-        return {"conversation_id": upload["conversation_id"], "saved": save,
+        return {"conversation_id": upload["conversation_id"], "label": upload["label"], "saved": save,
             "total_messages": len(messages), "duplicates": upload["duplicates"], "stats": stats,
             "history": dates([row for row in upload["messages"] if row["historical"]]),
             "current": dates([row for row in upload["messages"] if not row["historical"]]),
@@ -334,7 +358,10 @@ def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
             "after_gap": messages[count]["content"] if count < len(messages) else "",
             "possible_overlap": bool(processed_start and processed_end
                 and incoming["start"] <= processed_end and incoming["end"] >= processed_start),
-            "guidance": guidance}
+            "guidance": guidance, "notice": (
+                "Merged new. Existing messages skipped." if upload["duplicates"] and any(not row["historical"] for row in upload["messages"])
+                else "History saved. Existing messages skipped." if upload["duplicates"]
+                else "Import stored.")}
     except (ValueError, UnicodeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -348,8 +375,9 @@ def echo_preview(file: UploadFile, soul_id: str = Form(), label: str = Form(),
 @app.post("/echo/confirm")
 def echo_confirm(file: UploadFile, soul_id: str = Form(), label: str = Form(),
                  history_count: int = Form(default=0), all_history: bool = Form(default=True),
-                 confirmed_new: bool = Form(default=False)) -> dict:
-    return _echo_upload(file, soul_id, label, history_count, all_history, confirmed_new, save=True)
+                 confirmed_new: bool = Form(default=False), preview_pending_start_day: str = Form(default="")) -> dict:
+    return _echo_upload(file, soul_id, label, history_count, all_history, confirmed_new, save=True,
+                        preview_pending_start_day=preview_pending_start_day)
 
 
 @app.post("/echo/{action}")

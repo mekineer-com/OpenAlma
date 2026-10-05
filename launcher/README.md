@@ -118,6 +118,22 @@ or confirm a chat-app label, then preview the file and its history/current gap.
 Confirm storage never starts processing. A saved source with incomplete
 registration can be registered again without re-uploading or deleting it.
 
+Echo now labels that confirmation **Import**: one action stores new source rows,
+with the selected current portion joining ordinary unmemorized context. Replay
+skips stored messages before guidance/work. One imported app belongs to each
+Soul; labels match Unicode case-insensitively and retain canonical display.
+Saved conversation segments determine whether initial historical processing is
+supported. The first registered historical bound remains fixed through its
+batches; later historical uploads remain saved and unmemorized. Preview shows
+the Soul-wide pending period but checks processed overlap only for this chat;
+if that period changes before confirmation, preview again. A small shared
+launcher middleware checks mutation Host/Origin/fetch metadata, preserving local
+CLI requests and explicit `--host`; it does not add an MCP guard.
+
+The revised pause/handoff, server-owned continuation and per-file meters are
+still pending. The browser-owned processing described below is the original
+implementation, not completion of that revised flow.
+
 Process one historical batch, inspect current dossier prose, then decide whether
 to continue. **Process continuously** defaults off and lives only in the open
 page. It requires an acknowledged start and advancement of that chat's checkpoint;

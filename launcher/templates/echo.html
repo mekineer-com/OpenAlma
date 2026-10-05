@@ -28,7 +28,7 @@
 </form>
 <form id="echo-chat-form" class="echo-form">
   <fieldset id="echo-picker">
-    <p class="muted">Choose or enter the app this chat came from, such as Replika, Nomi or Kindroid. Use the app name, not your companion's name.</p>
+    <p class="muted">Choose or enter the app this chat came from, such as Replika, Nomi or Kindroid. Use the app name, not your companion's name (such as Jane). Each Soul can import one chat app.</p>
     <label for="echo-label">Chat app</label>
     <span class="soul-entry">
       <span class="soul-combobox">
@@ -44,14 +44,14 @@
 <form id="echo-upload-form" class="echo-form">
   <fieldset id="echo-upload" disabled>
     <p><label for="echo-file">Chat JSON file</label> <input id="echo-file" type="file" accept=".json,application/json" required></p>
-    <p><label><input id="echo-all-history" type="checkbox" checked> All history</label></p>
+    <p><label><input id="echo-all-history" type="checkbox" checked> Archive entire file</label></p>
     <div id="echo-gap" hidden>
       <label for="echo-history-count">Gap after message <output id="echo-gap-count">0</output></label>
       <input id="echo-history-count" type="range" min="0" max="0" value="0">
-      <p class="muted">Before the gap becomes historical memory. After it joins this chat's current context and the normal cross-conversation Memorize.</p>
+      <p class="muted">Before the gap is archived. After it joins the unmemorized chat and the Soul's next ordinary Memorize.</p>
     </div>
     <button class="btn" type="submit">Preview</button>
-    <button id="echo-confirm" class="btn" type="button" disabled>Confirm storage</button>
+    <button id="echo-confirm" class="btn" type="button" disabled title="Messages in the current period join the unmemorized chat; older messages are archived.">Import</button>
   </fieldset>
 </form>
 <section id="echo-preview" hidden>
@@ -59,6 +59,7 @@
   <p id="echo-counts"></p>
   <p id="echo-ranges"></p>
   <p id="echo-guidance" class="muted"></p>
+  <p id="echo-limitation" class="banner" hidden>Memorization of past chats for Souls with existing memories is not yet implemented. Your history is saved and remains unmemorized.</p>
   <p id="echo-overlap" class="banner" hidden>This file overlaps dates already processed for this chat. It may create duplicate memories. Matching stored source messages are skipped.</p>
   <details><summary>Messages around the gap</summary><p>Before:</p><div id="echo-before" class="echo-prose"></div><p>After:</p><div id="echo-after" class="echo-prose"></div></details>
 </section>
