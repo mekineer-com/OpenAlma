@@ -126,7 +126,7 @@
 <script src="/static/soul-selector.js"></script>
 <script>
 const soulForm = document.getElementById("channels-soul-form");
-if (soulForm) bindSoulCombobox(soulForm, {{ soul_ids|tojson }});
+if (soulForm) bindSoulCombobox(soulForm, {{ soul_ids|tojson }}{% if not channels_configured %}, function() { location.href = "/hermes"; }{% endif %});
 
 function syncMemorize(chatId, policy) {
   var box = document.getElementById('memorize-' + chatId);

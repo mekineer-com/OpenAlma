@@ -91,7 +91,7 @@ function bindSoulCombobox(soulForm, names, onSaved, onChanged) {
       }
       function saveSoul(name) {
         void submitSoulForm(soulForm, function() {
-          if (soulInput.value.trim() !== name) return;
+          if (soulInput.value.trim() !== name || !soulReady.hidden) return;
           if (!knownSouls.has(name)) {
             knownSouls.add(name);
             addSoulOption(name);

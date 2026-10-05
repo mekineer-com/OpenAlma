@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 
@@ -41,11 +42,38 @@ def test_read_active_soul_id(tmp_path, monkeypatch):
 
 
 def test_fresh_channels_config_is_created_by_soul_selection(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    import app
+
     config = tmp_path / "channels" / "config.json"
     monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", config)
     monkeypatch.setattr(soul, "HERMES_STATE_DB_PATH", tmp_path / "channels" / "state.db")
+    monkeypatch.setattr(app.policy, "list_whatsapp_chats", lambda: [])
+    monkeypatch.setattr(app.policy, "read_channel_settings", lambda: {})
+    monkeypatch.setattr(app.policy, "read_default_policy", lambda: "excluded")
+    monkeypatch.setattr(app.policy, "ensure_channel_settings", lambda _: ({}, "excluded"))
+    monkeypatch.setattr(app.services, "list_souls", lambda: ["TestSoul"])
+    monkeypatch.setattr(app.services, "resolve_soul", lambda name, _existing: name)
+    monkeypatch.setattr(app.services, "status", lambda _: {"state": "stopped"})
+    monkeypatch.setattr(app, "_find_service", lambda _: None)
     assert soul.read_active_soul_id() == "" and not config.exists()
-    soul.set_active_soul_id("TestSoul")
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    fresh = client.get("/hermes").text
+    assert "WhatsApp channel policy" not in fresh
+    response = client.post("/soul", data={"soul_id": "TestSoul", "use_existing": "true"}, follow_redirects=False)
+    assert response.status_code == 303 and response.headers["location"] == "/hermes"
+    configured = client.get(response.headers["location"]).text
+    assert "WhatsApp channel policy" in configured
+    bindings = [next(line for line in html.splitlines() if line.startswith("if (soulForm)"))
+                for html in (fresh, configured)]
+    subprocess.run(["node", "-e", r'''
+const assert=require('node:assert/strict');
+const soulForm={}; const location={href:'/original'}; let callback;
+function bindSoulCombobox(_form, _names, saved) {callback=saved;}
+eval(process.argv[1]); assert.equal(typeof callback,'function');
+callback(); assert.equal(location.href,'/hermes');
+eval(process.argv[2]); assert.equal(callback,undefined);
+''', *bindings], check=True)
     saved = json.loads(config.read_text())
     assert saved["soul_id"] == "TestSoul" and saved["souls"] == ["TestSoul"]
     assert "TestSoul" in saved["reply_prefix"]

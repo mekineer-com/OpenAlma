@@ -65,4 +65,9 @@ replies[1](); replies[0]();
 assert.deepEqual(saved,['NewSoul','KnownSoul','CurrentSoul']);
 assert.equal(nodes['[name=soul_id]'].value,'CurrentSoul');
 assert.equal(nodes['.soul-ready'].hidden,false);
+nodes['[name=soul_id]'].events.input();
+form.events.submit({preventDefault(){}}); form.events.submit({preventDefault(){}});
+replies[3](); replies[2]();
+assert.deepEqual(saved,['NewSoul','KnownSoul','CurrentSoul','CurrentSoul']);
+assert.equal(nodes['.soul-ready'].hidden,false);
 ''', str(script)], check=True)
