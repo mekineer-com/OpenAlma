@@ -13,6 +13,7 @@ let polling = false;
 let selectedSoul = '';
 let splitChosen = false;
 const dismissedImports = new Set();
+let continuationUpdate = {pending: false};
 
 async function echoRequest(url, options) {
   const response = await fetch(url, {cache: 'no-store', ...options});
@@ -27,13 +28,13 @@ function showError(error) {
 }
 function lockForm(locked) {
   busy = locked;
-  continuous.disabled = lastStatus?.import_state?.stage === 'complete' || (locked && !lastStatus?.running);
+  continuous.disabled = continuationUpdate.pending || !lastStatus?.registered || lastStatus.import_state.stage === 'complete' || (locked && !lastStatus.running);
   document.getElementById('echo-picker').disabled = locked;
   document.getElementById('echo-soul-picker').disabled = locked;
   document.getElementById('echo-upload').disabled = locked || !selection;
   document.getElementById('echo-process').disabled = locked || !lastStatus?.registered || lastStatus.running || lastStatus.import_state.error || lastStatus.import_state.stage === 'complete';
-  document.getElementById('echo-retry').disabled = locked || lastStatus?.running;
-  document.getElementById('echo-register').disabled = locked;
+  document.getElementById('echo-retry').disabled = locked || !lastStatus?.registered || lastStatus.running;
+  document.getElementById('echo-register').disabled = locked || !lastStatus?.stored;
 }
 function closeChatMenu() {
   chatMenu.hidden = true;
@@ -226,13 +227,22 @@ async function refreshStatus() {
   polling = true;
   clearTimeout(timer);
   const observedAccepted = accepted;
+  const observedUpdate = continuationUpdate;
   try {
     try {renderImports((await echoRequest('/echo/progress')).files);}
     catch {document.getElementById('echo-meters').textContent = 'Import progress unavailable.';}
     if (!selection) return;
+    const selected = selection;
     let data;
     try {data = await readStatus();}
-    catch (error) {showError(error); return;}
+    catch (error) {
+      if (selected !== selection) return;
+      lastStatus = null;
+      document.getElementById('echo-status').textContent = 'Import status unavailable.';
+      document.getElementById('echo-show-results').disabled = true;
+      lockForm(busy);
+      showError(error); return;
+    }
     if (!data || accepted !== observedAccepted) return;
     lastStatus = data;
     document.getElementById('echo-register').hidden = !data.stored;
@@ -241,8 +251,8 @@ async function refreshStatus() {
     if (data.stored) document.getElementById('echo-limitation').hidden = !data.deferred_history;
     const state = data.import_state;
     document.getElementById('echo-status').textContent = !data.stored ? 'No source stored yet.' : !data.registered ? 'Source stored; register it to process.' : data.running ? `Soul memory work: ${data.progress.phase || 'running'}` : state.error ? `Import failed: ${state.error}` : state.stage === 'complete' ? (data.deferred_history ? 'History saved, not memorized. Current rows remain ordinary chat context.' : 'Historical processing complete. Current rows remain ordinary chat context.') : `History checkpoint ${state.memorize_cursor + 1} / ${state.history_end_index}; ${state.pending_segment_ids.length} segments awaiting consolidation.`;
-    if (data.running) continuous.checked = data.continuous;
-    continuous.disabled = state?.stage === 'complete' || (busy && !data.running);
+    if (data.running && !continuationUpdate.pending && observedUpdate === continuationUpdate) continuous.checked = data.continuous;
+    continuous.disabled = continuationUpdate.pending || !data.registered || state.stage === 'complete' || (busy && !data.running);
     if (accepted && data.registered && !data.running) {
       const before = accepted;
       accepted = null;
@@ -282,12 +292,15 @@ async function startWork(action) {
 document.getElementById('echo-process').addEventListener('click', () => startWork('process'));
 document.getElementById('echo-retry').addEventListener('click', () => startWork('retry'));
 continuous.addEventListener('change', async () => {
-  if (!selection || !lastStatus?.running) return;
+  if (!selection || !lastStatus?.running || continuationUpdate.pending) return;
+  const update = continuationUpdate = {pending: true};
+  continuous.disabled = true;
   const form = new FormData();
   form.append('soul_id', selection.soul_id); form.append('label', selection.label);
   form.append('continuous', continuous.checked);
   try {await echoRequest('/echo/continuation', {method: 'POST', body: form});}
   catch (error) {showError(error);}
+  finally {update.pending = false;}
   await refreshStatus();
 });
 document.getElementById('echo-register').addEventListener('click', async () => {

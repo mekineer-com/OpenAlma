@@ -3,11 +3,44 @@ import sys
 import json
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "launcher"))
 import chat_import
+
+
+@pytest.fixture(autouse=True)
+def echo_owned_server(monkeypatch):
+    import app
+    monkeypatch.setattr(app, "_find_service", lambda name: SimpleNamespace(name=name))
+    monkeypatch.setattr(app.services, "is_running", lambda _spec: True)
+
+
+@pytest.mark.parametrize("owned", [False, True])
+def test_echo_refuses_foreign_server_or_source(tmp_path, monkeypatch, owned):
+    import app
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "read_owner", lambda: "TestOwner")
+    monkeypatch.setattr(app.services, "list_souls", lambda: ["TestSoul"])
+    monkeypatch.setattr(app.services, "is_running", lambda _spec: owned)
+    rows, _, _ = chat_import.normalize_messages([{"role": "user", "content": "fictional", "timestamp": "2025-01-01"}])
+    chat_import.store_upload(chat_import.source_path(tmp_path), user_id="TestOwner", soul_id="TestSoul",
+                             label="TestApp", messages=rows, history_count=1)
+    calls = []
+    def foreign(path, *_args, **_kwargs):
+        calls.append(path)
+        return {"conversation_id": "import:dm:foreign", "import_state": {"stage": "complete"}}
+    monkeypatch.setattr(app.services, "_mcp_request", foreign)
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    scope = {"soul_id": "TestSoul", "label": "TestApp"}
+    assert client.get("/echo/status", params=scope).status_code == 503
+    assert client.get("/echo/progress").status_code == 503
+    assert client.post("/echo/process", data=scope).status_code == 503
+    if not owned:
+        assert calls == []
 
 
 def test_echo_observes_server_continuation_without_starting_more_batches():
@@ -117,6 +150,9 @@ async function run(mode, continuous) {
     await ctx.refreshStatus();
     assert.equal(field('echo-meters').childElementCount,1);
     assert(vm.runInContext('accepted!==null&&busy',ctx));
+    assert.equal(vm.runInContext('lastStatus',ctx),null);
+    assert.equal(field('echo-status').textContent,'Import status unavailable.');
+    assert.equal(field('echo-retry').disabled,true);
     vm.runInContext('accepted=null;busy=false;',ctx);
     let releaseOld;
     ctx.readStatus=()=>new Promise(resolve=>{releaseOld=resolve;});
@@ -126,6 +162,33 @@ async function run(mode, continuous) {
     releaseOld({stored:true,registered:true,running:false,import_state:state,progress:{}});
     await oldPoll;
     assert(vm.runInContext('accepted!==null&&busy',ctx));
+    vm.runInContext('accepted=null;busy=false;',ctx);
+    let serverChoice=false, finishUpdate;
+    const choices=[];
+    ctx.echoRequest=async (url,options)=> {
+      if(url==='/echo/progress') return {files:[]};
+      if(url==='/echo/continuation') {
+        const choice=options.body.get('continuous')==='true';choices.push(choice);
+        return new Promise(resolve=>{finishUpdate=()=>{serverChoice=choice;resolve({continuous:choice});};});
+      }
+      return request(url,options);
+    };
+    const active=()=>({stored:true,registered:true,running:true,continuous:serverChoice,
+      progress:{phase:'extracting'},import_state:state});
+    ctx.readStatus=async()=>active();await ctx.refreshStatus();
+    field('echo-continuous').checked=true;
+    const turnOn=field('echo-continuous').events.change();
+    assert.equal(field('echo-continuous').disabled,true);
+    await ctx.refreshStatus();assert.equal(field('echo-continuous').checked,true);
+    await field('echo-continuous').events.change();assert.deepEqual(choices,[true]);
+    finishUpdate();await turnOn;
+    let finishOldChoice;
+    ctx.readStatus=()=>new Promise(resolve=>{finishOldChoice=()=>resolve({...active(),continuous:true});});
+    const oldChoice=ctx.refreshStatus();await new Promise(resolve=>setImmediate(resolve));
+    field('echo-continuous').checked=false;
+    const turnOff=field('echo-continuous').events.change();finishUpdate();await turnOff;
+    finishOldChoice();await oldChoice;
+    assert.deepEqual(choices,[true,false]);assert.equal(field('echo-continuous').checked,false);
   }
 }
 (async()=>{for(const mode of ['lost','wrong','unchanged','advance'])await run(mode,true);await run('advance',false);})()
@@ -163,7 +226,8 @@ def test_echo_http_upload_reuses_source_and_never_starts_processing(tmp_path, mo
         assert chat_import.list_chats(chat_import.source_path(tmp_path), user_id="TestOwner", soul_id="TestSoul")
         if register_fail[0]:
             raise HTTPException(status_code=503, detail="Offline")
-        return {"ok": True}
+        chat = chat_import.list_chats(chat_import.source_path(tmp_path), user_id="TestOwner", soul_id="TestSoul")[0]
+        return {"conversation_id": f"import:dm:{chat['chat_id']}"}
     monkeypatch.setattr(app.services, "_mcp_request", mcp)
     monkeypatch.setattr(app, "_ECHO_CONFIRM_LOCKS", {})
     client = TestClient(app.app, base_url="http://127.0.0.1")
@@ -374,7 +438,8 @@ def test_chat_label_casefold_and_one_app_per_soul(tmp_path, monkeypatch):
     import app
     from fastapi.testclient import TestClient
     monkeypatch.setattr(app, "_echo_scope", lambda sid, label="": (db, {**scope, "soul_id": sid, "label": label}))
-    monkeypatch.setattr(app.services, "_mcp_request", lambda *_a, **_kw: {"import_state": {}})
+    monkeypatch.setattr(app.services, "_mcp_request", lambda *_a, **_kw: {
+        "conversation_id": original["conversation_id"], "import_state": {}})
     monkeypatch.setattr(app.services, "memorize_pending", lambda *_a: {})
     status = TestClient(app.app, base_url="http://127.0.0.1").get(
         "/echo/status", params={"soul_id": "UnicodeSoul", "label": "STRASSE"}).json()
@@ -430,6 +495,8 @@ def test_conversion_date_identity_and_metadata(tmp_path):
     {"role": "user", "content": "hello", "timestamp": "2025-01-01T12:00:00"},
     {"role": "user", "content": "hello", "timestamp": "2025-02-30"},
     {"role": "system", "content": "hello", "timestamp": "2025-01-01"},
+    {"role": [], "content": "hello", "timestamp": "2025-01-01"},
+    {"content": "hello", "meta": {"nature": [], "timestamp": "2025-01-01"}},
     {"content": "hello", "meta": {"timestamp": "2025-01-01"}},
 ])
 def test_invalid_input_is_refused(message):

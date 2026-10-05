@@ -38,7 +38,7 @@ def extract_text(item: dict) -> str:
 def infer_role(item: dict) -> str:
     meta = item.get("meta", {})
     nature = meta.get("nature")
-    if nature not in {"Customer", "Robot"}:
+    if not isinstance(nature, str) or nature not in {"Customer", "Robot"}:
         raise ValueError(f"Unsupported Replika speaker: {nature}")
     return "user" if nature == "Customer" else "assistant"
 
@@ -72,7 +72,7 @@ def normalize_messages(raw: list | dict) -> tuple[list[dict], str | None, dict]:
         meta = item.get("meta")
         native = isinstance(meta, dict) and "role" not in item
         role = infer_role(item) if native else item.get("role")
-        if role not in {"user", "assistant"}:
+        if not isinstance(role, str) or role not in {"user", "assistant"}:
             raise ValueError("Imported roles must be user or assistant")
         original_date = meta.get("timestamp") if native else item.get("timestamp")
         timestamp, source_day, ts_ms = normalize_date(original_date)

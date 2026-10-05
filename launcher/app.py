@@ -268,7 +268,13 @@ def memorize_retry(soul_id: str) -> dict:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+def _echo_require_server() -> None:
+    if not services.is_running(_find_service("memu-server")):
+        raise HTTPException(status_code=503, detail="Start this installation's memU Server before using Echo")
+
+
 def _echo_scope(soul_id: str, label: str = "") -> tuple[Path, dict]:
+    _echo_require_server()
     root = settings.apps_root()
     if root is None:
         raise HTTPException(status_code=409, detail="Configure the Apps root first")
@@ -283,9 +289,14 @@ def _echo_scope(soul_id: str, label: str = "") -> tuple[Path, dict]:
     return chat_import.source_path(root), {"user_id": owner_id, "soul_id": soul_id, "label": label.strip()}
 
 
-def _echo_request(path: str, payload: dict | None = None, *, timeout: float = 2) -> dict:
+def _echo_request(path: str, payload: dict | None = None, *, timeout: float = 2,
+                  conversation_id: str | None = None) -> dict:
+    _echo_require_server()
     try:
-        return services._mcp_request(path, payload, timeout=timeout)
+        result = services._mcp_request(path, payload, timeout=timeout)
+        if conversation_id is not None and result.get("conversation_id") != conversation_id:
+            raise HTTPException(status_code=503, detail="Echo source does not match the running server")
+        return result
     except urllib.error.HTTPError as exc:
         raise HTTPException(status_code=exc.code, detail=services._http_error_detail(exc)) from exc
     except (OSError, ValueError) as exc:
@@ -308,6 +319,7 @@ def echo_chats(soul_id: str) -> dict:
 
 @app.post("/echo/soul")
 def echo_soul(soul_id: str = Form(), use_existing: bool = Form(default=False)) -> dict:
+    _echo_require_server()
     return {"soul_id": _resolve_soul(soul_id, use_existing)}
 
 
@@ -363,7 +375,7 @@ def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
             if not upload["messages"]:
                 return duplicate_response()
             try:
-                _echo_request("/imports/register", scope)
+                _echo_request("/imports/register", scope, conversation_id=upload["conversation_id"])
             except HTTPException as exc:
                 raise HTTPException(status_code=exc.status_code,
                     detail="Source saved; registration incomplete. Use Register chat.") from exc
@@ -406,22 +418,31 @@ def echo_confirm(file: UploadFile, soul_id: str = Form(), label: str = Form(),
 def echo_action(action: str, soul_id: str = Form(), label: str = Form(), continuous: bool = Form(default=False)) -> dict:
     if action not in {"register", "process", "retry", "continuation"}:
         raise HTTPException(status_code=404, detail="Unknown import action")
-    _path, scope = _echo_scope(soul_id, label)
+    path, scope = _echo_scope(soul_id, label)
+    chat = _echo_chat(path, scope)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Imported chat not found")
     if action != "register":
         scope["continuous"] = continuous
-    return _echo_request(f"/imports/{action}", scope)
+    return _echo_request(f"/imports/{action}", scope,
+                         conversation_id=None if action == "continuation" else f"import:dm:{chat['chat_id']}")
+
+
+def _echo_chat(path: Path, scope: dict) -> dict | None:
+    return next((chat for chat in chat_import.list_chats(path, user_id=scope["user_id"], soul_id=scope["soul_id"])
+                 if chat["label"].casefold() == scope["label"].casefold()), None)
 
 
 @app.get("/echo/status")
 def echo_status(soul_id: str, label: str) -> dict:
     path, scope = _echo_scope(soul_id, label)
-    chat = next((chat for chat in chat_import.list_chats(path, user_id=scope["user_id"], soul_id=soul_id)
-                 if chat["label"].casefold() == scope["label"].casefold()), None)
+    chat = _echo_chat(path, scope)
     if chat is None:
         return {"stored": False}
     scope["label"] = chat["label"]
     try:
-        result = _echo_request("/imports/status?" + urllib.parse.urlencode(scope))
+        result = _echo_request("/imports/status?" + urllib.parse.urlencode(scope),
+                               conversation_id=f"import:dm:{chat['chat_id']}")
     except HTTPException as exc:
         if exc.status_code == 409:
             return {"stored": True, "registered": False, "label": chat["label"]}
@@ -431,6 +452,7 @@ def echo_status(soul_id: str, label: str) -> dict:
 
 @app.get("/echo/progress")
 def echo_progress() -> dict:
+    _echo_require_server()
     root = settings.apps_root()
     if root is None:
         raise HTTPException(status_code=409, detail="Configure the Apps root first")
@@ -447,7 +469,8 @@ def echo_progress() -> dict:
         if sid not in statuses:
             scope = {"user_id": owner_id, "soul_id": sid, "label": file["label"]}
             try:
-                statuses[sid] = _echo_request("/imports/status?" + urllib.parse.urlencode(scope))
+                statuses[sid] = _echo_request("/imports/status?" + urllib.parse.urlencode(scope),
+                                            conversation_id=f"import:dm:{file['chat_id']}")
             except HTTPException as exc:
                 if exc.status_code != 409:
                     raise
