@@ -115,6 +115,7 @@ def test_echo_http_upload_reuses_source_and_never_starts_processing(tmp_path, mo
             raise HTTPException(status_code=503, detail="Offline")
         return {"ok": True}
     monkeypatch.setattr(app.services, "_mcp_request", mcp)
+    monkeypatch.setattr(app, "_ECHO_CONFIRM_LOCKS", {})
     client = TestClient(app.app, base_url="http://127.0.0.1")
     assert client.post("/echo/soul", data={"soul_id": "TestNewSoul"}).json() == {"soul_id": "TestNewSoul"}
     assert created == [("TestNewSoul", False)]
@@ -125,11 +126,14 @@ def test_echo_http_upload_reuses_source_and_never_starts_processing(tmp_path, mo
               "preview_pending_start_day": "2025-01-03"}
     def upload(route, rows=raw, **extra):
         return client.post(route, data={**fields, **extra}, files={"file": ("chat.json", json.dumps(rows), "application/json")})
+    assert upload("/echo/confirm", soul_id="MissingSoul").status_code == 404
+    assert not app._ECHO_CONFIRM_LOCKS
     preview = upload("/echo/preview")
     assert preview.status_code == 200 and preview.json()["possible_overlap"]
     assert preview.json()["history"]["count"] == preview.json()["current"]["count"] == 1
     assert not chat_import.source_path(tmp_path).exists()
     assert calls[-1][2] == 60 and calls[-1][1]["current_messages"][0]["role"] == "assistant"
+    assert calls[-1][1]["history_end_index"] == 1
     pending_day[0] = "2025-01-04"
     changed = upload("/echo/confirm", confirmed_new="true")
     assert changed.status_code == 409 and "Preview again" in changed.json()["detail"]

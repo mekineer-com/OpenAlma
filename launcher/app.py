@@ -312,8 +312,9 @@ def echo_soul(soul_id: str = Form(), use_existing: bool = Form(default=False)) -
 
 
 def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
-                 all_history: bool, confirmed_new: bool, *, save: bool, preview_pending_start_day: str = "") -> dict:
-    path, scope = _echo_scope(soul_id, label)
+                 all_history: bool, confirmed_new: bool, *, save: bool, preview_pending_start_day: str = "",
+                 resolved_scope: tuple[Path, dict] | None = None) -> dict:
+    path, scope = resolved_scope or _echo_scope(soul_id, label)
     try:
         messages, title, stats = chat_import.normalize_messages(json.load(file.file))
         if not messages:
@@ -383,9 +384,10 @@ def echo_preview(file: UploadFile, soul_id: str = Form(), label: str = Form(),
 def echo_confirm(file: UploadFile, soul_id: str = Form(), label: str = Form(),
                  history_count: int = Form(default=0), all_history: bool = Form(default=True),
                  confirmed_new: bool = Form(default=False), preview_pending_start_day: str = Form(default="")) -> dict:
-    with _ECHO_CONFIRM_LOCKS.setdefault(soul_id.strip(), Lock()):
+    resolved_scope = _echo_scope(soul_id, label)
+    with _ECHO_CONFIRM_LOCKS.setdefault(resolved_scope[1]["soul_id"], Lock()):
         return _echo_upload(file, soul_id, label, history_count, all_history, confirmed_new, save=True,
-                            preview_pending_start_day=preview_pending_start_day)
+                            preview_pending_start_day=preview_pending_start_day, resolved_scope=resolved_scope)
 
 
 @app.post("/echo/{action}")
