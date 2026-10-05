@@ -6,6 +6,7 @@ import urllib.error
 import urllib.parse
 import webbrowser
 from pathlib import Path
+from threading import Lock
 
 from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
@@ -21,6 +22,7 @@ import soul
 
 ROOT = Path(__file__).resolve().parent
 LAUNCHER_ID = "openalma-launcher"
+_ECHO_CONFIRM_LOCKS: dict[str, Lock] = {}
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
 CONFIG_LABELS: dict[str, str] = {
@@ -336,6 +338,7 @@ def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
         ):
             raise HTTPException(status_code=409, detail="Confirm creation of this chat with the arrow first")
         guidance = _echo_request("/imports/validate", {**scope, "conversation_id": upload["conversation_id"],
+            "history_end_index": max((row["position"] + 1 for row in upload["messages"] if row["historical"]), default=0),
             "title": title, "current_messages": [
                 {key: row[key] for key in ("role", "content", "name", "timestamp", "source_day", "position")}
                 for row in upload["messages"] if not row["historical"]
@@ -380,8 +383,9 @@ def echo_preview(file: UploadFile, soul_id: str = Form(), label: str = Form(),
 def echo_confirm(file: UploadFile, soul_id: str = Form(), label: str = Form(),
                  history_count: int = Form(default=0), all_history: bool = Form(default=True),
                  confirmed_new: bool = Form(default=False), preview_pending_start_day: str = Form(default="")) -> dict:
-    return _echo_upload(file, soul_id, label, history_count, all_history, confirmed_new, save=True,
-                        preview_pending_start_day=preview_pending_start_day)
+    with _ECHO_CONFIRM_LOCKS.setdefault(soul_id.strip(), Lock()):
+        return _echo_upload(file, soul_id, label, history_count, all_history, confirmed_new, save=True,
+                            preview_pending_start_day=preview_pending_start_day)
 
 
 @app.post("/echo/{action}")

@@ -68,6 +68,14 @@ async function run(mode, continuous) {
     assert.equal(field('echo-counts').textContent,'Messages already exist');
     assert.equal(field('echo-guidance').textContent,'');
     assert.equal(field('echo-confirm').disabled,true);
+    let rejectPoll;
+    ctx.readStatus=()=>new Promise((_resolve,reject)=>{rejectPoll=reject;});
+    const polling=ctx.refreshStatus();
+    ctx.lockForm(true);
+    rejectPoll(Error('Status unavailable'));
+    await polling;
+    assert.equal(vm.runInContext('busy',ctx),true);
+    assert.equal(field('echo-upload').disabled,true);
   }
 }
 (async()=>{for(const mode of ['lost','wrong','unchanged','advance'])await run(mode,true);await run('advance',false);})()
@@ -162,6 +170,59 @@ def test_echo_http_upload_reuses_source_and_never_starts_processing(tmp_path, mo
     assert [call[0] for call in calls[before:]] == ["/imports/validate"]
     html = client.get("/echo").text
     assert 'src="/static/echo-logo.svg"' in html and 'id="echo-continuous" type="checkbox">' in html
+
+
+def test_confirm_serializes_validation_and_storage_for_one_soul(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+    from io import BytesIO
+    from threading import Event
+    from fastapi import HTTPException, UploadFile
+    import app
+
+    db = tmp_path / "imports.db"
+    scope = {"user_id": "TestOwner", "soul_id": "TestSoul", "label": "Replika"}
+    old, _, _ = chat_import.normalize_messages([{"id": "old", "role": "user", "content": "old fictional row",
+                                              "timestamp": "2025-01-03"}])
+    chat_import.store_upload(db, **scope, messages=old, history_count=0)
+    monkeypatch.setattr(app, "_echo_scope", lambda *_a: (db, dict(scope)))
+    monkeypatch.setattr(app, "_ECHO_CONFIRM_LOCKS", {})
+    entered, release, second_started = Event(), Event(), Event()
+    def mcp(path, payload=None, **_kwargs):
+        if path == "/imports/register":
+            return {}
+        assert path == "/imports/validate"
+        with sqlite3.connect(db) as con:
+            day = con.execute("SELECT MIN(source_day) FROM imported_messages WHERE historical = 0").fetchone()[0]
+        if payload["current_messages"][0]["content"] == "first":
+            entered.set()
+            assert release.wait(5)
+        return {"pending_start_day": day, "processed_start_day": None, "processed_end_day": None}
+    monkeypatch.setattr(app, "_echo_request", mcp)
+    def confirm(name, day):
+        if name == "second":
+            second_started.set()
+        file = UploadFile(BytesIO(json.dumps([{"id": name, "role": "user", "content": name,
+                                             "timestamp": day}]).encode()))
+        try:
+            return 200, app.echo_confirm(file, "TestSoul", "Replika", 0, False, False, "2025-01-03")
+        except HTTPException as exc:
+            return exc.status_code, exc.detail
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(confirm, "first", "2025-01-01")
+        try:
+            assert entered.wait(2)
+            assert app._ECHO_CONFIRM_LOCKS["TestSoul"].locked()
+            second = pool.submit(confirm, "second", "2025-01-02")
+            assert second_started.wait(2)
+            with pytest.raises(TimeoutError):
+                second.result(timeout=.1)
+        finally:
+            release.set()
+        assert first.result(timeout=3)[0] == 200
+        status, detail = second.result(timeout=3)
+        assert status == 409 and "Preview again" in detail
+    with sqlite3.connect(db) as con:
+        assert con.execute("SELECT COUNT(*) FROM imported_messages").fetchone()[0] == 2
 
 
 def test_source_replay_split_and_atomic_conflict(tmp_path):

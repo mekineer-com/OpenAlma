@@ -200,7 +200,10 @@ async function refreshStatus() {
     }
     if (!accepted) lockForm(busy);
   } catch (error) {
-    accepted = null; continuous.checked = false; lockForm(false); showError(error);
+    const owned = !!accepted;
+    accepted = null; continuous.checked = false;
+    if (owned || !busy) lockForm(false);
+    showError(error);
   } finally {
     if (selection) timer = setTimeout(nextBatch ? () => startWork('process') : refreshStatus, nextBatch ? 0 : 3000);
   }
