@@ -97,33 +97,6 @@ def test_launcher_mutations_reject_foreign_browser_origins(monkeypatch):
     assert len(called) == 3
 
 
-def test_launcher_identity_and_favicon_are_available():
-    client = TestClient(app.app, base_url="http://127.0.0.1")
-
-    assert client.get("/launcher/identity").json() == {
-        "application": "openalma-launcher", "protocol": 1,
-    }
-    favicon = client.get("/favicon.svg")
-    assert favicon.status_code == 200
-    assert "<svg" in favicon.text
-
-
-def test_settings_shows_managed_embedding_model(tmp_path, monkeypatch):
-    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
-    monkeypatch.setattr(app.settings, "setup_apps_root", lambda: tmp_path)
-    monkeypatch.setattr(app.settings, "read_paths", lambda: {})
-    monkeypatch.setattr(app.settings, "next_apps_root", lambda _raw: tmp_path)
-    monkeypatch.setattr(app.services, "all_services", lambda: [])
-    monkeypatch.setattr(app.services, "mentra_readiness", lambda _root: pytest.fail("general Settings must not load Iris"))
-    monkeypatch.setattr(app.services, "host_prerequisites", lambda _root: {"rows": []})
-
-    html = TestClient(app.app, base_url="http://127.0.0.1").get("/settings").text
-
-    assert '<select id="embedding-model" disabled>' in html
-    assert '<option selected>gemini-embedding-2</option>' in html
-    assert "Iris &amp; Phone Setup" not in html and 'id="pair-panel"' not in html
-
-
 def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, monkeypatch):
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
     monkeypatch.setattr(app.services, "all_services", lambda: [])

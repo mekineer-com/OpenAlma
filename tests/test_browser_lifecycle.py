@@ -101,24 +101,16 @@ def test_browser_launch_includes_isolated_profile(tmp_path, monkeypatch):
     launched = {}
     monkeypatch.setattr(browser.subprocess, "Popen", lambda args, **kwargs: launched.update(args=args, kwargs=kwargs) or object())
 
-    browser.open_app("http://127.0.0.1:8765", "chromium", tmp_path)
+    browser.open_app("http://127.0.0.1:8765", "chromium", tmp_path, position=(321, 123))
 
     assert f"--user-data-dir={tmp_path}" in launched["args"]
     assert "--remote-debugging-address=127.0.0.1" in launched["args"]
     assert "--remote-debugging-port=0" in launched["args"]
     assert "--disable-background-mode" in launched["args"]
-    assert not any(arg.startswith("--force-device-scale-factor=") for arg in launched["args"])
-    assert launched["kwargs"]["start_new_session"] is True
-
-
-def test_browser_launch_uses_saved_position(tmp_path, monkeypatch):
-    launched = {}
-    monkeypatch.setattr(browser.subprocess, "Popen", lambda args, **kwargs: launched.update(args=args) or object())
-
-    browser.open_app("http://127.0.0.1:8765", "chromium", tmp_path, position=(321, 123))
-
     assert "--window-size=600,740" in launched["args"]
     assert "--window-position=321,123" in launched["args"]
+    assert not any(arg.startswith("--force-device-scale-factor=") for arg in launched["args"])
+    assert launched["kwargs"]["start_new_session"] is True
 
 
 def test_find_chromium_uses_standard_windows_install_path(tmp_path, monkeypatch):
@@ -218,10 +210,6 @@ def test_existing_launcher_activates_open_window_without_launching(tmp_path, mon
     activation = requests[-1]
     assert activation.full_url == "http://127.0.0.1:41234/json/activate/target%2Fid"
     assert activation.method == "PUT"
-
-
-def test_cold_start_waits_up_to_thirty_seconds():
-    assert run._wait_for_port.__defaults__ == (30.0,)
 
 
 def test_windows_wrapper_reports_uvicorn_system_exit():

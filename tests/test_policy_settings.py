@@ -2,55 +2,26 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "launcher"))
 
 import policy  # noqa: E402
 
 
-def test_write_channel_settings_preserves_metadata_on_default_policy(tmp_path, monkeypatch):
+@pytest.mark.parametrize("mode,memorize", [("excluded", False), ("full", True)])
+def test_read_write_channel_settings_round_trip_preserves_metadata(tmp_path, monkeypatch, mode, memorize):
     policy_path = tmp_path / "memu.json"
     policy_path.write_text(
         json.dumps({
             "whatsapp": {
                 "channels": {
-                    "270699038040215@lid": {
+                    "test-contact@lid": {
                         "policy": "listen_only",
                         "memorize": False,
-                        "display_name": "Annie Gottlieb",
-                        "lid_jid": "270699038040215@lid",
-                    }
-                }
-            }
-        }),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(policy, "POLICY_PATH", policy_path)
-
-    policy.write_channel_settings({
-        "270699038040215@lid": {"policy": "full", "memorize": True}
-    })
-
-    data = json.loads(policy_path.read_text(encoding="utf-8"))
-    assert data["whatsapp"]["channels"]["270699038040215@lid"] == {
-        "policy": "full",
-        "memorize": True,
-        "display_name": "Annie Gottlieb",
-        "lid_jid": "270699038040215@lid",
-    }
-
-
-def test_read_write_channel_settings_round_trip_preserves_metadata(tmp_path, monkeypatch):
-    policy_path = tmp_path / "memu.json"
-    policy_path.write_text(
-        json.dumps({
-            "whatsapp": {
-                "channels": {
-                    "270699038040215@lid": {
-                        "policy": "listen_only",
-                        "memorize": False,
-                        "display_name": "Annie Gottlieb",
-                        "lid_jid": "270699038040215@lid",
+                        "display_name": "TestContact",
+                        "lid_jid": "test-contact@lid",
                     }
                 }
             }
@@ -60,15 +31,15 @@ def test_read_write_channel_settings_round_trip_preserves_metadata(tmp_path, mon
     monkeypatch.setattr(policy, "POLICY_PATH", policy_path)
 
     settings = policy.read_channel_settings()
-    settings["270699038040215@lid"]["policy"] = "excluded"
+    settings["test-contact@lid"].update(policy=mode, memorize=memorize)
     policy.write_channel_settings(settings)
 
     data = json.loads(policy_path.read_text(encoding="utf-8"))
-    assert data["whatsapp"]["channels"]["270699038040215@lid"] == {
-        "policy": "excluded",
-        "memorize": False,
-        "display_name": "Annie Gottlieb",
-        "lid_jid": "270699038040215@lid",
+    assert data["whatsapp"]["channels"]["test-contact@lid"] == {
+        "policy": mode,
+        "memorize": memorize,
+        "display_name": "TestContact",
+        "lid_jid": "test-contact@lid",
     }
 
 
@@ -78,7 +49,7 @@ def test_write_channel_settings_removes_pure_default_policy_row(tmp_path, monkey
         json.dumps({
             "whatsapp": {
                 "channels": {
-                    "270699038040215@lid": {"policy": "listen_only", "memorize": False}
+                    "test-contact@lid": {"policy": "listen_only", "memorize": False}
                 }
             }
         }),
@@ -87,7 +58,7 @@ def test_write_channel_settings_removes_pure_default_policy_row(tmp_path, monkey
     monkeypatch.setattr(policy, "POLICY_PATH", policy_path)
 
     policy.write_channel_settings({
-        "270699038040215@lid": {"policy": "full", "memorize": True}
+        "test-contact@lid": {"policy": "full", "memorize": True}
     })
 
     data = json.loads(policy_path.read_text(encoding="utf-8"))
