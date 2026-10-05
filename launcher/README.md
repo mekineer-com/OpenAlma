@@ -130,6 +130,14 @@ if that period changes before confirmation, preview again. A small shared
 launcher middleware checks mutation Host/Origin/fetch metadata, preserving local
 CLI requests and explicit `--host`; it does not add an MCP guard.
 
+Custom labels retain their spelling; picker/status resolves Unicode aliases at
+the Python lookup rather than normalizing separately in JavaScript. Required
+date guidance refuses unreadable sources instead of presenting an incomplete
+period. Duplicate-only previews show their notice without unqueried date claims,
+including when another upload inserts the candidates during validation.
+Retained old source stores with multiple chats per Soul need the separately
+authorized one-time uniqueness preparation; no runtime conversion is provided.
+
 The revised pause/handoff, server-owned continuation and per-file meters are
 still pending. The browser-owned processing described below is the original
 implementation, not completion of that revised flow.

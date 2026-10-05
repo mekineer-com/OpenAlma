@@ -83,17 +83,24 @@ labelInput.addEventListener('focus', openChatMenu);
 labelInput.addEventListener('click', openChatMenu);
 labelInput.addEventListener('blur', closeChatMenu);
 labelInput.addEventListener('input', () => {resetSelection(); openChatMenu();});
-document.getElementById('echo-chat-form').addEventListener('submit', event => {
+document.getElementById('echo-chat-form').addEventListener('submit', async event => {
   event.preventDefault();
   const entered = labelInput.value.trim();
-  const label = [...knownChats].find(name => name.toLowerCase() === entered.toLowerCase()) || entered;
-  if (!selectedSoul || !label || label.split(/\s+/).length !== 1) {
+  const soul = selectedSoul;
+  if (!soul || !entered || entered.split(/\s+/).length !== 1) {
     showError(new Error('Select a Soul and a one-word chat-app label.')); return;
   }
+  let status;
+  try {
+    status = await echoRequest('/echo/status?' + new URLSearchParams({soul_id: soul, label: entered}));
+  } catch (error) {showError(error); return;}
+  if (soul !== selectedSoul || entered !== labelInput.value.trim()) return;
+  const label = status.stored ? status.label : entered;
+  if (status.stored) {knownChats.add(label); labelInput.value = label;}
   if (!knownChats.has(label) && pendingNewChat !== label) {
     pendingNewChat = label; chatNew.hidden = false; return;
   }
-  selection = {soul_id: selectedSoul, label, confirmed_new: !knownChats.has(label)};
+  selection = {soul_id: soul, label, confirmed_new: !knownChats.has(label)};
   chatNew.hidden = true; chatReady.hidden = false; closeChatMenu();
   lockForm(false);
   refreshStatus();
@@ -119,7 +126,12 @@ function showPreview(data) {
   const range = group => `${group.count} messages${group.count ? ` (${group.start} to ${group.end})` : ''}`;
   document.getElementById('echo-ranges').textContent = `New history: ${range(data.history)}. New current context: ${range(data.current)}.`;
   const guide = data.guidance;
+  const duplicateOnly = !data.history.count && !data.current.count;
   document.getElementById('echo-guidance').textContent = (guide.pending_start_day ? `This Soul's unmemorized period starts ${guide.pending_start_day}. ` : 'No unmemorized period recorded for this Soul. ') + (guide.processed_start_day ? `Previously processed dates for this chat: ${guide.processed_start_day} to ${guide.processed_end_day}.` : 'No processed dates recorded for this chat.');
+  if (duplicateOnly) {
+    document.getElementById('echo-counts').textContent = data.notice;
+    document.getElementById('echo-guidance').textContent = '';
+  }
   document.getElementById('echo-limitation').hidden = !guide.deferred_history;
   document.getElementById('echo-overlap').hidden = !data.possible_overlap;
   document.getElementById('echo-before').textContent = data.before_gap || '(none)';

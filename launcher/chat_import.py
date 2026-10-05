@@ -161,8 +161,8 @@ def _prepare(con: sqlite3.Connection | None, user_id: str, soul_id: str, label: 
             raise ValueError("Each Soul can import only one chat app")
         label = chat["label"]
     else:
-        label = {"whatsapp": "WhatsApp", "smartglasses": "Smartglasses"}.get(
-            label.casefold(), label.capitalize() if label.islower() or label.isupper() else label)
+        label = {"replika": "Replika", "nomi": "Nomi", "kindroid": "Kindroid",
+                 "whatsapp": "WhatsApp", "smartglasses": "Smartglasses"}.get(label.casefold(), label)
     chat_id = chat["chat_id"] if chat is not None else uuid4().hex
     position = con.execute(
         "SELECT COALESCE(MAX(position), -1) + 1 FROM imported_messages WHERE chat_id = ?", (chat_id,),

@@ -18,7 +18,7 @@ async function run(mode, continuous) {
   const fields=new Map(), timers=new Map(); let sequence=0, starts=0, results=0;
   const field=id=> {
     if (!fields.has(id)) fields.set(id, {value:'', hidden:false, checked:false, textContent:'',
-      addEventListener(){}, setAttribute(){}, replaceChildren(){}, files:[]});
+      events:{}, addEventListener(kind,fn){this.events[kind]=fn;}, setAttribute(){}, replaceChildren(){}, files:[]});
     return fields.get(id);
   };
   let state={memorize_cursor:-1,history_end_index:2,pending_segment_ids:[],stage:'memorize',error:null};
@@ -28,6 +28,7 @@ async function run(mode, continuous) {
       let data;
       if(url==='/souls') data={souls:[]};
       else if(url.startsWith('/echo/status')) data={stored:true,registered:true,running:false,
+        label:url.includes('STRASSE')||url.includes('Stra')?'Stra\u00dfe':'Replika',
         conversation_id:'import:dm:test',import_state:structuredClone(state),progress:{}};
       else if(url==='/echo/process') {
         starts++;
@@ -48,6 +49,21 @@ async function run(mode, continuous) {
   if(mode==='advance'&&continuous) {assert(next);await next.fn();assert.equal(starts,2);assert.equal(results,2);}
   else {assert(!next);assert.equal(results,mode==='advance'?1:0);}
   if(mode!=='advance')assert.equal(field('echo-continuous').checked,false);
+  if(mode==='advance'&&!continuous) {
+    vm.runInContext('selectedSoul="TestSoul";knownChats=new Set(["Stra\\u00dfe"]);selection=null;',ctx);
+    field('echo-label').value='STRASSE';
+    await field('echo-chat-form').events.submit({preventDefault(){}});
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(vm.runInContext('selection.label',ctx),'Stra\u00dfe');
+    assert.equal(field('echo-chat-new').hidden,true);
+    assert.equal(field('echo-register').hidden,false);
+    assert.equal(field('echo-process').disabled,false);
+    ctx.showPreview({label:'Stra\u00dfe',saved:false,total_messages:1,duplicates:1,notice:'Messages already exist',
+      stats:{skipped_non_text:0,skipped_empty:0},history:{count:0},current:{count:0},guidance:{},possible_overlap:false});
+    assert.equal(field('echo-counts').textContent,'Messages already exist');
+    assert.equal(field('echo-guidance').textContent,'');
+    assert.equal(field('echo-confirm').disabled,true);
+  }
 }
 (async()=>{for(const mode of ['lost','wrong','unchanged','advance'])await run(mode,true);await run('advance',false);})()
   .catch(error=>{console.error(error);process.exitCode=1;});
@@ -67,11 +83,17 @@ def test_echo_http_upload_reuses_source_and_never_starts_processing(tmp_path, mo
         lambda name, existing: (created.append((name, existing)) or name))
     calls, refuse, register_fail = [], [False], [False]
     pending_day = ["2025-01-03"]
+    competing = [[]]
     def mcp(path, payload=None, *, timeout=2):
         calls.append((path, payload, timeout))
         if path == "/imports/validate":
             if refuse[0]:
                 raise HTTPException(status_code=400, detail="Context too large")
+            if competing[0]:
+                normalized, _, _ = chat_import.normalize_messages(competing[0])
+                chat_import.store_upload(chat_import.source_path(tmp_path), user_id="TestOwner", soul_id="TestSoul",
+                                         label="Replika", messages=normalized, history_count=len(normalized))
+                competing[0] = []
             return {"pending_start_day": pending_day[0], "processed_start_day": "2024-01-01",
                     "processed_end_day": "2025-01-01"}
         assert path == "/imports/register"  # Storage must never Process implicitly.
@@ -127,6 +149,12 @@ def test_echo_http_upload_reuses_source_and_never_starts_processing(tmp_path, mo
     register_fail[0] = False
     assert client.post("/echo/register", data=fields).status_code == 200
     assert client.post("/echo/anything", data=fields).status_code == 404
+    addition = {"id": "competing", "role": "user", "timestamp": "2025-01-05", "content": "fictional concurrent row"}
+    competing[0] = [addition]
+    before = len(calls)
+    race = upload("/echo/confirm", [*more, addition], all_history="true")
+    assert race.status_code == 200 and race.json()["notice"] == "Messages already exist"
+    assert [call[0] for call in calls[before:]] == ["/imports/validate"]
     html = client.get("/echo").text
     assert 'src="/static/echo-logo.svg"' in html and 'id="echo-continuous" type="checkbox">' in html
 
@@ -160,7 +188,7 @@ def test_source_replay_split_and_atomic_conflict(tmp_path):
     assert other["chat_id"] != first["chat_id"]
 
 
-def test_chat_label_casefold_and_one_app_per_soul(tmp_path):
+def test_chat_label_casefold_and_one_app_per_soul(tmp_path, monkeypatch):
     db = tmp_path / "imports.db"
     rows, _, _ = chat_import.normalize_messages([{"id": "one", "role": "user", "content": "fictional",
                                                  "timestamp": "2025-01-01"}])
@@ -174,6 +202,19 @@ def test_chat_label_casefold_and_one_app_per_soul(tmp_path):
     original = chat_import.store_upload(db, **unicode_scope, label="Stra\u00dfe", messages=rows, history_count=1)
     assert chat_import.prepare_upload(db, **unicode_scope, label="STRASSE", messages=rows,
                                      history_count=0)["chat_id"] == original["chat_id"]
+    dotless = {**scope, "soul_id": "DotlessSoul"}
+    first = chat_import.store_upload(db, **dotless, label="\u0131chat", messages=rows, history_count=1)
+    assert first["label"] == "\u0131chat"
+    assert chat_import.prepare_upload(db, **dotless, label="\u0131chat", messages=rows,
+                                     history_count=0)["duplicates"] == 1
+    import app
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(app, "_echo_scope", lambda sid, label="": (db, {**scope, "soul_id": sid, "label": label}))
+    monkeypatch.setattr(app.services, "_mcp_request", lambda *_a, **_kw: {"import_state": {}})
+    monkeypatch.setattr(app.services, "memorize_pending", lambda *_a: {})
+    status = TestClient(app.app, base_url="http://127.0.0.1").get(
+        "/echo/status", params={"soul_id": "UnicodeSoul", "label": "STRASSE"}).json()
+    assert status["stored"] and status["registered"] and status["label"] == original["label"]
 
 
 def test_conversion_date_identity_and_metadata(tmp_path):

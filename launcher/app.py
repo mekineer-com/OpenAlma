@@ -35,7 +35,7 @@ app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 @app.middleware("http")
 async def browser_mutations(request: Request, call_next):
     if request.method not in {"GET", "HEAD"}:
-        host = getattr(app.state, "launcher_host", "127.0.0.1")
+        host = getattr(app.state, "launcher_host", "127.0.0.1").lower()
         origin = request.headers.get("origin")
         site = request.headers.get("sec-fetch-site")
         trusted = host in {"0.0.0.0", "::"} or request.url.hostname in {host, "127.0.0.1", "localhost", "::1"}
@@ -322,12 +322,14 @@ def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
         def dates(rows):
             days = [row["source_day"] for row in rows]
             return {"count": len(rows), "start": min(days, default=None), "end": max(days, default=None)}
-        if not upload["messages"]:
+        def duplicate_response():
             return {"conversation_id": upload["conversation_id"], "label": upload["label"], "saved": save,
                 "total_messages": len(messages), "duplicates": upload["duplicates"], "stats": stats,
                 "history": dates([]), "current": dates([]), "possible_overlap": False,
                 "before_gap": "", "after_gap": "", "notice": "Messages already exist",
                 "guidance": {"pending_start_day": None, "processed_start_day": None, "processed_end_day": None}}
+        if not upload["messages"]:
+            return duplicate_response()
         if save and not confirmed_new and not any(
             chat["label"].casefold() == scope["label"].casefold()
             for chat in chat_import.list_chats(path, user_id=scope["user_id"], soul_id=soul_id)
@@ -343,6 +345,8 @@ def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
             raise HTTPException(status_code=409, detail="The current period changed. Preview again.")
         if save:
             upload = chat_import.store_upload(path, **scope, messages=messages, history_count=count, title=title)
+            if not upload["messages"]:
+                return duplicate_response()
             try:
                 _echo_request("/imports/register", scope)
             except HTTPException as exc:
@@ -392,16 +396,17 @@ def echo_action(action: str, soul_id: str = Form(), label: str = Form()) -> dict
 def echo_status(soul_id: str, label: str) -> dict:
     path, scope = _echo_scope(soul_id, label)
     chat = next((chat for chat in chat_import.list_chats(path, user_id=scope["user_id"], soul_id=soul_id)
-                 if chat["label"] == scope["label"]), None)
+                 if chat["label"].casefold() == scope["label"].casefold()), None)
     if chat is None:
         return {"stored": False}
+    scope["label"] = chat["label"]
     try:
         result = _echo_request("/imports/status?" + urllib.parse.urlencode(scope))
     except HTTPException as exc:
         if exc.status_code == 409:
-            return {"stored": True, "registered": False}
+            return {"stored": True, "registered": False, "label": chat["label"]}
         raise
-    return {**result, "stored": True, "registered": True,
+    return {**result, "stored": True, "registered": True, "label": chat["label"],
             "meter": services.memorize_pending(soul_id, scope["user_id"])}
 
 
