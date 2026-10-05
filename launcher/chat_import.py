@@ -136,6 +136,13 @@ def connect(db_path: Path) -> sqlite3.Connection:
             ON imported_messages(chat_id, timestamp, speaker, role);
         CREATE INDEX IF NOT EXISTS imported_messages_mode
             ON imported_messages(chat_id, historical, position);
+        CREATE TABLE IF NOT EXISTS imported_files (
+            file_id TEXT PRIMARY KEY,
+            chat_id TEXT NOT NULL REFERENCES imported_chats(chat_id),
+            filename TEXT NOT NULL,
+            start_position INTEGER NOT NULL,
+            end_position INTEGER NOT NULL
+        );
     """)
     return con
 
@@ -212,7 +219,8 @@ def prepare_upload(db_path: Path, *, user_id: str, soul_id: str, label: str,
 
 
 def store_upload(db_path: Path, *, user_id: str, soul_id: str, label: str,
-                 messages: list[dict], history_count: int, title: str | None = None) -> dict:
+                 messages: list[dict], history_count: int, title: str | None = None,
+                 filename: str = "Chat import") -> dict:
     with closing(connect(db_path)) as con, con:
         con.execute("BEGIN IMMEDIATE")
         upload = _prepare(con, user_id, soul_id, label.strip(), messages, history_count, title)
@@ -224,8 +232,45 @@ def store_upload(db_path: Path, *, user_id: str, soul_id: str, label: str,
              int(m["historical"]), json.dumps(m["metadata"], ensure_ascii=False))
             for m in upload["messages"]
         ])
+        if upload["messages"]:
+            con.execute("INSERT INTO imported_files VALUES (?, ?, ?, ?, ?)", (
+                uuid4().hex, upload["chat_id"], filename,
+                upload["messages"][0]["position"], upload["messages"][-1]["position"] + 1,
+            ))
         upload["history_end_index"] = con.execute(
             "SELECT COALESCE(MAX(position) + 1, 0) FROM imported_messages WHERE chat_id = ? AND historical = 1",
             (upload["chat_id"],),
         ).fetchone()[0]
         return upload
+
+
+def list_files(db_path: Path, *, user_id: str) -> list[dict]:
+    if not db_path.exists():
+        return []
+    with closing(sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)) as con:
+        con.row_factory = sqlite3.Row
+        return [dict(row) for row in con.execute(
+            "SELECT f.*, c.soul_id, c.label FROM imported_files f JOIN imported_chats c USING(chat_id) "
+            "WHERE c.user_id = ? ORDER BY c.soul_id, f.start_position", (user_id,),
+        )]
+
+
+def file_progress(db_path: Path, file: dict, status: dict) -> dict:
+    record = status.get("import_state") or {}
+    end, cursor = record.get("history_end_index", 0), record.get("memorize_cursor", -1)
+    with closing(sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)) as con:
+        eligible, extracted, deferred, current = con.execute(
+            "SELECT COUNT(CASE WHEN historical = 1 AND position < ? THEN 1 END), "
+            "COUNT(CASE WHEN historical = 1 AND position < ? AND position <= ? THEN 1 END), "
+            "COUNT(CASE WHEN historical = 1 AND position >= ? THEN 1 END), "
+            "COUNT(CASE WHEN historical = 0 THEN 1 END) FROM imported_messages "
+            "WHERE chat_id = ? AND position >= ? AND position < ?",
+            (end, end, cursor, end, file["chat_id"], file["start_position"], file["end_position"]),
+        ).fetchone()
+    pending = bool(eligible and extracted and record.get("pending_segment_ids"))
+    complete = bool(record) and extracted == eligible and not pending
+    return {**file, "eligible": eligible, "extracted": extracted, "deferred": deferred, "current": current,
+            "percent": min(99 if pending else 100, int(100 * extracted / eligible)) if eligible else None,
+            "dismissible": complete, "running": status.get("running", False),
+            "error": record.get("error"), "pending_consolidation": pending,
+            "registered": bool(record)}

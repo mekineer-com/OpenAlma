@@ -9,6 +9,7 @@ const gap = document.getElementById('echo-history-count');
 const continuous = document.getElementById('echo-continuous');
 let knownChats = new Set(), pendingNewChat = '', selection = null, preview = null;
 let accepted = null, lastStatus = null, timer = null, busy = false;
+let polling = false;
 let selectedSoul = '';
 
 async function echoRequest(url, options) {
@@ -48,17 +49,16 @@ function invalidatePreview() {
 function resetSelection() {
   selection = null;
   lastStatus = null;
+  continuous.checked = false;
   chatReady.hidden = true;
   chatNew.hidden = true;
   pendingNewChat = '';
   invalidatePreview();
-  clearTimeout(timer);
   document.getElementById('echo-results').replaceChildren();
   document.getElementById('echo-status').textContent = 'Choose a Soul and chat app.';
   document.getElementById('echo-register').hidden = true;
   document.getElementById('echo-retry').hidden = true;
   document.getElementById('echo-show-results').disabled = true;
-  document.getElementById('memorize-meter').textContent = "Choose a chat to see its Soul's progress.";
   lockForm(false);
 }
 async function loadChats() {
@@ -168,17 +168,48 @@ function checkpointAdvanced(before, after) {
   return after.stage === 'complete' || after.memorize_cursor > before.memorize_cursor ||
     before.pending_segment_ids.some(id => !after.pending_segment_ids.includes(id));
 }
+function renderImports(files) {
+  const box = document.getElementById('echo-meters');
+  box.replaceChildren();
+  files.forEach(file => {
+    const key = `echo-dismissed:${file.file_id}`;
+    if (file.dismissible && localStorage.getItem(key)) return;
+    const row = document.createElement('p'), title = document.createElement('span');
+    title.textContent = `${file.soul_id}: ${file.label}, ${file.filename}. `;
+    row.append(title);
+    if (file.percent !== null) {
+      const meter = document.createElement('progress');
+      meter.max = 100; meter.value = file.percent;
+      meter.setAttribute('aria-label', `${file.filename}: ${file.percent}%`);
+      row.append(meter, ` ${file.percent}%. `);
+    }
+    row.append(!file.registered ? 'Registration required. ' : file.running ? 'Processing. ' :
+      file.error ? 'Import failed. Retry in Echo. ' : file.pending_consolidation ? 'Awaiting consolidation. ' :
+      file.eligible && file.percent === 100 ? 'Complete. ' : file.eligible ? 'Ready for next batch. ' : '');
+    if (file.deferred) row.append(`${file.deferred} messages saved, not memorized. `);
+    if (file.current) row.append(`${file.current} messages saved for ordinary Memorize. `);
+    if (file.dismissible) {
+      const dismiss = document.createElement('button');
+      dismiss.className = 'btn'; dismiss.textContent = 'Dismiss';
+      dismiss.addEventListener('click', () => {localStorage.setItem(key, '1'); row.remove();});
+      row.append(dismiss);
+    }
+    box.append(row);
+  });
+  if (!box.childElementCount) box.textContent = 'No imports to show.';
+}
 async function readStatus() {
   const selected = selection;
   const data = await echoRequest('/echo/status?' + new URLSearchParams({soul_id: selected.soul_id, label: selected.label}));
   return selected === selection ? data : null;
 }
 async function refreshStatus() {
+  if (polling) return;
+  polling = true;
   clearTimeout(timer);
-  if (!selection) return;
-  if (busy && !accepted) {timer = setTimeout(refreshStatus, 3000); return;}
-  let nextBatch = false;
   try {
+    renderImports((await echoRequest('/echo/progress')).files);
+    if (!selection) return;
     const data = await readStatus();
     if (!data) return;
     lastStatus = data;
@@ -188,24 +219,24 @@ async function refreshStatus() {
     if (data.stored) document.getElementById('echo-limitation').hidden = !data.deferred_history;
     const state = data.import_state;
     document.getElementById('echo-status').textContent = !data.stored ? 'No source stored yet.' : !data.registered ? 'Source stored; register it to process.' : data.running ? `Soul memory work: ${data.progress.phase || 'running'}` : state.error ? `Import failed: ${state.error}` : state.stage === 'complete' ? (data.deferred_history ? 'History saved, not memorized. Current rows remain ordinary chat context.' : 'Historical processing complete. Current rows remain ordinary chat context.') : `History checkpoint ${state.memorize_cursor + 1} / ${state.history_end_index}; ${state.pending_segment_ids.length} segments awaiting consolidation.`;
-    if (data.meter) renderMemorize({souls: [{...data.meter, soul_id: selection.soul_id}]});
+    if (data.running) continuous.checked = data.continuous;
     if (accepted && data.registered && !data.running) {
       const before = accepted;
       accepted = null;
-      if (state.error) throw new Error(state.error);
-      if (!checkpointAdvanced(before, state)) throw new Error('Completion is uncertain. Inspect status before starting again.');
-      await loadResults();
       lockForm(false);
-      nextBatch = continuous.checked && state.stage !== 'complete';
+      if (!state.error && !checkpointAdvanced(before, state)) throw new Error('Completion is uncertain. Inspect status before starting again.');
+      if (!state.error) await loadResults();
     }
     if (!accepted) lockForm(busy);
   } catch (error) {
     const owned = !!accepted;
-    accepted = null; continuous.checked = false;
+    accepted = null;
     if (owned || !busy) lockForm(false);
     showError(error);
+    document.getElementById('echo-meters').textContent = 'Import progress unavailable.';
   } finally {
-    if (selection) timer = setTimeout(nextBatch ? () => startWork('process') : refreshStatus, nextBatch ? 0 : 3000);
+    polling = false;
+    timer = setTimeout(refreshStatus, 3000);
   }
 }
 async function startWork(action) {
@@ -217,6 +248,7 @@ async function startWork(action) {
     if (!before?.registered || before.running || (action === 'process' && before.import_state.stage === 'complete')) throw new Error('No import batch is ready to start.');
     const form = new FormData();
     form.append('soul_id', selection.soul_id); form.append('label', selection.label);
+    form.append('continuous', continuous.checked);
     const reply = await echoRequest('/echo/' + action, {method: 'POST', body: form});
     if (reply.status !== 'accepted' || reply.conversation_id !== before.conversation_id) throw new Error('Start acknowledgement is uncertain. Inspect status; do not repeat payment.');
     accepted = before.import_state;
@@ -227,6 +259,15 @@ async function startWork(action) {
 }
 document.getElementById('echo-process').addEventListener('click', () => startWork('process'));
 document.getElementById('echo-retry').addEventListener('click', () => startWork('retry'));
+continuous.addEventListener('change', async () => {
+  if (!selection || !lastStatus?.running) return;
+  const form = new FormData();
+  form.append('soul_id', selection.soul_id); form.append('label', selection.label);
+  form.append('continuous', continuous.checked);
+  try {await echoRequest('/echo/continuation', {method: 'POST', body: form});}
+  catch (error) {showError(error);}
+  await refreshStatus();
+});
 document.getElementById('echo-register').addEventListener('click', async () => {
   lockForm(true);
   try {
@@ -257,4 +298,5 @@ function pollMemorize() {return refreshStatus();}
   bindSoulCombobox(document.getElementById('echo-soul-form'), data.souls, name => {
     selectedSoul = name; soulChoice.value = name; loadChats().catch(showError);
   }, () => {selectedSoul = ''; resetSelection();});
+  await refreshStatus();
 })().catch(showError);

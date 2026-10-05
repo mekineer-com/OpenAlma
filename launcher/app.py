@@ -348,7 +348,8 @@ def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
                 preview_pending_start_day != (guidance["pending_start_day"] or "")):
             raise HTTPException(status_code=409, detail="The current period changed. Preview again.")
         if save:
-            upload = chat_import.store_upload(path, **scope, messages=messages, history_count=count, title=title)
+            upload = chat_import.store_upload(path, **scope, messages=messages, history_count=count, title=title,
+                                             filename=file.filename or "Chat import")
             if not upload["messages"]:
                 return duplicate_response()
             try:
@@ -391,10 +392,12 @@ def echo_confirm(file: UploadFile, soul_id: str = Form(), label: str = Form(),
 
 
 @app.post("/echo/{action}")
-def echo_action(action: str, soul_id: str = Form(), label: str = Form()) -> dict:
-    if action not in {"register", "process", "retry"}:
+def echo_action(action: str, soul_id: str = Form(), label: str = Form(), continuous: bool = Form(default=False)) -> dict:
+    if action not in {"register", "process", "retry", "continuation"}:
         raise HTTPException(status_code=404, detail="Unknown import action")
     _path, scope = _echo_scope(soul_id, label)
+    if action != "register":
+        scope["continuous"] = continuous
     return _echo_request(f"/imports/{action}", scope)
 
 
@@ -412,8 +415,34 @@ def echo_status(soul_id: str, label: str) -> dict:
         if exc.status_code == 409:
             return {"stored": True, "registered": False, "label": chat["label"]}
         raise
-    return {**result, "stored": True, "registered": True, "label": chat["label"],
-            "meter": services.memorize_pending(soul_id, scope["user_id"])}
+    return {**result, "stored": True, "registered": True, "label": chat["label"]}
+
+
+@app.get("/echo/progress")
+def echo_progress() -> dict:
+    root = settings.apps_root()
+    if root is None:
+        raise HTTPException(status_code=409, detail="Configure the Apps root first")
+    try:
+        owner_id = services.read_owner()
+    except services.OwnerServiceUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not owner_id:
+        raise HTTPException(status_code=409, detail="Establish your OpenAlma identity first")
+    path = chat_import.source_path(root)
+    statuses, files = {}, []
+    for file in chat_import.list_files(path, user_id=owner_id):
+        sid = file["soul_id"]
+        if sid not in statuses:
+            scope = {"user_id": owner_id, "soul_id": sid, "label": file["label"]}
+            try:
+                statuses[sid] = _echo_request("/imports/status?" + urllib.parse.urlencode(scope))
+            except HTTPException as exc:
+                if exc.status_code != 409:
+                    raise
+                statuses[sid] = {}
+        files.append(chat_import.file_progress(path, file, statuses[sid]))
+    return {"files": files}
 
 
 @app.get("/echo/results")

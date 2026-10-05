@@ -10,27 +10,33 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "launcher"))
 import chat_import
 
 
-def test_echo_continuation_needs_acknowledgement_and_own_checkpoint():
+def test_echo_observes_server_continuation_without_starting_more_batches():
     script = Path(__file__).resolve().parents[1] / "launcher/static/echo.js"
     subprocess.run(["node", "-e", r'''
 const fs=require('fs'), vm=require('vm'), assert=require('node:assert/strict');
 async function run(mode, continuous) {
-  const fields=new Map(), timers=new Map(); let sequence=0, starts=0, results=0;
+  const fields=new Map(), timers=new Map(), storage=new Map(); let sequence=0, starts=0, results=0;
+  const element=()=>({children:[],events:{},setAttribute(){},
+    get childElementCount(){return this.children.length;},
+    append(...items){this.children.push(...items);},replaceChildren(){this.children=[];},
+    remove(){this.removed=true;},addEventListener(kind,fn){this.events[kind]=fn;}});
   const field=id=> {
-    if (!fields.has(id)) fields.set(id, {value:'', hidden:false, checked:false, textContent:'',
-      events:{}, addEventListener(kind,fn){this.events[kind]=fn;}, setAttribute(){}, replaceChildren(){}, files:[]});
+    if (!fields.has(id)) fields.set(id, Object.assign(element(), {value:'', hidden:false, checked:false, textContent:'', files:[]}));
     return fields.get(id);
   };
   let state={memorize_cursor:-1,history_end_index:2,pending_segment_ids:[],stage:'memorize',error:null};
-  const ctx={console,URLSearchParams,FormData,Option:function(){},renderMemorize(){},bindSoulCombobox(){},
-    document:{getElementById:field},setTimeout(fn,ms){timers.set(++sequence,{fn,ms});return sequence;},
-    clearTimeout(id){timers.delete(id);},fetch:async url=>{
+  const ctx={console,URLSearchParams,FormData,Option:function(){},bindSoulCombobox(){},
+    localStorage:{getItem(key){return storage.get(key);},setItem(key,value){storage.set(key,value);}},
+    document:{getElementById:field,createElement:element},setTimeout(fn,ms){timers.set(++sequence,{fn,ms});return sequence;},
+    clearTimeout(id){timers.delete(id);},fetch:async (url,options)=>{
       let data;
       if(url==='/souls') data={souls:[]};
+      else if(url==='/echo/progress') data={files:[]};
       else if(url.startsWith('/echo/status')) data={stored:true,registered:true,running:false,
         label:url.includes('STRASSE')||url.includes('Stra')?'Stra\u00dfe':'Replika',
         conversation_id:'import:dm:test',import_state:structuredClone(state),progress:{}};
       else if(url==='/echo/process') {
+        assert.equal(options.body.get('continuous'),String(continuous));
         starts++;
         if(mode!=='unchanged') {state.memorize_cursor++; if(state.memorize_cursor===1)state.stage='complete';}
         if(mode==='lost')throw Error('Lost acknowledgement');
@@ -46,9 +52,8 @@ async function run(mode, continuous) {
   await ctx.startWork('process');
   assert.equal(starts,1);
   const next=[...timers.values()].find(timer=>timer.ms===0);
-  if(mode==='advance'&&continuous) {assert(next);await next.fn();assert.equal(starts,2);assert.equal(results,2);}
-  else {assert(!next);assert.equal(results,mode==='advance'?1:0);}
-  if(mode!=='advance')assert.equal(field('echo-continuous').checked,false);
+  assert(!next);assert.equal(starts,1);assert.equal(results,mode==='advance'?1:0);
+  assert.equal(timers.size,1);
   if(mode==='advance'&&!continuous) {
     vm.runInContext('selectedSoul="TestSoul";knownChats=new Set(["Stra\\u00dfe"]);',ctx);
     ctx.resetSelection();
@@ -68,14 +73,23 @@ async function run(mode, continuous) {
     assert.equal(field('echo-counts').textContent,'Messages already exist');
     assert.equal(field('echo-guidance').textContent,'');
     assert.equal(field('echo-confirm').disabled,true);
+    const file={file_id:'first',filename:'<script>fiction.json',soul_id:'TestSoul',label:'TestApp',
+      percent:100,eligible:2,registered:true,dismissible:true};
+    ctx.renderImports([file]);
+    const meter=field('echo-meters').children[0];
+    assert.match(meter.children[0].textContent,/<script>fiction.json/);
+    meter.children.at(-1).events.click();
+    ctx.renderImports([file]);assert.equal(field('echo-meters').childElementCount,0);
+    ctx.renderImports([{...file,file_id:'next'}]);assert.equal(field('echo-meters').childElementCount,1);
     ctx.readStatus=async()=>({stored:true,registered:true,running:true,
-      import_state:{...state,error:'Interrupted marker'},progress:{phase:'extracting'}});
+      continuous:true,import_state:{...state,error:'Interrupted marker'},progress:{phase:'extracting'}});
     await ctx.refreshStatus();
     assert.match(field('echo-status').textContent,/Soul memory work: extracting/);
     assert.equal(field('echo-retry').hidden,true);
     let rejectPoll;
     ctx.readStatus=()=>new Promise((_resolve,reject)=>{rejectPoll=reject;});
     const polling=ctx.refreshStatus();
+    await new Promise(resolve=>setImmediate(resolve));
     ctx.lockForm(true);
     rejectPoll(Error('Status unavailable'));
     await polling;
@@ -234,7 +248,7 @@ def test_confirm_serializes_validation_and_storage_for_one_soul(tmp_path, monkey
         assert con.execute("SELECT COUNT(*) FROM imported_messages").fetchone()[0] == 2
 
 
-def test_source_replay_split_and_atomic_conflict(tmp_path):
+def test_source_replay_split_and_atomic_conflict(tmp_path, monkeypatch):
     db = tmp_path / "chats.db"
     scope = {"user_id": "TestOwner", "soul_id": "TestSoul", "label": "Replika"}
     raw = [{"id": str(i), "role": "user", "name": "TestSpeaker", "content": f"message {i}",
@@ -258,9 +272,38 @@ def test_source_replay_split_and_atomic_conflict(tmp_path):
         assert con.execute("SELECT position, historical FROM imported_messages ORDER BY position").fetchall() == [
             (0, 1), (1, 1), (2, 0), (3, 0), (4, 0), (5, 1)]
         assert con.execute("SELECT COUNT(*) FROM imported_chats").fetchone()[0] == 1
+        assert con.execute("SELECT COUNT(*) FROM imported_files").fetchone()[0] == 2
+    files = chat_import.list_files(db, user_id=scope["user_id"])
+    status = {"import_state": {"history_end_index": 6, "memorize_cursor": 4,
+                              "pending_segment_ids": ["pending"]}}
+    first_meter = chat_import.file_progress(db, files[0], status)
+    later_meter = chat_import.file_progress(db, files[1], status)
+    assert (first_meter["eligible"], first_meter["extracted"], first_meter["current"]) == (2, 2, 3)
+    assert first_meter["percent"] == 99 and not first_meter["dismissible"]
+    assert later_meter["eligible"] == 1 and later_meter["percent"] == 0
+    status["import_state"].update(history_end_index=2, memorize_cursor=1, pending_segment_ids=[])
+    assert chat_import.file_progress(db, files[0], status)["percent"] == 100
+    deferred = chat_import.file_progress(db, files[1], status)
+    assert deferred["percent"] is None and deferred["deferred"] == 1 and deferred["dismissible"]
+    assert not chat_import.file_progress(db, files[1], {})["dismissible"]
     assert chat_import.store_upload(db, **scope, messages=older, history_count=0)["duplicates"] == 1
     other = chat_import.store_upload(db, **{**scope, "soul_id": "OtherSoul"}, messages=messages, history_count=5)
     assert other["chat_id"] != first["chat_id"]
+    chat_import.store_upload(db, **{**scope, "user_id": "OtherOwner"}, messages=messages, history_count=5)
+    import app
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "read_owner", lambda: "TestOwner")
+    monkeypatch.setattr(chat_import, "source_path", lambda _root: db)
+    calls = []
+    def status_request(path, *_a, **_kw):
+        calls.append(path)
+        return status
+    monkeypatch.setattr(app, "_echo_request", status_request)
+    response = TestClient(app.app, base_url="http://127.0.0.1").get("/echo/progress")
+    assert response.status_code == 200
+    assert len(response.json()["files"]) == 3 and len(calls) == 2
+    assert {file["soul_id"] for file in response.json()["files"]} == {"TestSoul", "OtherSoul"}
 
 
 def test_chat_label_casefold_and_one_app_per_soul(tmp_path, monkeypatch):
