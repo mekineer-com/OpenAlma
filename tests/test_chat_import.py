@@ -68,6 +68,11 @@ async function run(mode, continuous) {
     assert.equal(field('echo-counts').textContent,'Messages already exist');
     assert.equal(field('echo-guidance').textContent,'');
     assert.equal(field('echo-confirm').disabled,true);
+    ctx.readStatus=async()=>({stored:true,registered:true,running:true,
+      import_state:{...state,error:'Interrupted marker'},progress:{phase:'extracting'}});
+    await ctx.refreshStatus();
+    assert.match(field('echo-status').textContent,/Soul memory work: extracting/);
+    assert.equal(field('echo-retry').hidden,true);
     let rejectPoll;
     ctx.readStatus=()=>new Promise((_resolve,reject)=>{rejectPoll=reject;});
     const polling=ctx.refreshStatus();

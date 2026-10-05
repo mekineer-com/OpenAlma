@@ -183,11 +183,11 @@ async function refreshStatus() {
     if (!data) return;
     lastStatus = data;
     document.getElementById('echo-register').hidden = !data.stored;
-    document.getElementById('echo-retry').hidden = !data.registered || !data.import_state.error;
+    document.getElementById('echo-retry').hidden = !data.registered || data.running || !data.import_state.error;
     document.getElementById('echo-show-results').disabled = !data.registered;
     if (data.stored) document.getElementById('echo-limitation').hidden = !data.deferred_history;
     const state = data.import_state;
-    document.getElementById('echo-status').textContent = !data.stored ? 'No source stored yet.' : !data.registered ? 'Source stored; register it to process.' : state.error ? `Import failed: ${state.error}` : data.running ? `Soul memory work: ${data.progress.phase || 'running'}` : state.stage === 'complete' ? (data.deferred_history ? 'History saved, not memorized. Current rows remain ordinary chat context.' : 'Historical processing complete. Current rows remain ordinary chat context.') : `History checkpoint ${state.memorize_cursor + 1} / ${state.history_end_index}; ${state.pending_segment_ids.length} segments awaiting consolidation.`;
+    document.getElementById('echo-status').textContent = !data.stored ? 'No source stored yet.' : !data.registered ? 'Source stored; register it to process.' : data.running ? `Soul memory work: ${data.progress.phase || 'running'}` : state.error ? `Import failed: ${state.error}` : state.stage === 'complete' ? (data.deferred_history ? 'History saved, not memorized. Current rows remain ordinary chat context.' : 'Historical processing complete. Current rows remain ordinary chat context.') : `History checkpoint ${state.memorize_cursor + 1} / ${state.history_end_index}; ${state.pending_segment_ids.length} segments awaiting consolidation.`;
     if (data.meter) renderMemorize({souls: [{...data.meter, soul_id: selection.soul_id}]});
     if (accepted && data.registered && !data.running) {
       const before = accepted;
