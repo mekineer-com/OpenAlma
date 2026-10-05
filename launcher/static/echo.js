@@ -11,6 +11,8 @@ let knownChats = new Set(), pendingNewChat = '', selection = null, preview = nul
 let accepted = null, lastStatus = null, timer = null, busy = false;
 let polling = false;
 let selectedSoul = '';
+let splitChosen = false;
+const dismissedImports = new Set();
 
 async function echoRequest(url, options) {
   const response = await fetch(url, {cache: 'no-store', ...options});
@@ -25,6 +27,7 @@ function showError(error) {
 }
 function lockForm(locked) {
   busy = locked;
+  continuous.disabled = lastStatus?.import_state?.stage === 'complete' || (locked && !lastStatus?.running);
   document.getElementById('echo-picker').disabled = locked;
   document.getElementById('echo-soul-picker').disabled = locked;
   document.getElementById('echo-upload').disabled = locked || !selection;
@@ -96,6 +99,9 @@ document.getElementById('echo-chat-form').addEventListener('submit', async event
   } catch (error) {showError(error); return;}
   if (soul !== selectedSoul || entered !== labelInput.value.trim() || !chatReady.hidden) return;
   const label = status.stored ? status.label : entered;
+  if (!status.stored && knownChats.size) {
+    showError(new Error('Each Soul can import only one chat app.')); return;
+  }
   if (status.stored) {knownChats.add(label); labelInput.value = label;}
   if (!knownChats.has(label) && pendingNewChat !== label) {
     pendingNewChat = label; chatNew.hidden = false; return;
@@ -111,6 +117,7 @@ function uploadForm() {
   form.append('file', fileInput.files[0]);
   form.append('all_history', allHistory.checked);
   form.append('history_count', gap.value);
+  form.append('auto_split', !splitChosen);
   form.append('preview_pending_start_day', preview?.guidance.pending_start_day || '');
   return form;
 }
@@ -119,7 +126,9 @@ function showPreview(data) {
   selection.label = data.label;
   labelInput.value = data.label;
   gap.max = data.total_messages;
-  if (allHistory.checked) gap.value = data.total_messages;
+  gap.value = data.history_count;
+  allHistory.checked = data.history_count === data.total_messages;
+  document.getElementById('echo-gap').hidden = allHistory.checked;
   document.getElementById('echo-gap-count').textContent = gap.value;
   document.getElementById('echo-preview').hidden = false;
   document.getElementById('echo-counts').textContent = `${data.total_messages} text messages; ${data.duplicates} already stored; ${data.stats.skipped_non_text} non-text and ${data.stats.skipped_empty} empty items skipped.`;
@@ -139,11 +148,12 @@ function showPreview(data) {
   document.getElementById('echo-confirm').disabled = data.saved || !data.history.count && !data.current.count;
 }
 fileInput.addEventListener('change', () => {
+  splitChosen = false;
   invalidatePreview(); allHistory.checked = true; gap.max = 0; gap.value = 0;
   document.getElementById('echo-gap').hidden = true;
 });
-gap.addEventListener('input', () => {invalidatePreview(); document.getElementById('echo-gap-count').textContent = gap.value;});
-allHistory.addEventListener('change', () => {invalidatePreview(); document.getElementById('echo-gap').hidden = allHistory.checked;});
+gap.addEventListener('input', () => {splitChosen = true; invalidatePreview(); document.getElementById('echo-gap-count').textContent = gap.value;});
+allHistory.addEventListener('change', () => {splitChosen = true; invalidatePreview(); document.getElementById('echo-gap').hidden = allHistory.checked;});
 async function upload(save) {
   if (!selection || !fileInput.files.length || busy || (save && !preview)) return;
   if (save && !confirm('If you have multiple files from this chat, combine them before importing. Once this Soul has memories, older messages from later imports are saved but cannot yet be memorized.')) return;
@@ -168,12 +178,20 @@ function checkpointAdvanced(before, after) {
   return after.stage === 'complete' || after.memorize_cursor > before.memorize_cursor ||
     before.pending_segment_ids.some(id => !after.pending_segment_ids.includes(id));
 }
+function dismissedImport(key, hide = false) {
+  if (hide) dismissedImports.add(key);
+  try {
+    if (hide) localStorage.setItem(key, '1');
+    else if (localStorage.getItem(key)) dismissedImports.add(key);
+  } catch {} // Dismiss stays usable for this page when browser storage is blocked.
+  return dismissedImports.has(key);
+}
 function renderImports(files) {
   const box = document.getElementById('echo-meters');
   box.replaceChildren();
   files.forEach(file => {
     const key = `echo-dismissed:${file.file_id}`;
-    if (file.dismissible && localStorage.getItem(key)) return;
+    if (file.dismissible && dismissedImport(key)) return;
     const row = document.createElement('p'), title = document.createElement('span');
     title.textContent = `${file.soul_id}: ${file.label}, ${file.filename}. `;
     row.append(title);
@@ -191,7 +209,7 @@ function renderImports(files) {
     if (file.dismissible) {
       const dismiss = document.createElement('button');
       dismiss.className = 'btn'; dismiss.textContent = 'Dismiss';
-      dismiss.addEventListener('click', () => {localStorage.setItem(key, '1'); row.remove();});
+      dismiss.addEventListener('click', () => {dismissedImport(key, true); row.remove();});
       row.append(dismiss);
     }
     box.append(row);
@@ -207,11 +225,15 @@ async function refreshStatus() {
   if (polling) return;
   polling = true;
   clearTimeout(timer);
+  const observedAccepted = accepted;
   try {
-    renderImports((await echoRequest('/echo/progress')).files);
+    try {renderImports((await echoRequest('/echo/progress')).files);}
+    catch {document.getElementById('echo-meters').textContent = 'Import progress unavailable.';}
     if (!selection) return;
-    const data = await readStatus();
-    if (!data) return;
+    let data;
+    try {data = await readStatus();}
+    catch (error) {showError(error); return;}
+    if (!data || accepted !== observedAccepted) return;
     lastStatus = data;
     document.getElementById('echo-register').hidden = !data.stored;
     document.getElementById('echo-retry').hidden = !data.registered || data.running || !data.import_state.error;
@@ -220,6 +242,7 @@ async function refreshStatus() {
     const state = data.import_state;
     document.getElementById('echo-status').textContent = !data.stored ? 'No source stored yet.' : !data.registered ? 'Source stored; register it to process.' : data.running ? `Soul memory work: ${data.progress.phase || 'running'}` : state.error ? `Import failed: ${state.error}` : state.stage === 'complete' ? (data.deferred_history ? 'History saved, not memorized. Current rows remain ordinary chat context.' : 'Historical processing complete. Current rows remain ordinary chat context.') : `History checkpoint ${state.memorize_cursor + 1} / ${state.history_end_index}; ${state.pending_segment_ids.length} segments awaiting consolidation.`;
     if (data.running) continuous.checked = data.continuous;
+    continuous.disabled = state?.stage === 'complete' || (busy && !data.running);
     if (accepted && data.registered && !data.running) {
       const before = accepted;
       accepted = null;
@@ -233,7 +256,6 @@ async function refreshStatus() {
     accepted = null;
     if (owned || !busy) lockForm(false);
     showError(error);
-    document.getElementById('echo-meters').textContent = 'Import progress unavailable.';
   } finally {
     polling = false;
     timer = setTimeout(refreshStatus, 3000);
@@ -292,7 +314,6 @@ async function loadResults() {
   if (!box.childElementCount) box.textContent = 'No dossier prose yet.';
 }
 document.getElementById('echo-show-results').addEventListener('click', () => loadResults().catch(showError));
-function pollMemorize() {return refreshStatus();}
 (async () => {
   const data = await echoRequest('/souls');
   bindSoulCombobox(document.getElementById('echo-soul-form'), data.souls, name => {

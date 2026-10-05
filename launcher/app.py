@@ -313,7 +313,7 @@ def echo_soul(soul_id: str = Form(), use_existing: bool = Form(default=False)) -
 
 def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
                  all_history: bool, confirmed_new: bool, *, save: bool, preview_pending_start_day: str = "",
-                 resolved_scope: tuple[Path, dict] | None = None) -> dict:
+                 resolved_scope: tuple[Path, dict] | None = None, auto_split: bool = False) -> dict:
     path, scope = resolved_scope or _echo_scope(soul_id, label)
     try:
         messages, title, stats = chat_import.normalize_messages(json.load(file.file))
@@ -327,7 +327,7 @@ def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
             return {"count": len(rows), "start": min(days, default=None), "end": max(days, default=None)}
         def duplicate_response():
             return {"conversation_id": upload["conversation_id"], "label": upload["label"], "saved": save,
-                "total_messages": len(messages), "duplicates": upload["duplicates"], "stats": stats,
+                "total_messages": len(messages), "history_count": count, "duplicates": upload["duplicates"], "stats": stats,
                 "history": dates([]), "current": dates([]), "possible_overlap": False,
                 "before_gap": "", "after_gap": "", "notice": "Messages already exist",
                 "guidance": {"pending_start_day": None, "processed_start_day": None, "processed_end_day": None}}
@@ -338,12 +338,22 @@ def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
             for chat in chat_import.list_chats(path, user_id=scope["user_id"], soul_id=soul_id)
         ):
             raise HTTPException(status_code=409, detail="Confirm creation of this chat with the arrow first")
-        guidance = _echo_request("/imports/validate", {**scope, "conversation_id": upload["conversation_id"],
-            "history_end_index": max((row["position"] + 1 for row in upload["messages"] if row["historical"]), default=0),
-            "title": title, "current_messages": [
-                {key: row[key] for key in ("role", "content", "name", "timestamp", "source_day", "position")}
-                for row in upload["messages"] if not row["historical"]
-            ]}, timeout=60)
+        def validate(include_current):
+            return _echo_request("/imports/validate", {**scope, "conversation_id": upload["conversation_id"],
+                "history_end_index": max((row["position"] + 1 for row in upload["messages"] if row["historical"]), default=0),
+                "title": title, "current_messages": [
+                    {key: row[key] for key in ("role", "content", "name", "timestamp", "source_day", "position")}
+                    for row in upload["messages"] if include_current and not row["historical"]
+                ]}, timeout=60)
+        guidance = validate(not auto_split)
+        if auto_split:
+            if guidance["pending_start_day"]:
+                count = min((row["input_index"] for row in upload["messages"]
+                             if row["source_day"] >= guidance["pending_start_day"]), default=len(messages))
+                for row in upload["messages"]:
+                    row["historical"] = row["input_index"] < count
+            if any(not row["historical"] for row in upload["messages"]):
+                guidance = validate(True)
         if save and any(not row["historical"] for row in upload["messages"]) and (
                 preview_pending_start_day != (guidance["pending_start_day"] or "")):
             raise HTTPException(status_code=409, detail="The current period changed. Preview again.")
@@ -360,7 +370,7 @@ def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
         incoming = dates(upload["messages"])
         processed_start, processed_end = guidance["processed_start_day"], guidance["processed_end_day"]
         return {"conversation_id": upload["conversation_id"], "label": upload["label"], "saved": save,
-            "total_messages": len(messages), "duplicates": upload["duplicates"], "stats": stats,
+            "total_messages": len(messages), "history_count": count, "duplicates": upload["duplicates"], "stats": stats,
             "history": dates([row for row in upload["messages"] if row["historical"]]),
             "current": dates([row for row in upload["messages"] if not row["historical"]]),
             "before_gap": messages[count - 1]["content"] if count else "",
@@ -377,8 +387,9 @@ def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
 
 @app.post("/echo/preview")
 def echo_preview(file: UploadFile, soul_id: str = Form(), label: str = Form(),
-                 history_count: int = Form(default=0), all_history: bool = Form(default=True)) -> dict:
-    return _echo_upload(file, soul_id, label, history_count, all_history, False, save=False)
+                 history_count: int = Form(default=0), all_history: bool = Form(default=True),
+                 auto_split: bool = Form(default=False)) -> dict:
+    return _echo_upload(file, soul_id, label, history_count, all_history, False, save=False, auto_split=auto_split)
 
 
 @app.post("/echo/confirm")

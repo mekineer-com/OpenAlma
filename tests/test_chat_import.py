@@ -36,6 +36,7 @@ async function run(mode, continuous) {
         label:url.includes('STRASSE')||url.includes('Stra')?'Stra\u00dfe':'Replika',
         conversation_id:'import:dm:test',import_state:structuredClone(state),progress:{}};
       else if(url==='/echo/process') {
+        assert.equal(field('echo-continuous').disabled,true);
         assert.equal(options.body.get('continuous'),String(continuous));
         starts++;
         if(mode!=='unchanged') {state.memorize_cursor++; if(state.memorize_cursor===1)state.stage='complete';}
@@ -68,7 +69,7 @@ async function run(mode, continuous) {
     await field('echo-chat-form').events.submit({preventDefault(){}});
     assert.equal(vm.runInContext('busy',ctx),true);
     vm.runInContext('busy=false;',ctx);
-    ctx.showPreview({label:'Stra\u00dfe',saved:false,total_messages:1,duplicates:1,notice:'Messages already exist',
+    ctx.showPreview({label:'Stra\u00dfe',saved:false,total_messages:1,history_count:1,duplicates:1,notice:'Messages already exist',
       stats:{skipped_non_text:0,skipped_empty:0},history:{count:0},current:{count:0},guidance:{},possible_overlap:false});
     assert.equal(field('echo-counts').textContent,'Messages already exist');
     assert.equal(field('echo-guidance').textContent,'');
@@ -86,6 +87,8 @@ async function run(mode, continuous) {
     await ctx.refreshStatus();
     assert.match(field('echo-status').textContent,/Soul memory work: extracting/);
     assert.equal(field('echo-retry').hidden,true);
+    assert.equal(field('echo-continuous').checked,true);
+    assert.equal(field('echo-continuous').disabled,false);
     let rejectPoll;
     ctx.readStatus=()=>new Promise((_resolve,reject)=>{rejectPoll=reject;});
     const polling=ctx.refreshStatus();
@@ -95,6 +98,34 @@ async function run(mode, continuous) {
     await polling;
     assert.equal(vm.runInContext('busy',ctx),true);
     assert.equal(field('echo-upload').disabled,true);
+    const storageBefore=ctx.localStorage;
+    ctx.localStorage={getItem(){throw Error('Storage blocked');},setItem(){throw Error('Storage blocked');}};
+    const blockedFile={...file,file_id:'blocked'};
+    ctx.renderImports([blockedFile]);
+    field('echo-meters').children[0].children.at(-1).events.click();
+    ctx.renderImports([blockedFile]);assert.equal(field('echo-meters').childElementCount,0);
+    ctx.localStorage=storageBefore;
+    const request=ctx.echoRequest;
+    ctx.echoRequest=async (url,options)=>url==='/echo/progress'?Promise.reject(Error('Other Soul unavailable')):request(url,options);
+    vm.runInContext('accepted={memorize_cursor:0,pending_segment_ids:[],stage:"memorize"};busy=true;',ctx);
+    ctx.readStatus=async()=>({stored:true,registered:true,running:true,continuous:true,progress:{phase:'extracting'},import_state:state});
+    await ctx.refreshStatus();
+    assert(vm.runInContext('accepted!==null&&busy',ctx));
+    assert.match(field('echo-status').textContent,/extracting/);
+    ctx.echoRequest=async (url,options)=>url==='/echo/progress'?{files:[{...file,file_id:'visible'}]}:request(url,options);
+    ctx.readStatus=async()=>{throw Error('Selected status unavailable');};
+    await ctx.refreshStatus();
+    assert.equal(field('echo-meters').childElementCount,1);
+    assert(vm.runInContext('accepted!==null&&busy',ctx));
+    vm.runInContext('accepted=null;busy=false;',ctx);
+    let releaseOld;
+    ctx.readStatus=()=>new Promise(resolve=>{releaseOld=resolve;});
+    const oldPoll=ctx.refreshStatus();
+    await new Promise(resolve=>setImmediate(resolve));
+    vm.runInContext('accepted={memorize_cursor:0,pending_segment_ids:[],stage:"memorize"};busy=true;',ctx);
+    releaseOld({stored:true,registered:true,running:false,import_state:state,progress:{}});
+    await oldPoll;
+    assert(vm.runInContext('accepted!==null&&busy',ctx));
   }
 }
 (async()=>{for(const mode of ['lost','wrong','unchanged','advance'])await run(mode,true);await run('advance',false);})()
@@ -153,6 +184,13 @@ def test_echo_http_upload_reuses_source_and_never_starts_processing(tmp_path, mo
     assert not chat_import.source_path(tmp_path).exists()
     assert calls[-1][2] == 60 and calls[-1][1]["current_messages"][0]["role"] == "assistant"
     assert calls[-1][1]["history_end_index"] == 1
+    preset = upload("/echo/preview", all_history="true", auto_split="true").json()
+    assert preset["history_count"] == 1 and preset["current"]["count"] == 1
+    assert calls[-1][1]["current_messages"][0]["source_day"] == "2025-01-03"
+    assert upload("/echo/preview", all_history="true", auto_split="false").json()["history_count"] == 2
+    pending_day[0] = None
+    assert upload("/echo/preview", all_history="true", auto_split="true").json()["history_count"] == 2
+    pending_day[0] = "2025-01-03"
     pending_day[0] = "2025-01-04"
     changed = upload("/echo/confirm", confirmed_new="true")
     assert changed.status_code == 409 and "Preview again" in changed.json()["detail"]
@@ -177,6 +215,8 @@ def test_echo_http_upload_reuses_source_and_never_starts_processing(tmp_path, mo
     assert client.get("/echo/chats", params={"soul_id": "OtherSoul"}).status_code == 404
     register_fail[0] = True
     more = [*raw, {"id": "2", "role": "user", "timestamp": "2025-01-04", "content": "new fictional row"}]
+    preset = upload("/echo/preview", more, all_history="true", auto_split="true").json()
+    assert preset["history_count"] == 2 and preset["history"]["count"] == 0 and preset["current"]["count"] == 1
     assert upload("/echo/preview", more, all_history="true").json()["possible_overlap"] is False
     failure = upload("/echo/confirm", more, all_history="true")
     assert failure.status_code == 503 and "Source saved" in failure.json()["detail"]
@@ -285,6 +325,12 @@ def test_source_replay_split_and_atomic_conflict(tmp_path, monkeypatch):
     assert chat_import.file_progress(db, files[0], status)["percent"] == 100
     deferred = chat_import.file_progress(db, files[1], status)
     assert deferred["percent"] is None and deferred["deferred"] == 1 and deferred["dismissible"]
+    status.update(running=True)
+    status["import_state"]["error"] = "Interrupted"
+    failed = chat_import.file_progress(db, files[0], status)
+    assert failed["percent"] == 99 and not failed["dismissible"]
+    deferred = chat_import.file_progress(db, files[1], status)
+    assert not deferred["running"] and deferred["error"] is None and deferred["dismissible"]
     assert not chat_import.file_progress(db, files[1], {})["dismissible"]
     assert chat_import.store_upload(db, **scope, messages=older, history_count=0)["duplicates"] == 1
     other = chat_import.store_upload(db, **{**scope, "soul_id": "OtherSoul"}, messages=messages, history_count=5)

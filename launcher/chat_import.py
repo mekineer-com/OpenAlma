@@ -201,7 +201,7 @@ def _prepare(con: sqlite3.Connection | None, user_id: str, soul_id: str, label: 
                 raise ValueError("Conflicting or ambiguous messages at the same date/speaker/role; provide message IDs")
         if matches:
             continue
-        pending.append({**m, "position": position, "historical": index < history_count})
+        pending.append({**m, "position": position, "input_index": index, "historical": index < history_count})
         position += 1
     return {"chat_id": chat_id, "conversation_id": f"import:dm:{chat_id}",
             "user_id": user_id, "soul_id": soul_id, "label": label,
@@ -267,10 +267,12 @@ def file_progress(db_path: Path, file: dict, status: dict) -> dict:
             "WHERE chat_id = ? AND position >= ? AND position < ?",
             (end, end, cursor, end, file["chat_id"], file["start_position"], file["end_position"]),
         ).fetchone()
+    # ponytail: import-wide pending IDs; per-file attribution if multi-file initial imports need it.
     pending = bool(eligible and extracted and record.get("pending_segment_ids"))
-    complete = bool(record) and extracted == eligible and not pending
+    failed = bool(eligible and record.get("error"))
+    complete = bool(record) and extracted == eligible and not pending and not failed
     return {**file, "eligible": eligible, "extracted": extracted, "deferred": deferred, "current": current,
-            "percent": min(99 if pending else 100, int(100 * extracted / eligible)) if eligible else None,
-            "dismissible": complete, "running": status.get("running", False),
-            "error": record.get("error"), "pending_consolidation": pending,
+            "percent": min(99 if pending or failed else 100, int(100 * extracted / eligible)) if eligible else None,
+            "dismissible": complete, "running": bool(eligible and not complete and status.get("running")),
+            "error": record.get("error") if eligible else None, "pending_consolidation": pending,
             "registered": bool(record)}
