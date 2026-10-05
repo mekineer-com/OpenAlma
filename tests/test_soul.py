@@ -41,7 +41,8 @@ def test_read_active_soul_id(tmp_path, monkeypatch):
     assert soul.read_active_soul_id() == "Echo"
 
 
-def test_fresh_channels_config_is_created_by_soul_selection(tmp_path, monkeypatch):
+@pytest.mark.parametrize("soul_ids", [[], ["TestSoul"]])
+def test_fresh_channels_config_is_created_by_soul_selection(tmp_path, monkeypatch, soul_ids):
     from fastapi.testclient import TestClient
     import app
 
@@ -52,13 +53,14 @@ def test_fresh_channels_config_is_created_by_soul_selection(tmp_path, monkeypatc
     monkeypatch.setattr(app.policy, "read_channel_settings", lambda: {})
     monkeypatch.setattr(app.policy, "read_default_policy", lambda: "excluded")
     monkeypatch.setattr(app.policy, "ensure_channel_settings", lambda _: ({}, "excluded"))
-    monkeypatch.setattr(app.services, "list_souls", lambda: ["TestSoul"])
+    monkeypatch.setattr(app.services, "list_souls", lambda: soul_ids)
     monkeypatch.setattr(app.services, "resolve_soul", lambda name, _existing: name)
     monkeypatch.setattr(app.services, "status", lambda _: {"state": "stopped"})
     monkeypatch.setattr(app, "_find_service", lambda _: None)
     assert soul.read_active_soul_id() == "" and not config.exists()
     client = TestClient(app.app, base_url="http://127.0.0.1")
     fresh = client.get("/hermes").text
+    assert "Hermes Channels soul selector" in fresh and 'id="channels-soul-form"' in fresh
     assert "WhatsApp channel policy" not in fresh
     response = client.post("/soul", data={"soul_id": "TestSoul", "use_existing": "true"}, follow_redirects=False)
     assert response.status_code == 303 and response.headers["location"] == "/hermes"

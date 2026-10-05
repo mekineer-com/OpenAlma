@@ -152,19 +152,6 @@ def test_memorize_gauge_distinguishes_overdue_and_running():
     assert ">Retry</button>" not in running
 
 
-def test_memorize_poll_renderer_supports_consolidation_states_and_retry():
-    template = (
-        Path(__file__).resolve().parents[1] / "launcher" / "templates" / "index.html"
-    ).read_text(encoding="utf-8") + (Path(__file__).resolve().parents[1] / "launcher/static/launcher.js").read_text(encoding="utf-8")
-
-    assert "if (data.paused)" in template
-    assert "data.consolidation_state === 'overdue'" in template
-    assert "data.consolidation_state === 'running'" in template
-    assert "data.pending_consolidation_segments" in template
-    assert "data.pause_reason" in template
-    assert "encodeURIComponent(button.dataset.soul)" in template
-
-
 def test_memorize_poll_renderer_executes_all_consolidation_states():
     template = Path(__file__).resolve().parents[1] / "launcher" / "templates" / "index.html"
     subprocess.run(
@@ -202,16 +189,17 @@ assert.match(box.innerHTML, /Paused: Memorize failed/);
 assert.match(box.innerHTML, /Retry<\/button>/);
 context.renderMemorize({souls: [{...base, consolidation_state: 'overdue'}]});
 assert.match(box.innerHTML, /Weekly reflection will occur after the coming Memorize/);
+assert.match(box.innerHTML, /2 memorized segments already in queue/);
 assert.doesNotMatch(box.innerHTML, /Retry<\/button>/);
 context.renderMemorize({souls: [{...base, consolidation_state: 'running'}]});
 assert.match(box.innerHTML, /is running/);
 assert.doesNotMatch(box.innerHTML, /Retry<\/button>/);
-const button = {disabled: false, textContent: 'Retry', dataset: {soul: 'First Soul'}};
+const button = {disabled: false, textContent: 'Retry', dataset: {soul: 'First Soul & Next'}};
 context.retryConsolidation(button);
 await new Promise(resolve => setImmediate(resolve));
 assert.equal(button.disabled, true);
 assert.equal(button.textContent, 'Retrying...');
-assert.deepEqual(fetches, [{url: '/memorize/retry?soul_id=First%20Soul', options: {method: 'POST'}}]);
+assert.deepEqual(fetches, [{url: '/memorize/retry?soul_id=First%20Soul%20%26%20Next', options: {method: 'POST'}}]);
 assert.equal(polls, 1);
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """,

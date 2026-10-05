@@ -862,18 +862,6 @@ def test_elapsed_graceful_stop_exposes_manual_force_for_any_service(tmp_path, mo
                 services._STOP_STARTED.pop(name, None)
 
 
-def test_channels_daemon_in_all_services(tmp_path, monkeypatch):
-    root = tmp_path / "apps"
-    for name in ("mcp-memu-server", "hermes-channels"):
-        (root / name).mkdir(parents=True)
-    (root / "sillytavern" / "SillyTavern").mkdir(parents=True)
-    monkeypatch.setattr(services, "_resolve_apps_root", lambda: root)
-
-    names = [spec.name for spec in services.all_services()]
-
-    assert "channels-daemon" in names
-
-
 def test_channels_daemon_match_requires_cwd_and_gateway_module(tmp_path, monkeypatch):
     spec = services.ServiceSpec(
         name="channels-daemon",

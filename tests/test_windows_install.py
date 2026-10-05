@@ -65,20 +65,12 @@ def test_windows_configuration_refuses_unowned_nonempty_root(tmp_path, monkeypat
     assert (apps_root / "unrelated.txt").read_text(encoding="utf-8") == "keep"
 
 
-def test_windows_release_comparison_rejects_downgrade(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "PACKAGED_VERSION_PATH", tmp_path / "missing-version")
-    (tmp_path / windows_install.RELEASE_FILE).write_text("v2.1.0-buildfix\n", encoding="utf-8")
-
-    assert windows_install.compare_release(tmp_path, "v2.1.1-buildfix") == 1
-    assert windows_install.compare_release(tmp_path, "v2.1.0-buildfix") == 0
-    assert windows_install.compare_release(tmp_path, "v2.0.9-buildfix") == -1
-
-
 def test_windows_release_comparison_uses_monotonic_numeric_version(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "PACKAGED_VERSION_PATH", tmp_path / "missing-version")
     (tmp_path / windows_install.RELEASE_FILE).write_text("v0.3.0-buildfix\n", encoding="utf-8")
 
     assert windows_install.compare_release(tmp_path, "v0.3.1-buildfix") == 1
+    assert windows_install.compare_release(tmp_path, "v0.3.0-buildfix") == 0
     assert windows_install.compare_release(tmp_path, "v0.2.9-buildfix") == -1
     with pytest.raises(ValueError, match="same version"):
         windows_install.compare_release(tmp_path, "v0.3.0")
