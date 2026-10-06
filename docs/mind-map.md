@@ -17,7 +17,7 @@ You can edit any memory's text. The change takes effect immediately — she's wo
 
 Deleting is careful, in the same spirit: a memory that one of her dossier summaries still cites refuses to be deleted until you clear the citation, so her written accounts never start referencing things that no longer exist. Memories that are merely filed under a dossier can be deleted outright.
 
-The review queue holds what she produces herself: memories she formed on her own that you haven't looked at yet, and her updated summaries. Nothing is hidden from you, and nothing waits on your approval to be useful to her.
+The review queue holds what she produces herself: memories she formed on her own that you haven't looked at yet, and her updated summaries.
 
 ## The canvas
 
