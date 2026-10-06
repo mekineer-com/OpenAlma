@@ -49,7 +49,7 @@ So if you write a character description in ST, that's who she is — her own sel
 
 1. Open the memU extension panel.
 2. Type your suggestion in the **Narrative Suggestion** input — a phrasing, a correction, a new way of seeing herself.
-3. Click **Send**. A green check ✓ means she accepted and integrated it; a red X ✗ means she chose not to.
+3. Click **Send**. A green check ✓ means the suggestion was accepted and integrated; a red `!` means it failed — the mouseover explains the reason, which may be an error rather than a refusal.
 4. If she accepts, the new text is written to her `narrative_self` and pushed back into the ST character description (so the panel stays in sync). The previous version is preserved in her memory store with an `evolved_into` link, so she can still recall what she used to think.
 5. If you manually edit the ST character description yourself, **Send** disables with a warning — that's an "override" path; clear the manual edit to re-enable suggestions.
 
