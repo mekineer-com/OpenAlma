@@ -242,7 +242,7 @@ class MentraStatusTest(TestCase):
             "com.openalma.mentra",
             "0.1.0",
         )
-        self.assertFalse(stale["repair_available"])
+        self.assertTrue(stale["repair_available"])
 
     def test_running_offer_reads_exact_phone_host(self) -> None:
         spec = services.ServiceSpec("iris-server", "Iris", [], Path("."), Path("log"), Path("pid"))

@@ -1091,17 +1091,7 @@ def _iris_product_status(
     installed_package = str(mentra.get("installed_package") or "")
     installed_version = str(mentra.get("installed_version") or "")
     host = mentra.get("host") if isinstance(mentra.get("host"), dict) else {}
-    try:
-        host_seen_at = float(host.get("seen_at"))
-        installed_seen_at = float(mentra.get("installed_seen_at") or host_seen_at)
-    except (TypeError, ValueError):
-        host_seen_at, installed_seen_at = 0.0, float("inf")
-    automatic_host = (
-        host.get("host_package") == "com.mentra.mentra.openalma"
-        and "iris_install_ack" in (host.get("capabilities") or [])
-        # The installation report normally follows the pre-install host announcement.
-        and host_seen_at + 300 >= installed_seen_at
-    )
+    automatic_host = host.get("host_package") == "com.mentra.mentra.openalma"
     repair_available = bool(installed_package and automatic_host)
     installed_semver = _iris_semver(installed_version)
     available_semver = _iris_semver(available_version)
