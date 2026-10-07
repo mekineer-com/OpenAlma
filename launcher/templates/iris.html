@@ -8,9 +8,11 @@
   {% if not iris_setup.enabled %}
     <p class="muted">Disabled. Enable Mentra in <code>mcp-memu-server/config.json</code> to use Iris.</p>
   {% else %}
+    <h3>Server readiness</h3>
+    <p class="hint">These checks run on the OpenAlma server; they do not check your phone.</p>
     <ul class="checklist">
       {% for row in iris_setup.rows %}
-        <li><span class="{{ row.state }}">{{ "✓" if row.state == "ready" else "!" }} {{ row.label }}</span> — {{ row.detail }}</li>
+        <li><span class="{{ row.state }}">{{ "✓" if row.state == "ready" else "!" }} {{ 'OpenAlma address' if row.label == 'Phone address' else row.label }}</span> — {{ row.detail }}</li>
       {% endfor %}
     </ul>
     {% if iris_setup.ready %}<p class="ready">Host ready</p>{% else %}<p class="failure">Next: {{ iris_setup.reason }}</p>{% endif %}
@@ -19,14 +21,26 @@
 
     <h3>Connection values</h3>
     <label>OpenAlma address<input type="text" readonly value="{{ iris_connection.base_url or '' }}"></label>
+    <p class="hint">OpenAlma Mentra: enter this address in Settings if the default does not connect. Stock Mentra: Iris receives this address with its installation settings.</p>
     <p class="hint">Use a trusted private VPN or connection. Devices allowed to reach this endpoint can access the Soul's Iris data; trust the permitted devices and network access rules.</p>
+
+    <h3>Phone steps</h3>
+    <ol class="tight">
+      <li>Make the OpenAlma address above reachable through your trusted private connection.</li>
+      <li>Connect the phone to that private VPN or connection.</li>
+      <li>Install Mentra: <a href="https://github.com/mekineer-com/MentraOS">OpenAlma Mentra</a> (recommended for Iris automation) or <a href="https://play.google.com/store/apps/details?id=com.mentra.mentra">Stock Mentra</a>.</li>
+      <li>For OpenAlma Mentra, enter the OpenAlma address in its Settings if the default does not connect.</li>
+      <li>Install or update Iris using the installer below, then open it once.</li>
+      <li>Allow Mentra microphone access. Android/Mentra asks for camera or photo access when needed.</li>
+      <li>Choose a Soul on the phone, then tap Start to talk; listen for the beep.</li>
+    </ol>
 
     <h3>Iris installer</h3>
     {% if not selected_installation %}
     <form method="post" action="/iris/install" id="iris-install-form">
       <p><button class="btn" type="submit" {% if not iris_setup.ready or not iris_setup.enabled or installer_busy %}disabled{% endif %}>Stock Install</button></p>
     </form>
-    <p class="hint">For a new Stock Mentra installation, use <a href="https://play.google.com/store/apps/details?id=com.mentra.mentra">Stock Mentra</a> and scan the Iris QR below. OpenAlma Mentra is recommended for automatic Iris installation; no verified APK download link is available here.</p>
+    <p class="hint">For Stock Mentra, click Stock Install and scan the Iris QR below. For OpenAlma Mentra, use Install beside its app in Services.</p>
     {% endif %}
     {% if iris.github_status == "unavailable" %}
       <p class="muted">GitHub releases unavailable; local {{ iris.available_version }} selected.</p>
@@ -111,16 +125,6 @@
       {% else %}<li class="muted">No app installations reported.</li>{% endfor %}
     </ul>
     {% endif %}
-
-    <h3>Phone steps</h3>
-    <ol class="tight">
-      <li>Make the OpenAlma address above reachable through your trusted private connection.</li>
-      <li>Connect the phone to that private VPN or connection.</li>
-      <li>Install Mentra: OpenAlma Mentra (recommended for Iris automation; no verified APK download link available here) or <a href="https://play.google.com/store/apps/details?id=com.mentra.mentra">Stock Mentra</a>. Open OpenAlma Mentra Settings and enter the address shown here if the default does not connect.</li>
-      <li>Install or update Iris above, then open it once.</li>
-      <li>Allow Mentra microphone access. Android/Mentra asks for camera or photo access when needed.</li>
-      <li>Choose a Soul on the phone, then tap Start to talk; listen for the beep.</li>
-    </ol>
 
 <script src="/static/vendor/qrcode.min.js"></script>
 <script src="/static/iris-services.js"></script>
