@@ -66,7 +66,9 @@
         </td>
         <td class="svc-actions">
           {% if s.name == 'iris-server' %}
-            {% if s.install_running or s.state == 'stopping' %}
+            {% if s.install_enabled is defined and not s.install_enabled %}
+            <button class="btn" disabled>Stock Install</button>
+            {% elif s.install_running or s.state == 'stopping' %}
             <span class="spinner" role="status" aria-label="Working"></span>
             {% if s.force_stoppable %}<button class="btn" onclick="svcAction('iris-server','force-stop',this)">Force Stop</button>{% endif %}
             {% elif s.action_kind == 'stop' or s.force_stoppable %}
@@ -75,7 +77,7 @@
             <form class="inline" method="post" action="/install/iris-server"><button class="btn" type="submit">{{ s.action_label or 'Install' }}</button></form>
             {% endif %}
             <a class="btn" href="/iris">Setup</a>
-            {% if not s.install_setup and s.action_kind != 'install' %}<form class="inline" method="post" action="/iris/install"><button class="btn" type="submit">Stock Install</button></form>{% endif %}
+            {% if (s.install_enabled is not defined or s.install_enabled) and not s.install_setup and s.action_kind != 'install' %}<form class="inline" method="post" action="/iris/install"><button class="btn" type="submit" {% if s.running or s.starting or s.stuck or s.orphaned or (s.setup is defined and not s.setup.ready) %}disabled{% endif %}>Stock Install</button></form>{% endif %}
           {% elif s.install_running %}
             <span class="spinner" role="status" aria-label="Installing"></span>
           {% elif s.state == "stopping" %}
@@ -122,7 +124,7 @@
   </table>
   {% set other_not_installed = not_installed_services|rejectattr('name', 'equalto', 'iris-server')|list %}
   {% if other_not_installed %}
-  <details class="not-installed"{% if open_not_installed %} open{% endif %}>
+  <details class="not-installed">
     <summary>Not installed ({{ other_not_installed|length }})</summary>
     <ul>
       {% for s in other_not_installed %}
@@ -186,6 +188,28 @@
   <script>
 var pendingStarts = {};
 var pendingStops = {};
+
+document.addEventListener('submit', async function(event) {
+  var form = event.target;
+  if (!['/iris/install', '/install/iris-server'].includes(form.getAttribute('action'))) return;
+  event.preventDefault();
+  if (form.dataset.submitting) return;
+  form.dataset.submitting = 'true';
+  var button = event.submitter || form.querySelector('button[type="submit"]');
+  if (button) button.disabled = true;
+  try {
+    var response = await fetch(form.action, {method: 'POST', body: new FormData(form)});
+    if (!response.ok) {
+      var result = await response.json();
+      throw new Error(irisErrorMessage(result, 'Iris install failed'));
+    }
+    location.reload();
+  } catch (error) {
+    alert(error.message);
+    if (button) button.disabled = false;
+    delete form.dataset.submitting;
+  }
+});
 
 async function svcAction(name, action, btn) {
   var row = btn.closest('tr');

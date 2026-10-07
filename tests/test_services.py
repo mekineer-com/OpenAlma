@@ -82,6 +82,88 @@ def test_iris_server_is_managed_by_launcher(tmp_path, monkeypatch):
     assert channels.env["CHANNELS_HOME"] == str(tmp_path / "channels_data")
 
 
+@pytest.mark.parametrize("stage", ["bundle", "download", "spawn"])
+def test_iris_install_target_cleanup(tmp_path, monkeypatch, stage):
+    import app as launcher_app
+
+    spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    target = {"device_session_id": "stock-test", "host_package": "com.mentra.mentra", "display_name": "stock_01"}
+    target_path = tmp_path / "build/release-private-status.json"
+    monkeypatch.setattr(launcher_app, "_find_service", lambda _name: spec)
+    monkeypatch.setattr(launcher_app, "_require_startable_setup", lambda _name: None)
+    monkeypatch.setattr(services, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState())
+    monkeypatch.setattr(services, "_iris_build_env", lambda *_args: {})
+    monkeypatch.setattr(services, "_read_mentra_status", lambda *_args, **_kwargs: {
+        "state": "ready", "installations": [target],
+    })
+    monkeypatch.setattr(services, "_iris_release_candidate", lambda _spec: (
+        services.IRIS_PACKAGE, "0.1.0", None if stage == "bundle" else "https://example.invalid/iris.zip", "available",
+    ))
+
+    def download(*_args):
+        assert services._IRIS_INSTALL_LOCK.locked()
+        assert json.loads(target_path.read_text()) == target
+        if stage == "download":
+            raise OSError("Fictional download failure")
+        return tmp_path / "iris.zip"
+
+    def spawn(_spec, env):
+        assert stage == "spawn"
+        assert services._IRIS_INSTALL_LOCK.locked()
+        assert json.loads(target_path.read_text()) == target
+        assert env["MENTRA_RELEASE_BUNDLE"] == str(tmp_path / "iris.zip")
+        raise OSError("Fictional spawn failure")
+
+    monkeypatch.setattr(services, "_download_iris_release", download)
+    monkeypatch.setattr(services, "_spawn_background", spawn)
+
+    message = "Published Iris bundle unavailable" if stage == "bundle" else f"Fictional {stage} failure"
+    with pytest.raises(launcher_app.HTTPException, match=message) as error:
+        launcher_app.iris_install("stock-test", "com.mentra.mentra")
+    assert error.value.status_code == 400
+    assert not target_path.exists()
+    assert not spec.pid_path.exists()
+    assert not target_path.with_suffix(".tmp").exists()
+    assert not services._IRIS_INSTALL_LOCK.locked()
+
+
+def test_iris_status_tracks_target_not_lock_and_preserves_rows_on_outage(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState())
+    monkeypatch.setattr(services, "mentra_readiness", lambda: {"enabled": True, "ready": True})
+    mentra = {"state": "ready", "installations": [{"device_session_id": "stock-test"}]}
+    monkeypatch.setattr(services, "_read_mentra_status", lambda *_args: mentra)
+    monkeypatch.setattr(services, "_iris_release_candidate", lambda _spec: (
+        services.IRIS_PACKAGE, "0.1.0", None, "none",
+    ))
+    with services._IRIS_INSTALL_LOCK:
+        forgotten = services.status(spec)
+        assert forgotten["starting"] is False
+        assert forgotten["state"] != "starting"
+        assert forgotten["installations"][0]["state"] != "starting"
+        assert "release_device_session_id" not in forgotten
+
+        target_path = tmp_path / "build/release-private-status.json"
+        target_path.parent.mkdir()
+        target_path.write_text(json.dumps({"device_session_id": "stock-test"}))
+        preparing = services.status(spec)
+        assert preparing["starting"] is True
+        assert preparing["installations"][0]["state"] == "starting"
+        assert preparing["release_device_session_id"] == "stock-test"
+
+    assert services.status(spec)["starting"] is False
+
+    mentra = {"state": "unavailable", "detail": "Fictional outage"}
+    unavailable = services.status(spec)
+    assert unavailable["state"] == "unavailable"
+    assert unavailable["detail"] == "Fictional outage"
+    assert "installations" not in unavailable
+
+    mentra = {"state": "ready"}
+    assert services.status(spec)["installations"] == []
+
+
 def test_optional_service_install_marker_controls_visibility(tmp_path):
     marker = tmp_path / "client" / "package.json"
     spec = services.ServiceSpec("client", "Client", [], tmp_path, tmp_path / "log", tmp_path / "pid", install_marker=marker)
@@ -333,6 +415,7 @@ const script = text.slice(text.indexOf('var pendingStarts = {}'), text.indexOf('
   for (const scenario of ['start', 'start-failed', 'decline', 'confirm', 'force']) {
     const urls = [], alerts = []; let polls = 0;
     const context = {
+      document: {addEventListener: () => {}},
       Date, confirm: () => ['confirm', 'force'].includes(scenario), alert: x => alerts.push(x), pollStatus: () => polls++,
       fetch: async url => {
         urls.push(url);

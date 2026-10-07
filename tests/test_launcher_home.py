@@ -296,7 +296,6 @@ def test_uninstalled_iris_opens_phone_client_section_for_openalma_host(tmp_path,
     monkeypatch.setattr(app.services, "status", lambda _spec: {
         "state": "stopped",
         "installed_package": None,
-        "open_not_installed": True,
         "action_kind": "settings",
         "detail": "Not yet verified",
     })
@@ -358,6 +357,15 @@ def test_open_route_uses_default_browser_tab(tmp_path, monkeypatch):
 
     assert response.json() == {"ok": True}
     assert opened == ["http://127.0.0.1:8001"]
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    assert client.post("/open-url", data={"url": "https://example.org/guide"}).status_code == 200
+    assert opened[-1] == "https://example.org/guide"
+    assert client.post("/open-url", data={"url": "miniapp://release?url=http%3A%2F%2Fprivate.example"}).status_code == 200
+    for url in ("javascript:alert(1)", "file:///private/secret", "https://[bad"):
+        assert client.post("/open-url", data={"url": url}).status_code == 400
+    before = len(opened)
+    assert client.post("/open-url", data={"url": "https://example.org"}, headers={"Origin": "https://other.example"}).status_code == 403
+    assert len(opened) == before
 
 
 def test_install_route_rejects_live_service(tmp_path, monkeypatch):

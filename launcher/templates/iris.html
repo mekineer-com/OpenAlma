@@ -104,6 +104,7 @@
     </ol>
 
 <script src="/static/vendor/qrcode.min.js"></script>
+<script src="/static/iris-services.js"></script>
 <script>
     const initialStatus = {{ iris|tojson }};
     const actionError = document.getElementById('iris-action-error');
@@ -129,6 +130,7 @@
         const response = await fetch('/service/iris-server/status');
         if (!response.ok) return;
         const status = await response.json();
+        if (!Array.isArray(status.installations)) return;
         const items = Array.from(document.querySelectorAll('[data-device-session-id]'));
         for (const row of status.installations || []) {
           const item = items.find(item => item.dataset.deviceSessionId === row.device_session_id);
@@ -149,7 +151,7 @@
         const response = await fetch(url, options);
         if (!response.ok) {
           const payload = await response.json();
-          throw new Error(payload.detail || 'Iris action failed.');
+          throw new Error(irisErrorMessage(payload, 'Iris action failed.'));
         }
         location.reload();
       } catch (err) {

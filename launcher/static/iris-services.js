@@ -1,6 +1,7 @@
 function irisParentActions(data) {
   var links = ' <a class="btn" href="/iris">Setup</a>';
-  if (!data.install_setup && data.action_kind !== 'install') links += ' <form class="inline" method="post" action="/iris/install"><button class="btn" type="submit">Stock Install</button></form>';
+  if (data.install_enabled === false) return links + ' <button class="btn" disabled>Stock Install</button>';
+  if (!data.install_setup && data.action_kind !== 'install') links += ' <form class="inline" method="post" action="/iris/install"><button class="btn" type="submit"' + (irisInstallDisabled(data) ? ' disabled' : '') + '>Stock Install</button></form>';
   if (data.install_running || data.state === 'stopping') {
     return '<span class="spinner" role="status" aria-label="Working"></span>' +
       (data.force_stoppable ? ' <button class="btn" onclick="svcAction(\'iris-server\',\'force-stop\',this)">Force Stop</button>' : '') + links;
@@ -93,7 +94,7 @@ function renderIrisInstallations(data) {
       actions = '<form class="inline" method="post" action="/iris/install">' +
         '<input type="hidden" name="device_session_id" value="' + esc(id) + '">' +
         '<input type="hidden" name="host_package" value="' + esc(installation.host_package) + '">' +
-        '<button class="btn" type="submit">' + esc(installation.action_label || 'Install') + '</button></form>' + actions;
+        '<button class="btn" type="submit"' + (irisInstallDisabled(data) ? ' disabled' : '') + '>' + esc(installation.action_label || 'Install') + '</button></form>' + actions;
     }
     var cell = row.querySelector('.iris-actions');
     if (cell.irisActionsHtml !== actions && !row.dataset.forgetting) {
@@ -119,10 +120,20 @@ function renderIrisInstallations(data) {
   rows.forEach(function(row) { row.remove(); });
 }
 
+function irisInstallDisabled(data) {
+  return data.running || data.starting || data.stuck || data.orphaned || (data.setup && !data.setup.ready);
+}
+
 async function irisMetadataAction(id, action, body) {
   var response = await fetch('/iris/installations/' + encodeURIComponent(id) + '/' + action, {method: 'POST', body: body});
   if (!response.ok) {
     var result = await response.json();
-    throw new Error(result.detail || 'Installation action failed');
+    throw new Error(irisErrorMessage(result, 'Installation action failed'));
   }
+}
+
+function irisErrorMessage(payload, fallback) {
+  var detail = payload.detail;
+  if (Array.isArray(detail)) return detail.map(function(error) { return error.msg; }).filter(Boolean).join('; ') || fallback;
+  return typeof detail === 'string' && detail ? detail : fallback;
 }

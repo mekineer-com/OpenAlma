@@ -1185,25 +1185,13 @@ def _iris_product_status(
         "action_kind": action,
         "action_label": action_label,
         "active": active,
-        "setup_issue": str(readiness.get("reason") or "") if setup_required and readiness.get("step") != "server" and not active and not runtime.running else "",
         "installed_package": installed_package or None,
         "installed_version": installed_version or None,
-        "installed_soul": mentra.get("installed_soul") or None,
-        "installed_device": mentra.get("installed_device") or None,
         "available_package": available_package or None,
         "available_version": available_version or None,
         "update_available": mismatch,
         "automatic_host": automatic_host,
         "repair_available": repair_available,
-        "installation_known": not bool(readiness and readiness.get("step") == "server"),
-        "open_not_installed": bool(
-            not installed_package
-            and automatic_host
-            and available_package
-            and available_version
-            and readiness
-            and readiness.get("ready")
-        ),
     }
 
 
@@ -1239,10 +1227,10 @@ def status(spec: ServiceSpec) -> dict:
         result = _iris_product_status(runtime, {**mentra, "active": False, "starting": False}, package, version, readiness)
         result.update(available_source="github" if url else "local", github_status=github_status)
         result["setup"] = readiness
-        result["starting"] = _IRIS_INSTALL_LOCK.locked() and not runtime.running
+        result["starting"] = bool(release_device) and _IRIS_INSTALL_LOCK.locked() and not runtime.running
         if result["starting"]:
             result.update(state="starting", status_label="◐ preparing installer", action_kind=None, action_label="", startable=False)
-        result["installations"] = []
+        installations = []
         for record in mentra.get("installations", []):
             device = record["device_session_id"]
             session = next((s for s in mentra.get("sessions", []) if s["device_session_id"] == device), None)
@@ -1253,7 +1241,7 @@ def status(spec: ServiceSpec) -> dict:
                 "installed_package": record.get("package_name"),
                 "installed_version": record.get("version"), "installed_seen_at": record.get("seen_at"),
                 "installed_soul": session["soul_id"] if session else record.get("soul_id"),
-                "installed_device": device, "host": host,
+                "host": host,
             }
             if session:
                 scoped.update(_read_mentra_status(MEMU_SERVER_PORT, device_session_id=device))
@@ -1262,12 +1250,14 @@ def status(spec: ServiceSpec) -> dict:
             projection = _iris_product_status(row_runtime, scoped, package, version, readiness)
             if result["starting"] and release_device == device:
                 projection.update(state="starting", status_label="◐ preparing installer", action_kind=None, startable=False)
-            result["installations"].append({
+            installations.append({
                 **projection, "device_session_id": device,
                 "display_name": record.get("display_name") or device,
                 "host_package": host.get("host_package") or "com.mentra.mentra",
                 "host_version": host.get("host_version"), "soul_id": scoped["installed_soul"],
             })
+        if mentra.get("state") != "unavailable":
+            result["installations"] = installations
         # Installation actions live on app rows, never on an unscoped parent.
         if result["action_kind"] == "start":
             result.update(state="ready", status_label="● Host ready", detail="",
@@ -1275,9 +1265,7 @@ def status(spec: ServiceSpec) -> dict:
         if release:
             result["release_uri"] = release.get("release_uri")
             result["release_device_session_id"] = release.get("device_session_id")
-            result["release_started_at"] = release.get("started_at")
             result["release_host_package"] = release.get("host_package")
-            result["automatic_offer"] = release.get("host_package") == "com.mentra.mentra.openalma"
         return _stop_status(spec, result)
     runtime = _runtime_state(spec)
     running = runtime.running
@@ -1411,17 +1399,6 @@ def raise_if_stopping(spec: ServiceSpec) -> None:
         _raise_if_stopping_locked(spec)
 
 
-def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None) -> None:
-    if spec.name != "iris-server":
-        return _start(spec)
-    if not _IRIS_INSTALL_LOCK.acquire(blocking=False):
-        raise ServiceStoppingError("Iris installer is starting; wait before installing another app")
-    try:
-        _start(spec, install_target=install_target)
-    finally:
-        _IRIS_INSTALL_LOCK.release()
-
-
 def raise_if_iris_installer_busy(spec: ServiceSpec) -> None:
     runtime = _runtime_state(spec)
     if runtime.running or runtime.stuck or runtime.orphaned or runtime.port_blocked:
@@ -1434,31 +1411,36 @@ def raise_if_iris_installer_busy(spec: ServiceSpec) -> None:
         raise ServiceStoppingError(f"Iris installer is busy for {name}; finish or stop it first")
 
 
-def _start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None) -> None:
+def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None) -> None:
     _clear_port_cache(spec)
     with _STOP_LOCK:
         _raise_if_stopping_locked(spec)
         _STOP_ERRORS.pop(spec.name, None)
     runtime = _runtime_state(spec)
     if runtime.running or runtime.stuck or runtime.orphaned or runtime.port_blocked:
-        if spec.name == "iris-server":
-            raise_if_iris_installer_busy(spec)
         return
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     spec.log_path.parent.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, **spec.env}
     if spec.name == "iris-server":
-        env.update(_iris_build_env(spec, install_target))
         target_path = spec.cwd / "build" / "release-private-status.json"
-        target_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = target_path.with_suffix(".tmp")
-        temporary.write_text(json.dumps(install_target))
-        temporary.replace(target_path)
-        package, version, url, _ = _iris_release_candidate(spec)
-        if not url:
-            raise ValueError("Published Iris bundle unavailable; development builds must be run explicitly")
-        env["MENTRA_RELEASE_BUNDLE"] = str(_download_iris_release(url, package, version))
-    proc = _spawn_background(spec, env)
+        try:
+            env.update(_iris_build_env(spec, install_target))
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary.write_text(json.dumps(install_target))
+            temporary.replace(target_path)
+            package, version, url, _ = _iris_release_candidate(spec)
+            if not url:
+                raise ValueError("Published Iris bundle unavailable; development builds must be run explicitly")
+            env["MENTRA_RELEASE_BUNDLE"] = str(_download_iris_release(url, package, version))
+            proc = _spawn_background(spec, env)
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            target_path.unlink(missing_ok=True)
+            raise
+    else:
+        proc = _spawn_background(spec, env)
     spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
     spec.pid_path.write_text(str(proc.pid))
     _clear_port_cache(spec)

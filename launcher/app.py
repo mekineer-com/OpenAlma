@@ -180,11 +180,7 @@ def index(request: Request) -> HTMLResponse:
                 iris = {"name": spec.name, "label": spec.label} | _setup_aware_status(
                     spec, setup_root, verify_runtime=not install_in_progress,
                 )
-                (
-                    rows
-                    if iris.get("installations") or iris.get("running") or not iris.get("installation_known", True)
-                    else not_installed
-                ).append(iris)
+                rows.append(iris)
                 continue
             if services.is_installed(spec):
                 rows.append(
@@ -218,9 +214,6 @@ def index(request: Request) -> HTMLResponse:
         {
             "services": rows,
             "not_installed_services": not_installed,
-            "open_not_installed": any(
-                row.get("open_not_installed") for row in not_installed
-            ),
             "install_running": any(row.get("install_running") for row in rows + not_installed),
             "memorize": memorize,
             "soul_ids": soul_ids,
@@ -555,7 +548,6 @@ def iris_page(request: Request) -> HTMLResponse:
             ).get("mentra") or {}
             iris_connection = {
                 "base_url": str(mentra.get("public_base_url") or ""),
-                "bearer": str(mentra.get("integration_bearer_token") or ""),
             }
         except (OSError, ValueError):
             pass
@@ -712,16 +704,13 @@ def logs(request: Request, service_name: str, lines: int = 200) -> HTMLResponse:
 
 
 @app.post("/service/{service_name}/start")
-def service_start(service_name: str, device_session_id: str = "", host_package: str = "") -> dict:
+def service_start(service_name: str) -> dict:
+    if service_name == "iris-server":
+        raise HTTPException(status_code=404, detail="Use Iris Install")
     spec = _find_service(service_name)
     _require_startable_setup(service_name)
     try:
-        if service_name == "iris-server":
-            if not device_session_id:
-                raise ValueError("Choose an Iris app installation")
-            _start_iris_install(spec, device_session_id, host_package)
-        else:
-            services.start(spec)
+        services.start(spec)
     except services.ServiceStoppingError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except services.OwnerServiceUnavailable as exc:
@@ -736,7 +725,18 @@ def service_open(service_name: str) -> dict[str, bool]:
     spec = _find_service(service_name)
     if not spec.open_url:
         raise HTTPException(status_code=404, detail=f"{spec.label} has no page to open")
-    if not webbrowser.open_new_tab(spec.open_url):
+    return open_url(spec.open_url)
+
+
+@app.post("/open-url")
+def open_url(url: str = Form()) -> dict[str, bool]:
+    try:
+        target = urllib.parse.urlsplit(url)
+        if target.scheme not in {"http", "https", "miniapp"} or not target.hostname:
+            raise ValueError("Invalid link")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid link") from exc
+    if not webbrowser.open_new_tab(url):
         raise HTTPException(status_code=503, detail="The default browser could not be opened")
     return {"ok": True}
 
@@ -763,6 +763,7 @@ def iris_install(
 def _start_iris_install(spec: services.ServiceSpec, device_session_id: str, host_package: str) -> None:
     if not services._IRIS_INSTALL_LOCK.acquire(blocking=False):
         raise services.ServiceStoppingError("Iris installer is starting; wait before installing another app")
+    reserved_id = ""
     try:
         services.raise_if_stopping(spec)
         services.raise_if_iris_installer_busy(spec)
@@ -770,9 +771,14 @@ def _start_iris_install(spec: services.ServiceSpec, device_session_id: str, host
             if host_package:
                 raise ValueError("Choose an Iris app installation")
             device_session_id = services.iris_installation_request()["device_session_id"]
+            reserved_id = device_session_id
             host_package = "com.mentra.mentra"
         target = _iris_install_target(device_session_id, host_package)
-        services._start(spec, install_target=target)
+        services.start(spec, install_target=target)
+    except Exception:
+        if reserved_id:
+            services.iris_installation_request(reserved_id)
+        raise
     finally:
         services._IRIS_INSTALL_LOCK.release()
 
