@@ -141,7 +141,7 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
             assert "trusted private VPN or connection" in visible
             assert "Choose a Soul on the phone" in visible
             assert 'href="https://github.com/mekineer-com/MentraOS"' in visible
-            assert visible.index('<h3>Phone steps</h3>') < visible.index('<h3>Iris installer</h3>')
+            assert visible.index('>Phone steps</h3>') < visible.index('>Iris installer</h3>')
             assert "they do not check your phone" in visible
             assert "Iris receives this address with its installation settings" in visible
             selected = next((row for row in installations if page.endswith("=" + row["device_session_id"])), None)

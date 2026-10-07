@@ -8,7 +8,7 @@
   {% if not iris_setup.enabled %}
     <p class="muted">Disabled. Enable Mentra in <code>mcp-memu-server/config.json</code> to use Iris.</p>
   {% else %}
-    <h3>Server readiness</h3>
+    <h3 class="iris-section">memU Server readiness</h3>
     <p class="hint">These checks run on the OpenAlma server; they do not check your phone.</p>
     <ul class="checklist">
       {% for row in iris_setup.rows %}
@@ -19,16 +19,16 @@
 
   {% endif %}
 
-    <h3>memU Server address</h3>
+    <h3 class="iris-section">memU Server address</h3>
     <form method="post" action="/iris/address" class="iris-address">
       <input type="url" name="public_base_url" aria-label="memU Server address" required value="{{ iris_connection.base_url or '' }}" placeholder="http://10.77.0.1">
       <button class="btn" type="submit">Save</button>
     </form>
-    <p class="hint">Use the server address assigned by your private network. Saving does not configure the VPN or server listener. Restart memU Server after changing it.</p>
+    <p class="hint iris-address-hint">Use the server address assigned by your private network. Saving does not configure the VPN or server listener. Restart memU Server after changing it.</p>
     <p class="hint">OpenAlma Mentra: enter this address in Settings if the default does not connect. Stock Mentra: Iris receives this address with its installation settings.</p>
     <p class="hint">Use a trusted private VPN or connection. Devices allowed to reach this endpoint can access the Soul's Iris data; trust the permitted devices and network access rules.</p>
 
-    <h3>Phone steps</h3>
+    <h3 class="iris-section">Phone steps</h3>
     <ol class="tight">
       <li>Make the OpenAlma address above reachable through your trusted private connection.</li>
       <li>Connect the phone to that private VPN or connection.</li>
@@ -39,7 +39,7 @@
       <li>Choose a Soul on the phone, then tap Start to talk; listen for the beep.</li>
     </ol>
 
-    <h3>Iris installer</h3>
+    <h3 class="iris-section">Iris installer</h3>
     {% if not selected_installation %}
     <form method="post" action="/iris/install" id="iris-install-form">
       <p><button class="btn" type="submit" {% if not iris_setup.ready or not iris_setup.enabled or installer_busy %}disabled{% endif %}>Stock Install</button></p>
@@ -122,7 +122,7 @@
     <p class="hint">Forget removes only this launcher record, not phone storage, chats or memories. A later app report can restore it. Update updates Iris, not the Mentra host app. Repair preserves the installation identity and is available only for idle OpenAlma Mentra.</p>
     <p><a href="/iris">General Iris setup</a></p>
     {% else %}
-    <h3>App installations</h3>
+    <h3 class="iris-section">App installations</h3>
     <ul class="tight">
       {% for row in iris.installations %}
       <li><a href="/iris?device_session_id={{ row.device_session_id|urlencode }}">{{ row.display_name }}</a></li>
