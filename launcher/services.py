@@ -11,7 +11,6 @@ relative to the launcher's own directory, otherwise None.
 """
 from __future__ import annotations
 
-import ipaddress
 import json
 import os
 import platform
@@ -48,7 +47,7 @@ FORCE_STOP_RECOVERY_SECONDS = 30.0
 _PROCESS_SCAN_CACHE: dict[tuple[str, str, str], tuple[float, list[int]]] = {}
 _PORT_PID_CACHE: dict[int, tuple[float, int | None]] = {}
 _MENTRA_READINESS_CACHE: dict[str, tuple[float, dict]] = {}
-_MENTRA_INGRESS_AUDIT_CACHE: set[tuple[str, str]] = set()
+_MENTRA_INGRESS_AUDIT_CACHE: set[str] = set()
 _IRIS_RELEASE_CACHE: tuple[float, tuple[str, str, str] | None, str] | None = None
 _STOP_LOCK = threading.Lock()
 _IRIS_INSTALL_LOCK = threading.Lock()
@@ -699,14 +698,6 @@ def resolve_soul(soul_id: str, use_existing: bool) -> str:
 def _read_mentra_status(
     port: int, soul_id: str = "", user_id: str = "", device_session_id: str = ""
 ) -> dict:
-    root = _resolve_apps_root()
-    try:
-        config = json.loads((root / "mcp-memu-server" / "config.json").read_text()) if root else {}
-        mentra = config.get("mentra") or {}
-    except (OSError, ValueError):
-        return {"state": "unavailable", "detail": "Cannot read mcp config.json"}
-    if not root:
-        return {"state": "unavailable", "detail": "Set the apps-root directory"}
     query = urllib.parse.urlencode({
         "soul_id": soul_id,
         "user_id": user_id,
@@ -715,12 +706,11 @@ def _read_mentra_status(
     try:
         request = urllib.request.Request(
             f"http://127.0.0.1:{port}/integration/mentra/status?{query}",
-            headers={"Authorization": f"Bearer {mentra.get('integration_bearer_token') or ''}"},
         )
         with urllib.request.urlopen(request, timeout=2) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        detail = {401: "Mentra credential rejected", 404: "Mentra status route unavailable"}.get(
+        detail = {404: "Mentra status route unavailable"}.get(
             exc.code, f"Mentra status failed (HTTP {exc.code})"
         )
         return {"state": "unavailable", "detail": detail}
@@ -747,7 +737,6 @@ def iris_install_env(target: dict[str, str] | None) -> dict[str, str]:
     target = {**target, "user_id": owner_id}
     values = {
         "BASE_URL": str(mentra.get("public_base_url") or ""),
-        "BEARER": str(mentra.get("integration_bearer_token") or ""),
         **{key.upper(): str(target.get(key) or "").strip() for key in ("user_id", "device_session_id")},
     }
     for key, value in values.items():
@@ -777,10 +766,9 @@ def _iris_build_env(spec: ServiceSpec, target: dict[str, str] | None) -> dict[st
     return env
 
 
-def _mentra_http_status(url: str, bearer: str = "") -> int:
-    headers = {"Authorization": f"Bearer {bearer}"} if bearer else {}
+def _mentra_http_status(url: str) -> int:
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=2) as response:
+        with urllib.request.urlopen(urllib.request.Request(url), timeout=2) as response:
             return response.status
     except urllib.error.HTTPError as exc:
         return exc.code
@@ -838,7 +826,7 @@ def host_prerequisites(root: Path | None, os_release_path: Path = Path("/etc/os-
     if root is not None and (root / "mcp-memu-server/run.py").exists():
         commands.append(("memU Server Python 3.12", str(root / venv_python)))
     if root is not None and (root / optional_paths["Iris"][0]).exists():
-        commands.extend((command, command) for command in ("node", "bun", "ip"))
+        commands.extend((command, command) for command in ("node", "bun"))
     if root is not None and (root / optional_paths["Atomic"][0]).exists():
         commands.append(("node", "node"))
     if root is not None and (root / optional_paths["Hermes Channels"][0]).exists():
@@ -883,8 +871,8 @@ def _mentra_readiness_uncached(root: Path) -> dict:
         "OpenAlma / mcp configuration",
         "Iris private release runtime",
         "memU Server",
-        "Private phone route",
-        "Authenticated narrow ingress",
+        "Phone address",
+        "Narrow ingress",
     )
 
     def fail(step: str, label: str, reason: str) -> dict:
@@ -901,13 +889,13 @@ def _mentra_readiness_uncached(root: Path) -> dict:
             "rows": rows,
         }
 
-    required = ("public_base_url", "integration_bearer_token", "gemini_api_key", "model", "voice")
+    required = ("public_base_url", "gemini_api_key", "model", "voice")
     missing = [name for name in required if not str(mentra.get(name) or "").strip()]
     if missing:
         return fail("config", "OpenAlma / mcp configuration", f"Configure Mentra: {', '.join(missing)}")
     rows.append({"label": "OpenAlma / mcp configuration", "state": "ready", "detail": "Ready"})
 
-    missing_tools = [command for command in ("node", "bun", "ip") if shutil.which(command) is None]
+    missing_tools = [command for command in ("node", "bun") if shutil.which(command) is None]
     if missing_tools:
         return fail(
             "release",
@@ -922,45 +910,29 @@ def _mentra_readiness_uncached(root: Path) -> dict:
     rows.append({"label": "memU Server", "state": "ready", "detail": "Ready"})
 
     base_url = str(mentra["public_base_url"]).rstrip("/")
-    parsed = urllib.parse.urlsplit(base_url)
-    host = parsed.hostname or ""
     try:
-        private_host = ipaddress.ip_address(host).is_private
+        parsed = urllib.parse.urlsplit(base_url)
+        host = parsed.hostname or ""
+        port = parsed.port
     except ValueError:
-        private_host = False
-    if (
-        parsed.scheme not in {"http", "https"}
-        or not private_host
-        or host in {"127.0.0.1", "::1"}
-    ):
-        return fail("route", "Private phone route", "Iris base URL must use a private host address")
-    rows.append({"label": "Private phone route", "state": "ready", "detail": host})
+        return fail("route", "Phone address", "Iris base URL has an invalid host or port")
+    if (parsed.scheme not in {"http", "https"} or not host or port == 0
+            or any(char.isspace() for char in host)
+            or parsed.username or parsed.password or parsed.query or parsed.fragment):
+        return fail("route", "Phone address", "Iris base URL must be HTTP or HTTPS without credentials, query, or fragment")
+    rows.append({"label": "Phone address", "state": "ready", "detail": host})
 
-    try:
-        parsed.port
-    except ValueError:
-        return fail("ingress", "Authenticated narrow ingress", "Iris base URL has an invalid port")
-
-    bearer = str(mentra["integration_bearer_token"])
-    status = _mentra_http_status(f"{base_url}/integration/mentra/health", bearer)
+    status = _mentra_http_status(f"{base_url}/integration/mentra/health")
     if status != 200:
-        reason = "Cannot reach Mentra; check the server and connection" if not status else (
-            "Mentra rejected the bearer; check the configured credential (HTTP 401)" if status == 401
-            else f"Mentra health check failed (HTTP {status}); check the server and proxy"
-        )
-        return fail("ingress", "Authenticated narrow ingress", reason)
-    audit_key = (base_url, bearer)
-    if audit_key not in _MENTRA_INGRESS_AUDIT_CACHE:
-        status = _mentra_http_status(f"{base_url}/integration/mentra/health")
-        if status != 401:
-            reason = "Mentra health accepts missing credentials" if 200 <= status < 300 else "Could not verify credential protection"
-            return fail("ingress", "Authenticated narrow ingress", f"{reason} ({status or 'no connection'})")
+        reason = "Cannot reach Mentra; check the server and connection" if not status else f"Mentra health check failed (HTTP {status}); check the server and proxy"
+        return fail("ingress", "Narrow ingress", reason)
+    if base_url not in _MENTRA_INGRESS_AUDIT_CACHE:
         status = _mentra_http_status(f"{base_url}/health")
-        if status not in {401, 404}:
+        if status != 404:
             reason = "Ingress exposes an unrelated path" if 200 <= status < 300 else "Could not verify unrelated-route blocking"
-            return fail("ingress", "Authenticated narrow ingress", f"{reason} ({status or 'no connection'})")
-        _MENTRA_INGRESS_AUDIT_CACHE.add(audit_key)
-    rows.append({"label": "Authenticated narrow ingress", "state": "ready", "detail": "Ready"})
+            return fail("ingress", "Narrow ingress", f"{reason} ({status or 'no connection'})")
+        _MENTRA_INGRESS_AUDIT_CACHE.add(base_url)
+    rows.append({"label": "Narrow ingress", "state": "ready", "detail": "Ready"})
     return {
         "enabled": True,
         "ready": True,

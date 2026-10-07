@@ -98,12 +98,12 @@ class MentraStatusTest(TestCase):
             with patch.object(services.shutil, "which", side_effect=which):
                 result = services.host_prerequisites(root, os_release)
 
-        self.assertFalse(result["ready"])
+        self.assertTrue(result["ready"])
         self.assertEqual(result["rows"][0]["state"], "ready")
         self.assertEqual(result["rows"][1]["state"], "ready")
-        self.assertEqual(result["rows"][2]["detail"], "Missing: ip")
-        self.assertTrue({"node", "bun", "ip"}.issubset(checked))
-        self.assertTrue({"npm", "sh", "bash", "wg", "nginx"}.isdisjoint(checked))
+        self.assertEqual(result["rows"][2]["detail"], "Ready")
+        self.assertTrue({"node", "bun"}.issubset(checked))
+        self.assertTrue({"ip", "npm", "sh", "bash", "wg", "nginx"}.isdisjoint(checked))
 
     def test_memu_server_keeps_only_iris_stop_guard(self) -> None:
         spec = services.ServiceSpec(
@@ -380,16 +380,15 @@ class MentraStatusTest(TestCase):
             config.write_text(json.dumps({"mentra": {
                 "enabled": True,
                 "public_base_url": "http://10.77.0.1",
-                "integration_bearer_token": "fictional",
                 "gemini_api_key": "fictional",
                 "model": "fictional-model",
                 "voice": "fictional-voice",
             }}))
-            with patch.object(services.shutil, "which", side_effect=lambda command: None if command == "ip" else command):
+            with patch.object(services.shutil, "which", side_effect=lambda command: None if command == "bun" else command):
                 result = services._mentra_readiness_uncached(root)
 
         self.assertEqual(result["step"], "release")
-        self.assertEqual(result["reason"], "Private release unavailable; install: ip")
+        self.assertEqual(result["reason"], "Private release unavailable; install: bun")
 
     def test_running_installer_shows_stock_steps_and_exact_phone_id(self) -> None:
         from app import templates
@@ -402,7 +401,7 @@ class MentraStatusTest(TestCase):
                 "release_device_session_id": "test-phone",
                 "release_host_package": "com.mentra.mentra",
             },
-            iris_connection={"base_url": "http://10.77.0.1", "bearer": "fictional-key"},
+            iris_connection={"base_url": "http://10.77.0.1"},
             host_prerequisites={"rows": []},
         )
 
@@ -422,7 +421,6 @@ class MentraStatusTest(TestCase):
         config.write_text(json.dumps({
             "mentra": {
                 "enabled": True,
-                "integration_bearer_token": "fictional",
                 "public_base_url": "http://10.77.0.1",
                 "gemini_api_key": "fictional",
                 "model": "fictional-model",
@@ -431,7 +429,6 @@ class MentraStatusTest(TestCase):
         }))
         env_path.write_text(
             "MENTRA_PUBLIC_OPENALMA_BASE_URL=http://10.77.0.1\n"
-            "MENTRA_PUBLIC_OPENALMA_BEARER=fictional\n"
             "MENTRA_PUBLIC_OPENALMA_USER_ID=Fictional User\n"
             "MENTRA_PUBLIC_OPENALMA_SOUL_ID=Fictional Soul\n"
             "MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID=fictional-phone\n"
@@ -444,14 +441,14 @@ class MentraStatusTest(TestCase):
             with (
                 patch.object(services, "all_services", return_value=[memu]),
                 patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
-                patch.object(services, "_mentra_http_status", side_effect=[200, 401, 404]) as http,
+                patch.object(services, "_mentra_http_status", side_effect=[200, 404]) as http,
             ):
                 first = services.mentra_readiness(root)
                 second = services.mentra_readiness(root)
             self.assertTrue(first["ready"])
             self.assertIs(first, second)
-            self.assertEqual(http.call_count, 3)
-            self.assertEqual(http.call_args_list[2].args, ("http://10.77.0.1/health",))
+            self.assertEqual(http.call_count, 2)
+            self.assertEqual(http.call_args_list[1].args, ("http://10.77.0.1/health",))
             self.assertEqual(len(first["rows"]), 5)
 
             with (
@@ -460,11 +457,36 @@ class MentraStatusTest(TestCase):
                 patch.object(services, "_mentra_http_status", return_value=200) as http,
             ):
                 self.assertTrue(services._mentra_readiness_uncached(root)["ready"])
-            http.assert_called_once_with("http://10.77.0.1/integration/mentra/health", "fictional")
+            http.assert_called_once_with("http://10.77.0.1/integration/mentra/health")
 
-            for responses, detail in (([0], "Cannot reach"), ([401], "rejected the bearer"), ([502], "HTTP 502"),
-                                      ([200, 200], "accepts missing credentials"), ([200, 401, 200], "exposes an unrelated path"),
-                                      ([200, 401, 0], "no connection")):
+            settings = json.loads(config.read_text())
+            for address in ("http://100.92.1.5:8080", "https://private.example", "http://127.0.0.1:8099", "http://[::1]:8099"):
+                settings["mentra"]["public_base_url"] = address
+                config.write_text(json.dumps(settings))
+                with (
+                    patch.object(services, "all_services", return_value=[memu]),
+                    patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
+                    patch.object(services, "_mentra_http_status", side_effect=[200, 404]),
+                ):
+                    self.assertTrue(services._mentra_readiness_uncached(root)["ready"])
+            settings["mentra"]["public_base_url"] = "http://10.77.0.1"
+            config.write_text(json.dumps(settings))
+
+            for address in ("http://bad host", "http://private.example:0", "http://private.example:65536",
+                            "http://user:password@private.example", "http://private.example?key=value", "http://private.example#fragment"):
+                settings["mentra"]["public_base_url"] = address
+                config.write_text(json.dumps(settings))
+                with (
+                    patch.object(services, "all_services", return_value=[memu]),
+                    patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
+                    patch.object(services, "_mentra_http_status", side_effect=AssertionError("invalid address must not be probed")),
+                ):
+                    self.assertEqual(services._mentra_readiness_uncached(root)["step"], "route")
+            settings["mentra"]["public_base_url"] = "http://10.77.0.1"
+            config.write_text(json.dumps(settings))
+
+            for responses, detail in (([0], "Cannot reach"), ([502], "HTTP 502"),
+                                      ([200, 200], "exposes an unrelated path"), ([200, 0], "no connection")):
                 services._MENTRA_INGRESS_AUDIT_CACHE.clear()
                 with (
                     patch.object(services, "all_services", return_value=[memu]),
@@ -473,7 +495,7 @@ class MentraStatusTest(TestCase):
                 ):
                     self.assertIn(detail, services._mentra_readiness_uncached(root)["reason"])
 
-            for content in ("MENTRA_PUBLIC_OPENALMA_BASE_URL=http://wrong\nMENTRA_PUBLIC_OPENALMA_BEARER=wrong\n", None):
+            for content in ("MENTRA_PUBLIC_OPENALMA_BASE_URL=http://wrong\n", None):
                 if content is None:
                     env_path.unlink()
                 else:
@@ -482,7 +504,7 @@ class MentraStatusTest(TestCase):
                 with (
                     patch.object(services, "all_services", return_value=[memu]),
                     patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
-                    patch.object(services, "_mentra_http_status", side_effect=[200, 401, 404]),
+                    patch.object(services, "_mentra_http_status", side_effect=[200, 404]),
                 ):
                     self.assertTrue(services.mentra_readiness(root)["ready"])
         finally:
@@ -566,11 +588,11 @@ class MentraStatusTest(TestCase):
         self.assertTrue(runtime.running)
         self.assertFalse(runtime.stuck)
 
-    def test_http_probe_sends_bearer_and_preserves_rejection_status(self) -> None:
+    def test_http_probe_and_status_use_keyless_narrow_routes(self) -> None:
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
-                authorized = self.headers.get("Authorization") == "Bearer fictional-secret"
-                code = 404 if self.path == "/unrelated" else 200 if authorized else 401
+                assert self.headers.get("Authorization") is None
+                code = 404 if self.path == "/unrelated" else 200
                 self.send_response(code)
                 self.end_headers()
                 if code == 200:
@@ -584,24 +606,11 @@ class MentraStatusTest(TestCase):
             thread.start()
             url = f"http://127.0.0.1:{server.server_port}"
             try:
-                self.assertEqual(services._mentra_http_status(url, "fictional-secret"), 200)
-                self.assertEqual(services._mentra_http_status(url, "wrong"), 401)
+                self.assertEqual(services._mentra_http_status(url), 200)
                 self.assertEqual(services._mentra_http_status(url + "/unrelated"), 404)
-                with TemporaryDirectory() as directory:
-                    root = Path(directory)
-                    config = root / "mcp-memu-server" / "config.json"
-                    config.parent.mkdir()
-                    config.write_text(json.dumps({"mentra": {"enabled": True, "integration_bearer_token": "fictional-secret"}}))
-                    with patch.object(services, "_resolve_apps_root", return_value=root):
-                        self.assertIs(services._read_mentra_status(server.server_port)["busy"], False)
-                        config.write_text(json.dumps({"mentra": {"enabled": False, "integration_bearer_token": "fictional-secret"}}))
-                        self.assertEqual(services._read_mentra_status(server.server_port)["state"], "ready")
-                        config.write_text(json.dumps({"mentra": {"enabled": True, "integration_bearer_token": "wrong"}}))
-                        rejected = services._read_mentra_status(server.server_port)
-                        self.assertEqual(rejected["state"], "unavailable")
-                        self.assertIn("credential", rejected["detail"])
-                        with patch.object(services.urllib.request, "urlopen", side_effect=TimeoutError):
-                            self.assertNotIn("busy", services._read_mentra_status(server.server_port))
+                self.assertIs(services._read_mentra_status(server.server_port)["busy"], False)
+                with patch.object(services.urllib.request, "urlopen", side_effect=TimeoutError):
+                    self.assertNotIn("busy", services._read_mentra_status(server.server_port))
             finally:
                 server.shutdown()
                 thread.join()
@@ -983,11 +992,11 @@ class MentraStatusTest(TestCase):
             root = Path(directory)
             (root / "mcp-memu-server").mkdir()
             (root / "mcp-memu-server" / "config.json").write_text(json.dumps({"mentra": {
-                "enabled": True, "public_base_url": "http://10.77.0.1", "integration_bearer_token": "new-key",
+                "enabled": True, "public_base_url": "http://10.77.0.1",
             }}))
             spec = services.ServiceSpec("iris-server", "Iris", [], root, root / "log", root / "pid")
             env_path = root / ".env.local"
-            env_path.write_text("MENTRA_PUBLIC_OPENALMA_BEARER=old-key\n")
+            env_path.write_text("MENTRA_PUBLIC_OPENALMA_BASE_URL=http://old.example\n")
             with (
                 patch.object(services, "_resolve_apps_root", return_value=root),
                 patch.object(services, "_read_mentra_status", return_value={
@@ -995,7 +1004,7 @@ class MentraStatusTest(TestCase):
                     "installations": [{"device_session_id": "test-phone"}],
                 }),
                 patch.object(services, "read_owner", return_value="Fictional User"),
-                patch.dict(services.os.environ, {"MENTRA_PUBLIC_OPENALMA_BEARER": "stale-ambient-key"}),
+                patch.dict(services.os.environ, {"MENTRA_PUBLIC_OPENALMA_BASE_URL": "http://stale.example"}),
                 patch.object(services, "_runtime_state", return_value=services.RuntimeState()),
                 patch.object(services, "_iris_release_candidate", return_value=(services.IRIS_PACKAGE, "0.1.11", "https://example.invalid/iris.zip", "available")),
                 patch.object(services, "_download_iris_release", return_value=root / "iris.zip"),
@@ -1005,15 +1014,16 @@ class MentraStatusTest(TestCase):
                 spawn.return_value.pid = 123
                 app._start_iris_install(spec, "test-phone", "com.mentra.mentra")
                 built = spawn.call_args.args[1]
-                self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_BEARER"], "new-key")
+                self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_BASE_URL"], "http://10.77.0.1")
+                self.assertNotIn("MENTRA_PUBLIC_OPENALMA_BEARER", built)
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_USER_ID"], "Fictional%20User")
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID"], "test-phone")
                 self.assertNotIn("MENTRA_PUBLIC_OPENALMA_SOUL_ID", built)
                 self.assertEqual(built["MENTRA_RELEASE_HOST_PACKAGE"], "com.mentra.mentra")
                 self.assertEqual(built["MENTRA_RELEASE_BUNDLE"], str(root / "iris.zip"))
-                self.assertIn('BEARER="new-key"', env_path.read_text())
+                self.assertNotIn("BEARER=", env_path.read_text())
                 self.assertNotIn("SOUL_ID=", env_path.read_text())
-                self.assertIn("old-key", (root / ".env.local.orig").read_text())
+                self.assertIn("http://old.example", (root / ".env.local.orig").read_text())
                 self.assertEqual(env_path.stat().st_mode & 0o777, 0o600)
                 self.assertEqual((root / ".env.local.orig").stat().st_mode & 0o777, 0o600)
                 (root / "mcp-memu-server" / "config.json").write_text("{}")
