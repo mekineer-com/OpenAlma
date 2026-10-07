@@ -765,6 +765,7 @@ def _start_iris_install(spec: services.ServiceSpec, device_session_id: str, host
         raise services.ServiceStoppingError("Iris installer is starting; wait before installing another app")
     reserved_id = ""
     try:
+        services._IRIS_INSTALL_CANCELLED.clear()
         services.raise_if_stopping(spec)
         services.raise_if_iris_installer_busy(spec)
         if not device_session_id:

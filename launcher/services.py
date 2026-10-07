@@ -51,6 +51,7 @@ _MENTRA_INGRESS_AUDIT_CACHE: set[str] = set()
 _IRIS_RELEASE_CACHE: tuple[float, tuple[str, str, str] | None, str] | None = None
 _STOP_LOCK = threading.Lock()
 _IRIS_INSTALL_LOCK = threading.Lock()
+_IRIS_INSTALL_CANCELLED = threading.Event()
 _STOP_THREADS: dict[str, threading.Thread] = {}
 _STOP_ERRORS: dict[str, str] = {}
 _STOP_STARTED: dict[str, float] = {}
@@ -1201,9 +1202,13 @@ def status(spec: ServiceSpec) -> dict:
         result["setup"] = readiness
         result["starting"] = bool(release_device) and _IRIS_INSTALL_LOCK.locked() and not runtime.running
         if result["starting"]:
-            result.update(state="starting", status_label="◐ preparing installer", action_kind=None, action_label="", startable=False)
+            result.update(state="starting", status_label="◐ preparing installer", action_kind="stop", action_label="Cancel", startable=False, stoppable=True)
         installations = []
-        for record in mentra.get("installations", []):
+        records = list(mentra.get("installations", []))
+        known_devices = {r["device_session_id"] for r in records}
+        records.extend({"device_session_id": s["device_session_id"], "soul_id": s["soul_id"]}
+                       for s in mentra.get("sessions", []) if s["device_session_id"] not in known_devices)
+        for record in records:
             device = record["device_session_id"]
             session = next((s for s in mentra.get("sessions", []) if s["device_session_id"] == device), None)
             host = record.get("host") or {}
@@ -1225,8 +1230,9 @@ def status(spec: ServiceSpec) -> dict:
             installations.append({
                 **projection, "device_session_id": device,
                 "display_name": record.get("display_name") or device,
-                "host_package": host.get("host_package") or "com.mentra.mentra",
+                "host_package": host.get("host_package") or ("com.mentra.mentra" if device in known_devices else None),
                 "host_version": host.get("host_version"), "soul_id": scoped["installed_soul"],
+                "metadata_known": device in known_devices,
             })
         if mentra.get("state") != "unavailable":
             result["installations"] = installations
@@ -1406,6 +1412,8 @@ def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None) ->
             if not url:
                 raise ValueError("Published Iris bundle unavailable; development builds must be run explicitly")
             env["MENTRA_RELEASE_BUNDLE"] = str(_download_iris_release(url, package, version))
+            if _IRIS_INSTALL_CANCELLED.is_set():
+                raise ServiceStoppingError("Iris installation cancelled")
             proc = _spawn_background(spec, env)
         except Exception:
             temporary.unlink(missing_ok=True)
@@ -1487,6 +1495,8 @@ def _start_stop_waiter(spec: ServiceSpec) -> None:
 
 
 def stop(spec: ServiceSpec, *, confirm_unknown: bool = False) -> None:
+    if spec.name == "iris-server" and _IRIS_INSTALL_LOCK.locked():
+        _IRIS_INSTALL_CANCELLED.set()
     _clear_port_cache(spec)
     with _STOP_LOCK:
         if spec.name in _STOP_THREADS:
@@ -1527,6 +1537,8 @@ def stop(spec: ServiceSpec, *, confirm_unknown: bool = False) -> None:
 
 
 def force_stop(spec: ServiceSpec, *, timeout: float = 10.0) -> None:
+    if spec.name == "iris-server" and _IRIS_INSTALL_LOCK.locked():
+        _IRIS_INSTALL_CANCELLED.set()
     _clear_port_cache(spec)
     try:
         for pid in _verified_pid_candidates(spec):

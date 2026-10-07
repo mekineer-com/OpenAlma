@@ -75,9 +75,11 @@ function renderIrisInstallations(data) {
     rows.delete(id);
     // Keep existing rows in place so reordered reports cannot interrupt Rename.
     previous = row;
-    var appName = installation.host_package === 'com.mentra.mentra.openalma' ? 'OpenAlma Mentra' : 'Mentra';
+    var known = installation.metadata_known !== false;
+    row.querySelector('.iris-name-view button').hidden = !known;
+    var appName = !known ? 'App details unavailable' : installation.host_package === 'com.mentra.mentra.openalma' ? 'OpenAlma Mentra' : 'Mentra';
     var tooltip = appName + (installation.host_version ? ' v' + installation.host_version : ' (version unknown)') +
-      ', Iris ' + (installation.installed_version ? 'v' + installation.installed_version : 'not installed');
+      ', Iris ' + (installation.installed_version ? 'v' + installation.installed_version : known ? 'not installed' : '(version unknown)');
     var name = row.querySelector('.iris-name');
     name.textContent = installation.display_name;
     name.title = tooltip;
@@ -89,7 +91,7 @@ function renderIrisInstallations(data) {
     status.textContent = installation.status_label || 'Status unavailable';
     row.querySelector('.iris-detail').textContent = installation.detail || '';
     row.querySelector('.iris-soul').textContent = 'Soul: ' + (installation.soul_id || 'Not chosen');
-    var actions = ' <a class="btn" href="/iris">Setup</a> <button class="btn" type="button" data-forget>Forget</button>';
+    var actions = ' <a class="btn" href="/iris">Setup</a>' + (known ? ' <button class="btn" type="button" data-forget>Forget</button>' : '');
     if (installation.startable && installation.action_kind === 'start') {
       actions = '<form class="inline" method="post" action="/iris/install">' +
         '<input type="hidden" name="device_session_id" value="' + esc(id) + '">' +
@@ -100,7 +102,8 @@ function renderIrisInstallations(data) {
     if (cell.irisActionsHtml !== actions && !row.dataset.forgetting) {
       cell.innerHTML = actions;
       cell.irisActionsHtml = actions;
-      cell.querySelector('[data-forget]').onclick = async function() {
+      var forget = cell.querySelector('[data-forget]');
+      if (forget) forget.onclick = async function() {
         if (!confirm('Forget this installation from the launcher? Chats, memories and phone storage are not deleted.')) return;
         row.dataset.forgetting = 'true';
         this.disabled = true;
