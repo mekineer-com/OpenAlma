@@ -52,6 +52,7 @@ def test_memorize_gauge_under_threshold():
     assert "Memorize: 2,000 / 8,000 (25%)" in html
     assert 'style="width: 25%"' in html
     assert "waiting for sleep-gap" not in html
+    assert 'title="Back to Services"' not in html
 
 
 def test_initial_and_polled_setup_actions_match():

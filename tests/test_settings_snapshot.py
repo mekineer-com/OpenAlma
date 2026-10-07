@@ -34,7 +34,9 @@ def test_saved_apps_root_waits_for_restart(tmp_path, monkeypatch):
 
     monkeypatch.setattr(services, "host_prerequisites", lambda _root: {"rows": []})
     client = TestClient(app.app, base_url="http://127.0.0.1")
-    assert 'value="stable" selected' in client.get("/settings").text
+    page = client.get("/settings").text
+    assert 'value="stable" selected' in page
+    assert page.index('title="Back to Services"') < page.index('title="Refresh (F5)"')
     assert client.post("/settings", data={"apps_root": str(alias), "release_channel": "prerelease"},
                        follow_redirects=False).status_code == 303
     assert settings.read_paths()["release_channel"] == "prerelease"
