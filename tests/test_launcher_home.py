@@ -196,6 +196,24 @@ def test_iris_install_redirect_preserves_provided_target(tmp_path, monkeypatch, 
     assert started == [(spec, device_session_id, host_package)]
 
 
+def test_iris_address_save_preserves_config_and_backs_up(tmp_path, monkeypatch):
+    import json
+    path = tmp_path / "mcp-memu-server/config.json"
+    path.parent.mkdir()
+    original = '{"mentra":{"enabled":true,"public_base_url":"http://10.77.0.1"},"other":"keep"}\n'
+    path.write_text(original)
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    for address in ("http://bad host", "http://server:99999", "http://user@server", "ftp://server", "http://server/path"):
+        assert client.post("/iris/address", data={"public_base_url": address}).status_code == 400
+    assert path.read_text() == original
+    for address in ("http://100.90.1.2", "https://server.example"):
+        assert client.post("/iris/address", data={"public_base_url": address}, follow_redirects=False).status_code == 303
+        assert json.loads(path.read_text()) == {"mentra": {"enabled": True, "public_base_url": address}, "other": "keep"}
+    assert Path(str(path) + ".orig").read_text() == original
+    assert json.loads(Path(str(path) + "2.orig").read_text())["mentra"]["public_base_url"] == "http://100.90.1.2"
+
+
 def test_policy_save_returns_to_hermes(monkeypatch):
     saved = []
     monkeypatch.setattr(app.policy, "write_default_policy", lambda value: saved.append(value))

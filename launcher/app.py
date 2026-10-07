@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import urllib.error
 import urllib.parse
 import webbrowser
@@ -565,6 +566,40 @@ def iris_page(request: Request, device_session_id: str = "") -> HTMLResponse:
         "iris_connection": iris_connection,
         "selected_installation": selected_installation,
     })
+
+
+@app.post("/iris/address")
+def iris_address_save(public_base_url: str = Form()) -> RedirectResponse:
+    address = public_base_url.strip().rstrip("/")
+    try:
+        parsed = urllib.parse.urlsplit(address)
+        if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+                or parsed.port == 0 or parsed.username or parsed.password
+                or parsed.path or parsed.query or parsed.fragment
+                or any(char.isspace() for char in address)):
+            raise ValueError("Enter an HTTP or HTTPS server address")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    root = settings.apps_root()
+    if root is None:
+        raise HTTPException(status_code=400, detail="Install OpenAlma first")
+    path = root / "mcp-memu-server" / "config.json"
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+        config["mentra"]["public_base_url"] = address
+        backup = Path(str(path) + ".orig")
+        number = 2
+        while backup.exists():
+            backup = Path(str(path) + f"{number}.orig")
+            number += 1
+        shutil.copy2(path, backup)
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+        temporary.replace(path)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=f"Cannot save OpenAlma address: {exc}") from exc
+    services._MENTRA_READINESS_CACHE.clear()
+    return RedirectResponse("/iris", status_code=303)
 
 
 @app.get("/settings", response_class=HTMLResponse)

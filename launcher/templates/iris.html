@@ -20,7 +20,11 @@
   {% endif %}
 
     <h3>Connection values</h3>
-    <label>OpenAlma address<input type="text" readonly value="{{ iris_connection.base_url or '' }}"></label>
+    <form method="post" action="/iris/address">
+      <label>OpenAlma address<input type="url" name="public_base_url" required value="{{ iris_connection.base_url or '' }}" placeholder="http://10.77.0.1"></label>
+      <p><button class="btn" type="submit">Save</button></p>
+    </form>
+    <p class="hint">Use the server address assigned by your private network. Saving does not configure the VPN or server listener. Restart memU Server after changing it.</p>
     <p class="hint">OpenAlma Mentra: enter this address in Settings if the default does not connect. Stock Mentra: Iris receives this address with its installation settings.</p>
     <p class="hint">Use a trusted private VPN or connection. Devices allowed to reach this endpoint can access the Soul's Iris data; trust the permitted devices and network access rules.</p>
 
