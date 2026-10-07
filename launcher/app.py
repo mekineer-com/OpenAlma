@@ -7,6 +7,7 @@ import urllib.parse
 import webbrowser
 from pathlib import Path
 from threading import Lock
+from typing import Literal
 
 from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
@@ -560,7 +561,8 @@ def iris_page(request: Request) -> HTMLResponse:
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request) -> HTMLResponse:
     apps_root = settings.apps_root()
-    stored = settings.read_paths().get("apps_root") or ""
+    paths = settings.read_paths()
+    stored = paths.get("apps_root") or ""
     candidate = settings.next_apps_root(stored)
     setup_root = settings.setup_apps_root()
     editable = [
@@ -573,6 +575,7 @@ def settings_page(request: Request) -> HTMLResponse:
         {
             "apps_root_active": str(apps_root) if apps_root else "",
             "apps_root_stored": str(stored),
+            "release_channel": paths.get("release_channel", "stable"),
             "apps_root_invalid": bool(stored and candidate is None),
             "apps_root_setup_target": str(setup_root) if setup_root else "",
             "apps_root_pending": setup_root is not None and candidate is None,
@@ -586,8 +589,12 @@ def settings_page(request: Request) -> HTMLResponse:
 
 
 @app.post("/settings")
-def settings_save(apps_root: str = Form(default="")) -> RedirectResponse:
+def settings_save(
+    apps_root: str = Form(default=""),
+    release_channel: Literal["stable", "prerelease"] = Form(default="stable"),
+) -> RedirectResponse:
     current = settings.read_paths()
+    current["release_channel"] = release_channel
     new_root = apps_root.strip()
     if new_root:
         current["apps_root"] = new_root

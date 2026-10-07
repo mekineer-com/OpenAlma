@@ -74,7 +74,7 @@ class InstallOperation:
 _LOCK = threading.RLock()
 _OPERATION: InstallOperation | None = None
 _RELEASE_ISSUE_CACHE: dict[tuple[str, str, str], tuple[float, str]] = {}
-_LAUNCHER_UPDATE_CACHE: tuple[float, dict[str, str] | None] | None = None
+_LAUNCHER_UPDATE_CACHE: tuple[float, str, dict[str, str] | None] | None = None
 INSTALL_LOCK = Path.home() / ".cache" / "openalma-launcher" / "install.lock"
 
 
@@ -206,8 +206,12 @@ def launcher_update() -> dict[str, str] | None:
     current = read_packaged_release()
     if current is None or current.endswith("-dev"):
         return None
-    if _LAUNCHER_UPDATE_CACHE and time.monotonic() - _LAUNCHER_UPDATE_CACHE[0] < 600:
-        return _LAUNCHER_UPDATE_CACHE[1]
+    channel = settings.read_paths().get("release_channel", "stable")
+    if (
+        _LAUNCHER_UPDATE_CACHE and _LAUNCHER_UPDATE_CACHE[1] == channel
+        and time.monotonic() - _LAUNCHER_UPDATE_CACHE[0] < 600
+    ):
+        return _LAUNCHER_UPDATE_CACHE[2]
     update = None
     try:
         request = urllib.request.Request(OPENALMA_RELEASES_URL, headers=_HEADERS)
@@ -215,11 +219,10 @@ def launcher_update() -> dict[str, str] | None:
             releases = json.loads(response.read().decode("utf-8"))
         if not isinstance(releases, list):
             raise ValueError("Invalid GitHub releases response")
-        installed = next(release for release in releases if release.get("tag_name") == current)
         candidates = []
         for release in releases:
             tag = str(release.get("tag_name") or "")
-            if release.get("draft") or bool(release.get("prerelease")) != bool(installed.get("prerelease")):
+            if release.get("draft") or (release.get("prerelease") and channel != "prerelease"):
                 continue
             if release_version(tag) <= release_version(current):
                 continue
@@ -230,9 +233,9 @@ def launcher_update() -> dict[str, str] | None:
         if candidates:
             _version, tag, url = max(candidates)
             update = {"tag": tag, "url": url}
-    except (OSError, ValueError, StopIteration, TypeError):
+    except (OSError, ValueError, TypeError):
         update = None
-    _LAUNCHER_UPDATE_CACHE = (time.monotonic(), update)
+    _LAUNCHER_UPDATE_CACHE = (time.monotonic(), channel, update)
     return update
 
 

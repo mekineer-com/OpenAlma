@@ -108,19 +108,18 @@ def test_windows_subprocesses_hide_console(monkeypatch):
     assert process_flags.hidden_process_kwargs() == {"creationflags": 0x08000000}
 
 
-def test_launcher_update_requires_newer_same_channel_installer(monkeypatch):
+def test_launcher_update_uses_selected_channel_without_downgrades(monkeypatch):
     releases = [
         {
-            "tag_name": "v1.1.0-buildfix", "draft": False, "prerelease": True,
+            "tag_name": "v3.0.0", "draft": False, "prerelease": True,
             "assets": [{
-                "name": "OpenAlma-v1.1.0-buildfix-Windows.exe",
+                "name": "OpenAlma-v3.0.0-Windows.exe",
                 "browser_download_url": "https://example.invalid/update.exe",
             }],
         },
-        {"tag_name": "v1.0.0-buildfix", "draft": False, "prerelease": True, "assets": []},
         {
             "tag_name": "v2.0.0", "draft": False, "prerelease": False,
-            "assets": [{"name": "OpenAlma-v2.0.0-Windows.exe", "browser_download_url": "wrong-channel"}],
+            "assets": [{"name": "OpenAlma-v2.0.0-Windows.exe", "browser_download_url": "stable-update"}],
         },
     ]
 
@@ -137,10 +136,21 @@ def test_launcher_update_requires_newer_same_channel_installer(monkeypatch):
     monkeypatch.setattr(setup_install, "read_packaged_release", lambda: "v1.0.0-buildfix")
     monkeypatch.setattr(setup_install.urllib.request, "urlopen", lambda *_args, **_kwargs: Response())
     monkeypatch.setattr(setup_install, "_LAUNCHER_UPDATE_CACHE", None)
+    paths = {}
+    monkeypatch.setattr(setup_install.settings, "read_paths", lambda: paths)
 
     assert setup_install.launcher_update() == {
-        "tag": "v1.1.0-buildfix", "url": "https://example.invalid/update.exe",
+        "tag": "v2.0.0", "url": "stable-update",
     }
+    paths["release_channel"] = "prerelease"
+    assert setup_install.launcher_update() == {
+        "tag": "v3.0.0", "url": "https://example.invalid/update.exe",
+    }
+    paths["release_channel"] = "stable"
+    assert setup_install.launcher_update()["tag"] == "v2.0.0"
+    monkeypatch.setattr(setup_install, "read_packaged_release", lambda: "v4.0.0")
+    monkeypatch.setattr(setup_install, "_LAUNCHER_UPDATE_CACHE", None)
+    assert setup_install.launcher_update() is None
 
 
 def test_failed_core_install_is_a_visible_retry(tmp_path, monkeypatch):

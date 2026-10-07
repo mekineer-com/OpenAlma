@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "launcher"))
 
@@ -30,6 +31,17 @@ def test_saved_apps_root_waits_for_restart(tmp_path, monkeypatch):
     assert settings.resolve_apps_root(settings.read_paths()["apps_root"]) == pending
     assert services.all_services()[0].cwd == active / "mcp-memu-server"
     assert settings.read_paths()["apps_root"] == str(alias)
+
+    monkeypatch.setattr(services, "host_prerequisites", lambda _root: {"rows": []})
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    assert 'value="stable" selected' in client.get("/settings").text
+    assert client.post("/settings", data={"apps_root": str(alias), "release_channel": "prerelease"},
+                       follow_redirects=False).status_code == 303
+    assert settings.read_paths()["release_channel"] == "prerelease"
+    assert settings.apps_root() == active
+    assert 'value="prerelease" selected' in client.get("/settings").text
+    assert client.post("/settings", data={"release_channel": "invalid"}).status_code == 422
+    assert settings.read_paths()["release_channel"] == "prerelease"
 
 
 def test_channels_editor_uses_active_channels_home(tmp_path, monkeypatch):

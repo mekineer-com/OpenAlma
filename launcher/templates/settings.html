@@ -16,13 +16,21 @@
   </select>
   <p class="hint">Changing embeddings model for a soul requires rebuilding their db. Additional models will appear here only when that workflow is supported.</p>
 
+  <form method="post" action="/settings">
+  <h2>Launcher updates</h2>
+  <label for="release_channel">Release channel:</label>
+  <select id="release_channel" name="release_channel">
+    <option value="stable" {% if release_channel == 'stable' %}selected{% endif %}>Stable</option>
+    <option value="prerelease" {% if release_channel == 'prerelease' %}selected{% endif %}>Prerelease</option>
+  </select>
+  <p class="hint">Prerelease includes early releases. Updates are always optional.</p>
+
   <h2>Apps root</h2>
   <p class="muted">Directory that contains, or will contain, the sibling OpenAlma repositories.</p>
   <p>Active: <code>{{ apps_root_active or "(not resolved — service list will be empty until set)" }}</code></p>
   {% if apps_root_invalid and not apps_root_setup_target %}<p class="failure">The saved Apps root is invalid. Choose an existing directory.</p>{% endif %}
   {% if apps_root_pending %}<p>Setup target: <code>{{ apps_root_setup_target }}</code>. Install core from the Services page.</p>{% endif %}
   {% if apps_root_restart_required %}<p class="failure">Restart the launcher to use the saved Apps root.</p>{% endif %}
-  <form method="post" action="/settings">
     <label for="apps_root">Override path (leave blank to auto-discover):</label>
     <input id="apps_root" type="text" name="apps_root" value="{{ apps_root_stored }}" placeholder="/path/to/apps-root">
     <p class="hint">Auto-discovery walks up from the launcher's own directory looking for any ancestor containing <code>mcp-memu-server/run.py</code>. Set this only if your layout is non-standard.</p>
