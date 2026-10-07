@@ -82,7 +82,7 @@
           <summary>Rename</summary>
           <form method="post" action="/iris/installations/{{ row.device_session_id|urlencode }}/rename">
             <label>Display name<input type="text" name="display_name" value="{{ row.display_name }}" required></label>
-            <p><button class="btn" type="submit" {% if target_busy %}disabled{% endif %}>Save name</button></p>
+            <p><button class="btn" type="submit">Save name</button></p>
           </form>
         </details>
         <form class="inline" method="post" action="/iris/installations/{{ row.device_session_id|urlencode }}/forget" data-forget>
