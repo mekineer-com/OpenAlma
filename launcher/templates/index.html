@@ -203,7 +203,8 @@ document.addEventListener('submit', async function(event) {
       var result = await response.json();
       throw new Error(irisErrorMessage(result, 'Iris install failed'));
     }
-    location.reload();
+    if (form.getAttribute('action') === '/iris/install') location.assign('/iris');
+    else location.reload();
   } catch (error) {
     alert(error.message);
     if (button) button.disabled = false;

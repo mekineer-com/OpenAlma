@@ -68,7 +68,7 @@
       {% set fork = row.host_package == 'com.mentra.mentra.openalma' %}
       {% set target_busy = row.active or (installer_busy and iris.release_device_session_id == row.device_session_id) %}
       <li data-device-session-id="{{ row.device_session_id }}">
-        <strong title="{{ 'OpenAlma Mentra' if fork else 'Mentra' }} {{ 'v' ~ row.host_version if row.host_version else 'version unknown' }}, Iris {{ 'v' ~ row.installed_version if row.installed_version else 'not yet reported' }}">{{ row.display_name }}</strong>
+        <strong title="{{ 'App details unavailable' if row.metadata_known is sameas false else 'OpenAlma Mentra' if fork else 'Mentra' }} {{ 'v' ~ row.host_version if row.host_version else 'version unknown' }}, Iris {{ 'v' ~ row.installed_version if row.installed_version else 'not yet reported' }}">{{ row.display_name }}</strong>
         <p data-status>{{ row.status_label }}{% if row.detail %} &mdash; {{ row.detail }}{% endif %}</p>
         <p>Soul: {{ row.soul_id or 'Not chosen' }}</p>
         {% if row.action_kind == 'start' or (row.repair_available and fork and not row.active) %}
@@ -78,6 +78,7 @@
           <button class="btn" type="submit" {% if installer_busy or row.active or not iris_setup.ready or not iris_setup.enabled or (row.action_kind == 'start' and not row.startable) %}disabled{% endif %}>{{ row.action_label if row.action_kind == 'start' else 'Repair' }}</button>
         </form>
         {% elif row.action_kind == 'settings' %}<span class="muted">Setup needed: see host readiness above.</span>{% endif %}
+        {% if row.metadata_known is not sameas false %}
         <details>
           <summary>Rename</summary>
           <form method="post" action="/iris/installations/{{ row.device_session_id|urlencode }}/rename">
@@ -88,6 +89,7 @@
         <form class="inline" method="post" action="/iris/installations/{{ row.device_session_id|urlencode }}/forget" data-forget>
           <button class="btn" type="submit" {% if target_busy %}disabled{% endif %}>Forget</button>
         </form>
+        {% endif %}
       </li>
       {% else %}<li class="muted">No app installations reported. Use Stock Install, or connect OpenAlma Mentra in its Settings.</li>{% endfor %}
     </ul>
@@ -119,7 +121,7 @@
           row.device_session_id, row.display_name, row.host_package,
           row.host_version, row.installed_version, row.soul_id,
           row.action_kind, row.action_label, row.startable,
-          row.repair_available, row.active
+          row.repair_available, row.active, row.metadata_known
         ])
       ]);
     }
