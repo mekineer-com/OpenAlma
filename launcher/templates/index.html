@@ -49,8 +49,9 @@
       <tr><th>Service</th><th>Status</th><th>Actions</th><th>Logs</th></tr>
     </thead>
     <tbody>
-      {% for s in services %}
-      <tr data-service="{{ s.name }}" data-runtime="{{ 'false' if s.install_setup else 'true' }}" data-soul="{{ s.installed_soul or '' }}" data-device="{{ s.installed_device or '' }}">
+      {% set iris_rows = not_installed_services|selectattr('name', 'equalto', 'iris-server')|list %}
+      {% for s in services + iris_rows %}
+      <tr data-service="{{ s.name }}" data-runtime="{{ 'false' if s.install_setup else 'true' }}">
         <td>{{ s.label }}</td>
         <td class="svc-status">
           <span class="{{ s.state }}">{{ s.status_label }}</span>
@@ -64,7 +65,18 @@
           {% endif %}
         </td>
         <td class="svc-actions">
-          {% if s.install_running %}
+          {% if s.name == 'iris-server' %}
+            {% if s.install_running or s.state == 'stopping' %}
+            <span class="spinner" role="status" aria-label="Working"></span>
+            {% if s.force_stoppable %}<button class="btn" onclick="svcAction('iris-server','force-stop',this)">Force Stop</button>{% endif %}
+            {% elif s.action_kind == 'stop' or s.force_stoppable %}
+            <button class="btn" onclick="svcAction('iris-server','{{ 'force-stop' if s.force_stoppable else 'stop' }}',this)">{{ 'Force Stop' if s.force_stoppable else s.action_label or 'Cancel' }}</button>
+            {% elif s.action_kind == 'install' %}
+            <form class="inline" method="post" action="/install/iris-server"><button class="btn" type="submit">{{ s.action_label or 'Install' }}</button></form>
+            {% endif %}
+            <a class="btn" href="/iris">Setup</a>
+            {% if not s.install_setup and s.action_kind != 'install' %}<form class="inline" method="post" action="/iris/install"><button class="btn" type="submit">Stock Install</button></form>{% endif %}
+          {% elif s.install_running %}
             <span class="spinner" role="status" aria-label="Installing"></span>
           {% elif s.state == "stopping" %}
             <span class="spinner" role="status" aria-label="Stopping"></span>
@@ -94,8 +106,7 @@
             <span class="muted">not startable</span>
           {% endif %}
           {% if s.running and s.open_url %}<button class="btn" onclick="openService('{{ s.name }}')">Open</button>{% endif %}
-          {% if s.name == 'iris-server' and not (s.action_kind == 'install' and s.action_label == 'Install') %}<a class="btn" href="/iris">Setup</a>
-          {% elif s.name == 'channels-daemon' %}<a class="btn" href="/hermes{{ '?pair=1' if s.pairing_required else '' }}">Setup</a>{% endif %}
+          {% if s.name == 'channels-daemon' %}<a class="btn" href="/hermes{{ '?pair=1' if s.pairing_required else '' }}">Setup</a>{% endif %}
         </td>
         <td><a href="{{ '/install/' ~ s.name ~ '/logs' if s.install_setup else '/logs/' ~ s.name }}">view</a></td>
       </tr>
@@ -109,19 +120,18 @@
       </tr>
     </tbody>
   </table>
-  {% if not_installed_services %}
+  {% set other_not_installed = not_installed_services|rejectattr('name', 'equalto', 'iris-server')|list %}
+  {% if other_not_installed %}
   <details class="not-installed"{% if open_not_installed %} open{% endif %}>
-    <summary>Not installed ({{ not_installed_services|length }})</summary>
+    <summary>Not installed ({{ other_not_installed|length }})</summary>
     <ul>
-      {% for s in not_installed_services %}
+      {% for s in other_not_installed %}
       <li class="muted">
         {{ s.label }}
         {% if s.install_running %}<span class="spinner" role="status" aria-label="Installing"></span>
         {% elif s.action_kind == "install" %}<form class="inline" method="post" action="/install/{{ s.name }}"><button class="btn" type="submit">{{ s.action_label or "Install" }}</button></form>
         {% elif s.action_kind == "start" %}<button class="btn" onclick="svcAction('{{ s.name }}','start',this)">{{ s.action_label }}</button>
-        {% elif s.name == 'iris-server' %}
         {% else %}<button class="btn" disabled>Install</button>{% endif %}
-        {% if s.name == 'iris-server' and not (s.action_kind == 'install' and s.action_label == 'Install') %}<a class="btn" href="/iris">Setup</a>{% endif %}
         {% if s.detail %}<span class="svc-detail">{{ s.detail }}</span>{% endif %}
         {% if s.state == "setup" %}<a href="/install/{{ s.name }}/logs">log</a>{% endif %}
       </li>
@@ -172,6 +182,7 @@
     {% endfor %}
   </div>
 
+  <script src="/static/iris-services.js"></script>
   <script>
 var pendingStarts = {};
 var pendingStops = {};
@@ -188,9 +199,6 @@ async function svcAction(name, action, btn) {
 
   try {
     var url = '/service/' + name + '/' + action;
-    if (name === 'iris-server' && action === 'start' && row.dataset.soul && row.dataset.device) {
-      url += '?' + new URLSearchParams({soul_id: row.dataset.soul, device_session_id: row.dataset.device});
-    }
     var response = await fetch(url, {method: 'POST'});
     var result = await response.json();
     if (response.status === 428 && confirm(result.detail)) {
@@ -212,7 +220,8 @@ async function svcAction(name, action, btn) {
 }
 
 function actionHtml(name, data) {
-  var setup = name === 'iris-server' && !(data.action_kind === 'install' && data.action_label === 'Install') ? ' <a class="btn" href="/iris">Setup</a>' : name === 'channels-daemon' ? ' <a class="btn" href="/hermes' + (data.pairing_required ? '?pair=1' : '') + '">Setup</a>' : '';
+  if (name === 'iris-server') return irisParentActions(data);
+  var setup = name === 'channels-daemon' ? ' <a class="btn" href="/hermes' + (data.pairing_required ? '?pair=1' : '') + '">Setup</a>' : '';
   var open = data.running && data.open_url ? ' <button class="btn" onclick="openService(\'' + esc(name) + '\')">Open</button>' : '';
   if (data.install_running) return '<span class="spinner" role="status" aria-label="Installing"></span>' + setup;
   if (data.state === 'stopping') {
@@ -266,8 +275,7 @@ function pollStatus(name) {
         return;
       }
       if (!data.install_setup) row.dataset.runtime = 'true';
-      row.dataset.soul = data.installed_soul || '';
-      row.dataset.device = data.installed_device || '';
+      if (name === 'iris-server') renderIrisInstallations(data);
       var statusCell = row.querySelector('.svc-status');
       var actionsCell = row.querySelector('.svc-actions');
       var state = data.state || (data.running ? 'running' : 'stopped');
@@ -299,6 +307,11 @@ function pollStatus(name) {
     })
     .catch(function() {});
 }
+
+{% for s in services + iris_rows if s.name == 'iris-server' %}
+renderIrisInstallations({{ s|tojson }});
+document.querySelector('tr[data-service="iris-server"] .svc-actions').innerHTML = irisParentActions({{ s|tojson }});
+{% endfor %}
 
 document.querySelectorAll('.snapshot-time').forEach(function(element) {
   element.textContent = fmtSnapshot(element.dataset.timestamp);

@@ -51,6 +51,7 @@ _MENTRA_READINESS_CACHE: dict[str, tuple[float, dict]] = {}
 _MENTRA_INGRESS_AUDIT_CACHE: set[tuple[str, str]] = set()
 _IRIS_RELEASE_CACHE: tuple[float, tuple[str, str, str] | None, str] | None = None
 _STOP_LOCK = threading.Lock()
+_IRIS_INSTALL_LOCK = threading.Lock()
 _STOP_THREADS: dict[str, threading.Thread] = {}
 _STOP_ERRORS: dict[str, str] = {}
 _STOP_STARTED: dict[str, float] = {}
@@ -605,17 +606,28 @@ def retry_memorize(soul_id: str, user_id: str) -> dict:
         raise RuntimeError("memU Server is unavailable") from exc
 
 
-def _mcp_request(path: str, payload: dict | None = None, *, timeout: float = 2) -> dict:
+def _mcp_request(path: str, payload: dict | None = None, *, timeout: float = 2, method: str | None = None) -> dict:
     request = urllib.request.Request(
         f"http://127.0.0.1:{MEMU_SERVER_PORT}{path}",
         data=json.dumps(payload).encode() if payload is not None else None,
         headers={"Content-Type": "application/json"},
+        method=method,
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         data = json.loads(response.read().decode("utf-8"))
     if not isinstance(data, dict):
         raise ValueError("Server returned an invalid response")
     return data
+
+
+def iris_installation_request(device_session_id: str = "", display_name: str | None = None) -> dict:
+    path = "/mentra/installations"
+    if device_session_id:
+        path += "/" + urllib.parse.quote(device_session_id, safe="")
+    return _mcp_request(
+        path, {"display_name": display_name} if display_name is not None else {},
+        method="PATCH" if display_name is not None else "DELETE" if device_session_id else "POST",
+    )
 
 
 def _http_error_detail(exc: urllib.error.HTTPError) -> object:
@@ -1045,13 +1057,20 @@ def _download_iris_release(url: str, package: str, version: str) -> Path:
     return destination
 
 
-def _read_iris_release_status(spec: ServiceSpec, runtime: RuntimeState) -> dict:
-    if not runtime.running:
-        return {}
+def _iris_release_record(spec: ServiceSpec) -> dict:
     try:
         data = json.loads((spec.cwd / "build" / "release-private-status.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _read_iris_release_status(spec: ServiceSpec, runtime: RuntimeState) -> dict:
+    if not runtime.running and not _IRIS_INSTALL_LOCK.locked():
+        return {}
+    data = _iris_release_record(spec)
+    if data.get("device_session_id") and "pid" not in data:
+        return data  # Captured target while the wrapper starts.
     try:
         pid = int(data.get("pid"))
     except (AttributeError, TypeError, ValueError):
@@ -1131,7 +1150,7 @@ def _iris_product_status(
     ):
         state, label, detail, action = "setup", "▲ setup needed", "Open Iris & Phone Setup", "settings"
     elif not installed_package:
-        state, label, detail, action = "stopped", "○ not installed", "Not yet verified", "settings"
+        state, label, detail, action = "stopped", "○ not installed", "Not yet verified", "start"
     elif mismatch:
         state, label, detail, action = "update", "▲ update available", age, "start"
     elif mentra.get("state") in {"degraded", "transcript_gap"}:
@@ -1215,21 +1234,50 @@ def status(spec: ServiceSpec) -> dict:
         runtime = _runtime_state(spec)
         release = _read_iris_release_status(spec, runtime)
         release_device = str(release.get("device_session_id") or "")
-        mentra = _read_mentra_status(MEMU_SERVER_PORT, device_session_id=release_device)
+        mentra = _read_mentra_status(MEMU_SERVER_PORT)
         package, version, url, github_status = _iris_release_candidate(spec)
-        result = _iris_product_status(runtime, mentra, package, version, readiness)
+        result = _iris_product_status(runtime, {**mentra, "active": False, "starting": False}, package, version, readiness)
         result.update(available_source="github" if url else "local", github_status=github_status)
         result["setup"] = readiness
+        result["starting"] = _IRIS_INSTALL_LOCK.locked() and not runtime.running
+        if result["starting"]:
+            result.update(state="starting", status_label="◐ preparing installer", action_kind=None, action_label="", startable=False)
+        result["installations"] = []
+        for record in mentra.get("installations", []):
+            device = record["device_session_id"]
+            session = next((s for s in mentra.get("sessions", []) if s["device_session_id"] == device), None)
+            host = record.get("host") or {}
+            scoped = {
+                "state": "active" if session else mentra.get("state", "ready") if mentra.get("state") in {"disabled", "unavailable"} else "ready",
+                "detail": mentra.get("detail", ""), "active": bool(session),
+                "installed_package": record.get("package_name"),
+                "installed_version": record.get("version"), "installed_seen_at": record.get("seen_at"),
+                "installed_soul": session["soul_id"] if session else record.get("soul_id"),
+                "installed_device": device, "host": host,
+            }
+            if session:
+                scoped.update(_read_mentra_status(MEMU_SERVER_PORT, device_session_id=device))
+                scoped["installed_soul"] = session["soul_id"]
+            row_runtime = runtime if release_device == device else RuntimeState()
+            projection = _iris_product_status(row_runtime, scoped, package, version, readiness)
+            if result["starting"] and release_device == device:
+                projection.update(state="starting", status_label="◐ preparing installer", action_kind=None, startable=False)
+            result["installations"].append({
+                **projection, "device_session_id": device,
+                "display_name": record.get("display_name") or device,
+                "host_package": host.get("host_package") or "com.mentra.mentra",
+                "host_version": host.get("host_version"), "soul_id": scoped["installed_soul"],
+            })
+        # Installation actions live on app rows, never on an unscoped parent.
+        if result["action_kind"] == "start":
+            result.update(state="ready", status_label="● Host ready", detail="",
+                          action_kind="settings", action_label="Setup", startable=False)
         if release:
             result["release_uri"] = release.get("release_uri")
             result["release_device_session_id"] = release.get("device_session_id")
             result["release_started_at"] = release.get("started_at")
-            try:
-                result["automatic_offer"] = result["automatic_host"] and float(
-                    (mentra.get("host") or {}).get("seen_at")
-                ) >= float(release.get("started_at"))
-            except (AttributeError, TypeError, ValueError):
-                result["automatic_offer"] = False
+            result["release_host_package"] = release.get("host_package")
+            result["automatic_offer"] = release.get("host_package") == "com.mentra.mentra.openalma"
         return _stop_status(spec, result)
     runtime = _runtime_state(spec)
     running = runtime.running
@@ -1364,18 +1412,48 @@ def raise_if_stopping(spec: ServiceSpec) -> None:
 
 
 def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None) -> None:
+    if spec.name != "iris-server":
+        return _start(spec)
+    if not _IRIS_INSTALL_LOCK.acquire(blocking=False):
+        raise ServiceStoppingError("Iris installer is starting; wait before installing another app")
+    try:
+        _start(spec, install_target=install_target)
+    finally:
+        _IRIS_INSTALL_LOCK.release()
+
+
+def raise_if_iris_installer_busy(spec: ServiceSpec) -> None:
+    runtime = _runtime_state(spec)
+    if runtime.running or runtime.stuck or runtime.orphaned or runtime.port_blocked:
+        release = _iris_release_record(spec)
+        name = release.get("display_name")
+        if not name and release.get("device_session_id"):
+            records = _read_mentra_status(MEMU_SERVER_PORT).get("installations", [])
+            name = next((r.get("display_name") for r in records if r["device_session_id"] == release["device_session_id"]), None)
+        name = name or release.get("device_session_id") or "another app"
+        raise ServiceStoppingError(f"Iris installer is busy for {name}; finish or stop it first")
+
+
+def _start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None) -> None:
     _clear_port_cache(spec)
     with _STOP_LOCK:
         _raise_if_stopping_locked(spec)
         _STOP_ERRORS.pop(spec.name, None)
     runtime = _runtime_state(spec)
     if runtime.running or runtime.stuck or runtime.orphaned or runtime.port_blocked:
+        if spec.name == "iris-server":
+            raise_if_iris_installer_busy(spec)
         return
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     spec.log_path.parent.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, **spec.env}
     if spec.name == "iris-server":
         env.update(_iris_build_env(spec, install_target))
+        target_path = spec.cwd / "build" / "release-private-status.json"
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target_path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(install_target))
+        temporary.replace(target_path)
         package, version, url, _ = _iris_release_candidate(spec)
         if not url:
             raise ValueError("Published Iris bundle unavailable; development builds must be run explicitly")

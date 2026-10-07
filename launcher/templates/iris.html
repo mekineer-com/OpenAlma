@@ -2,10 +2,10 @@
 {% set setup_logo = "/static/iris-logo.svg" %}
 {% include "_settings_head.html" %}
 {% include "_header.html" %}
+  {% set installer_busy = iris.running or iris.starting or iris.stuck or iris.orphaned %}
   <h2>Iris &amp; Phone Setup</h2>
   {% if not iris_setup.enabled %}
     <p class="muted">Disabled. Enable Mentra in <code>mcp-memu-server/config.json</code> to use Iris.</p>
-    {% if iris.stoppable %}<p>Iris installer is still running. <button class="btn" type="button" onclick="irisAction('stop')">Cancel</button></p>{% endif %}
   {% else %}
     <ul class="checklist">
       {% for row in iris_setup.rows %}
@@ -14,14 +14,17 @@
     </ul>
     {% if iris_setup.ready %}<p class="ready">Host ready</p>{% else %}<p class="failure">Next: {{ iris_setup.reason }}</p>{% endif %}
 
-    <h3>Iris installation</h3>
-    <p>
-      {% if iris.installed_version %}
-        Installed {{ iris.installed_version }}{% if iris.update_available %}; {{ iris.available_version }} available{% endif %}.
-      {% else %}
-        Not yet observed on this phone.
-      {% endif %}
-    </p>
+  {% endif %}
+
+    <h3>Connection values</h3>
+    <label>OpenAlma address<input type="text" readonly value="{{ iris_connection.base_url or '' }}"></label>
+    <p class="hint">Use a trusted private VPN or connection. Devices allowed to reach this endpoint can access the Soul's Iris data; trust the permitted devices and network access rules.</p>
+
+    <h3>Iris installer</h3>
+    <form method="post" action="/iris/install" id="iris-install-form">
+      <p><button class="btn" type="submit" {% if not iris_setup.ready or not iris_setup.enabled or installer_busy %}disabled{% endif %}>Stock Install</button></p>
+    </form>
+    <p class="hint">For a new Stock Mentra installation, use <a href="https://play.google.com/store/apps/details?id=com.mentra.mentra">Stock Mentra</a> and scan the Iris QR below. OpenAlma Mentra is recommended for automatic Iris installation; no verified APK download link is available here.</p>
     {% if iris.github_status == "unavailable" %}
       <p class="muted">GitHub releases unavailable; local {{ iris.available_version }} selected.</p>
     {% elif iris.github_status == "none" %}
@@ -29,138 +32,146 @@
     {% elif iris.github_status == "invalid" %}
       <p class="muted">GitHub release is missing the expected Iris asset; local {{ iris.available_version }} selected.</p>
     {% endif %}
-    {% if iris.running and iris.release_uri %}
-      <p>Scan this QR in Mentra:</p>
+    {% if installer_busy %}
+      <p>{{ iris.status_label }}</p>
+      {% if iris.release_device_session_id %}
+      <p>Installer target:
+        {% for row in iris.installations if row.device_session_id == iris.release_device_session_id %}<strong>{{ row.display_name }}</strong>{% endfor %}
+        <code>{{ iris.release_device_session_id }}</code>. Cancel this installer before installing on another app.</p>
+      {% endif %}
+    {% endif %}
+    {% if iris.running and iris.release_uri and iris.release_host_package == 'com.mentra.mentra' %}
+      <p>Scan this QR in Stock Mentra (one app installation only):</p>
       <canvas id="iris-install-qr" width="220" height="220"></canvas>
       <p><a href="{{ iris.release_uri }}">Open installation link</a></p>
       <p>Phone ID: <code>{{ iris.release_device_session_id }}</code></p>
-      {% if iris.automatic_offer %}<p class="ready">OpenAlma Mentra detected. Bring it to the foreground; it may complete installation automatically.</p>{% endif %}
-      <p>Manual Mentra fallback:</p>
+      <p>Stock Mentra installation:</p>
       <ol class="tight">
         <li>Open Mentra Settings.</li>
         <li>If Miniapp Developer Settings is missing, tap the release number ten times.</li>
         <li>Open Miniapp Developer Settings and choose Scan Miniapp QR Code.</li>
         <li>Scan this QR, then open Iris.</li>
-        <li>If Iris asks for setup, use the connection values below and enter the displayed Phone ID exactly.</li>
+        <li>For an Update, dismiss Iris from Mentra's app switcher, then reopen it.</li>
         <li>Wait for OpenAlma to confirm installation; cleanup is automatic.</li>
+        <li>Choose the Soul in Iris on the phone.</li>
       </ol>
-      <label>OpenAlma address<input type="text" readonly value="{{ iris_connection.base_url or '' }}"></label>
-      <label>Connection key<input type="password" readonly value="{{ iris_connection.bearer or '' }}"></label>
-      <p><button class="btn" type="button" onclick="irisAction('stop')">Cancel</button></p>
-    {% elif iris.running %}
-      <p>{{ iris.status_label }}</p>
-      <p><button class="btn" type="button" onclick="irisAction('stop')">Cancel</button></p>
-    {% elif iris_setup.ready and not iris.active %}
-      {% if not iris.installed_version %}
-      <form method="post" action="/iris/install" id="iris-install-form">
-        <label for="iris-soul">Soul name</label><input type="text" id="iris-soul" name="soul_id" required>
-        <input id="iris-use-existing" type="hidden" name="use_existing" value="false">
-        <label for="iris-soul-existing">Existing soul</label>
-        <select id="iris-soul-existing"><option value="">Select existing soul</option></select>
-        <p class="hint" id="iris-soul-status" aria-live="polite">Choose an existing soul or enter a new name.</p>
-        <label for="iris-device">Phone ID (letters, digits, dots, hyphens or underscores)</label><input type="text" id="iris-device" name="device_session_id" required pattern="[A-Za-z0-9._-]{1,128}">
-        <p><button class="btn" id="iris-install-button" type="submit" disabled>Install Iris</button></p>
-      </form>
-      {% else %}
-        {% if iris.update_available or iris.repair_available %}
-        <p><button class="btn" type="button" onclick="irisAction('start', this)">{{ "Update" if iris.update_available else "Repair" }}</button></p>
-        {% endif %}
-      {% endif %}
+    {% elif iris.running and iris.release_host_package == 'com.mentra.mentra.openalma' %}
+      <p class="ready">Bring the targeted OpenAlma Mentra app to the foreground to install automatically. No QR is needed.</p>
     {% endif %}
+    {% if iris.force_stoppable %}<p><button class="btn" type="button" onclick="irisAction('force-stop', this)">Force Stop</button></p>
+    {% elif iris.stoppable %}<p><button class="btn" type="button" onclick="irisAction('stop', this)">Cancel</button></p>{% endif %}
+    <p id="iris-action-error" class="failure" role="alert"></p>
+
+    <h3>App installations</h3>
+    <ul class="checklist" id="iris-installations">
+      {% for row in iris.installations %}
+      {% set fork = row.host_package == 'com.mentra.mentra.openalma' %}
+      {% set target_busy = row.active or (installer_busy and iris.release_device_session_id == row.device_session_id) %}
+      <li data-device-session-id="{{ row.device_session_id }}">
+        <strong title="{{ 'OpenAlma Mentra' if fork else 'Mentra' }} {{ 'v' ~ row.host_version if row.host_version else 'version unknown' }}, Iris {{ 'v' ~ row.installed_version if row.installed_version else 'not yet reported' }}">{{ row.display_name }}</strong>
+        <p data-status>{{ row.status_label }}{% if row.detail %} &mdash; {{ row.detail }}{% endif %}</p>
+        <p>Soul: {{ row.soul_id or 'Not chosen' }}</p>
+        {% if row.action_kind == 'start' or (row.repair_available and fork and not row.active) %}
+        <form class="inline" method="post" action="/iris/install">
+          <input type="hidden" name="device_session_id" value="{{ row.device_session_id }}">
+          <input type="hidden" name="host_package" value="{{ row.host_package }}">
+          <button class="btn" type="submit" {% if installer_busy or row.active or not iris_setup.ready or not iris_setup.enabled or (row.action_kind == 'start' and not row.startable) %}disabled{% endif %}>{{ row.action_label if row.action_kind == 'start' else 'Repair' }}</button>
+        </form>
+        {% elif row.action_kind == 'settings' %}<span class="muted">Setup needed: see host readiness above.</span>{% endif %}
+        <details>
+          <summary>Rename</summary>
+          <form method="post" action="/iris/installations/{{ row.device_session_id|urlencode }}/rename">
+            <label>Display name<input type="text" name="display_name" value="{{ row.display_name }}" required></label>
+            <p><button class="btn" type="submit" {% if target_busy %}disabled{% endif %}>Save name</button></p>
+          </form>
+        </details>
+        <form class="inline" method="post" action="/iris/installations/{{ row.device_session_id|urlencode }}/forget" data-forget>
+          <button class="btn" type="submit" {% if target_busy %}disabled{% endif %}>Forget</button>
+        </form>
+      </li>
+      {% else %}<li class="muted">No app installations reported. Use Stock Install, or connect OpenAlma Mentra in its Settings.</li>{% endfor %}
+    </ul>
+    <p class="hint">Forget removes only this launcher record, not phone storage, chats or memories. A later app report can restore it. Update updates Iris, not the Mentra host app. Repair preserves the installation identity and is available only for idle OpenAlma Mentra.</p>
 
     <h3>Phone steps</h3>
     <ol class="tight">
-      <li>Make the WireGuard UDP endpoint reachable. Behind a home router, forward its UDP port to this host.</li>
-      <li>Install WireGuard on the phone, import the OpenAlma profile, and activate it.</li>
-      <li>Install Mentra.</li>
+      <li>Make the OpenAlma address above reachable through your trusted private connection.</li>
+      <li>Connect the phone to that private VPN or connection.</li>
+      <li>Install Mentra: OpenAlma Mentra (recommended for Iris automation; no verified APK download link available here) or <a href="https://play.google.com/store/apps/details?id=com.mentra.mentra">Stock Mentra</a>. Open OpenAlma Mentra Settings and enter the address shown here if the default does not connect.</li>
       <li>Install or update Iris above, then open it once.</li>
       <li>Allow Mentra microphone access. Android/Mentra asks for camera or photo access when needed.</li>
-      <li>Test by tapping Start to talk with a Soul; listen for the beep.</li>
+      <li>Choose a Soul on the phone, then tap Start to talk; listen for the beep.</li>
     </ol>
-    <p class="muted">
-      Phone connection:
-      {% if iris.active %}<span class="ready">Connected</span>{% elif iris.installed_version %}{{ iris.detail }}{% else %}<span class="unknown">Not yet verified</span>{% endif %}.
-      Installation uses the host connection settings. Repair preserves the recorded phone identity.
-    </p>
-  {% endif %}
 
 <script src="/static/vendor/qrcode.min.js"></script>
-<script src="/static/soul-selector.js"></script>
 <script>
-    const irisInstallForm = document.getElementById("iris-install-form");
-    if (irisInstallForm) {
-      const irisSoul = document.getElementById("iris-soul");
-      const irisExisting = document.getElementById("iris-soul-existing");
-      const irisStatus = document.getElementById("iris-soul-status");
-      const irisButton = document.getElementById("iris-install-button");
-      const irisUseExisting = document.getElementById("iris-use-existing");
-      let irisSoulsLoaded = false;
-      let lookupVersion = 0;
-      const irisSelector = createSoulSelector(irisSoul, irisExisting, irisUseExisting);
-
-      async function loadIrisSouls() {
-        const version = ++lookupVersion;
-        irisButton.disabled = true;
-        irisStatus.textContent = "Loading souls...";
-        try {
-          const response = await fetch("/souls");
-          if (!response.ok) throw new Error();
-          const payload = await response.json();
-          if (version !== lookupVersion) return false;
-          irisSelector.setSouls(payload.souls);
-          irisSoulsLoaded = true;
-          irisButton.disabled = false;
-          irisStatus.textContent = payload.souls.length ? "Choose an existing soul or enter a new name." : "No existing souls. Enter a name to create the first soul.";
-          return true;
-        } catch (_err) {
-          if (version !== lookupVersion) return false;
-          irisSoulsLoaded = false;
-          irisSelector.setSouls([]);
-          irisStatus.textContent = "Souls unavailable. Start mcp-memu-server before installing Iris.";
-          return false;
-        }
-      }
-
-      irisSoul.addEventListener("focus", function() {
-        if (!irisSoulsLoaded) loadIrisSouls();
-      });
-      irisInstallForm.addEventListener("submit", async function(event) {
-        if (!irisSoulsLoaded) {
-          event.preventDefault();
-          if (await loadIrisSouls()) irisInstallForm.requestSubmit();
-          return;
-        }
-        event.preventDefault();
-        if (irisSelector.prepareSubmit()) void submitSoulForm(irisInstallForm);
-      });
+    const initialStatus = {{ iris|tojson }};
+    const actionError = document.getElementById('iris-action-error');
+    let submitting = false;
+    function statusSignature(status) {
+      return JSON.stringify([
+        status.running, status.starting, status.stuck, status.orphaned,
+        status.stoppable, status.force_stoppable, status.status_label, status.release_uri,
+        status.release_device_session_id, status.release_host_package,
+        status.github_status, status.available_version, status.setup,
+        (status.installations || []).map(row => [
+          row.device_session_id, row.display_name, row.host_package,
+          row.host_version, row.installed_version, row.soul_id,
+          row.action_kind, row.action_label, row.startable,
+          row.repair_available, row.active
+        ])
+      ]);
     }
-
-    {% if iris.running %}
-    const releaseUri = {{ (iris.release_uri or '')|tojson }};
+    const initialSignature = statusSignature(initialStatus);
     setInterval(async function() {
+      if (submitting) return;
       try {
         const response = await fetch('/service/iris-server/status');
         if (!response.ok) return;
         const status = await response.json();
-        if (!status.running || (status.release_uri || '') !== releaseUri) location.reload();
+        const items = Array.from(document.querySelectorAll('[data-device-session-id]'));
+        for (const row of status.installations || []) {
+          const item = items.find(item => item.dataset.deviceSessionId === row.device_session_id);
+          if (item) item.querySelector('[data-status]').textContent =
+            [row.status_label, row.detail].filter(Boolean).join(' — ');
+        }
+        // Keep an open Rename form (including an unsaved name) intact.
+        if (statusSignature(status) !== initialSignature &&
+            !document.querySelector('#iris-installations details[open]')) location.reload();
       } catch (_err) {}
     }, 2000);
-    {% endif %}
-    function irisAction(action, button) {
-      if (button) { button.disabled = true; button.textContent = "Starting…"; }
-      let url = '/service/iris-server/' + action;
-      if (action === 'start') {
-        url += '?' + new URLSearchParams({
-          soul_id: {{ (iris.installed_soul or '')|tojson }},
-          device_session_id: {{ (iris.installed_device or '')|tojson }}
-        });
+    async function irisRequest(url, options, button) {
+      if (submitting) return;
+      submitting = true;
+      actionError.textContent = '';
+      if (button) button.disabled = true;
+      try {
+        const response = await fetch(url, options);
+        if (!response.ok) {
+          const payload = await response.json();
+          throw new Error(payload.detail || 'Iris action failed.');
+        }
+        location.reload();
+      } catch (err) {
+        actionError.textContent = err.message;
+        if (button) button.disabled = false;
+        submitting = false;
       }
-      fetch(url, {method: 'POST'})
-        .then(function(response) { if (!response.ok) throw new Error(); location.reload(); })
-        .catch(function() { location.reload(); });
     }
+    function irisAction(action, button) {
+      if (action === 'force-stop' && !confirm('Force Stop may interrupt unfinished work. Continue?')) return;
+      return irisRequest('/service/iris-server/' + action + (action === 'force-stop' ? '?confirmed=true' : ''), {method: 'POST'}, button);
+    }
+    document.querySelectorAll('form[action^="/iris/"]').forEach(form => {
+      form.addEventListener('submit', function(event) {
+        event.preventDefault();
+        if (form.hasAttribute('data-forget') &&
+            !confirm('Forget this installation record? Chats, memories and phone storage are not deleted.')) return;
+        void irisRequest(form.action, {method: 'POST', body: new FormData(form)}, event.submitter);
+      });
+    });
 
-    {% if iris.release_uri %}
+    {% if iris.running and iris.release_uri and iris.release_host_package == 'com.mentra.mentra' %}
     try {
       QRCode.toCanvas(document.getElementById('iris-install-qr'), {{ iris.release_uri|tojson }}, { width: 220, margin: 1 });
     } catch (_err) {}

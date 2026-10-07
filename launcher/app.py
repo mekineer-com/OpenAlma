@@ -134,7 +134,8 @@ def _setup_aware_status(spec: services.ServiceSpec, root: Path, *, verify_runtim
         return _row_with_setup(runtime, setup) if issue or setup_install.read_pending_release(root) or release else runtime
     setup = setup_install.optional_setup_status(spec.name, root)
     if not setup["ready"]:
-        return _row_with_setup(runtime, setup)
+        row = _row_with_setup(runtime, setup)
+        return {**runtime, **row} if spec.name == "iris-server" else row
     if setup["guidance"]:
         runtime["detail"] = "; ".join(filter(None, (runtime.get("detail"), setup["guidance"])))
     return runtime
@@ -181,7 +182,7 @@ def index(request: Request) -> HTMLResponse:
                 )
                 (
                     rows
-                    if iris.get("installed_package") or iris.get("running") or not iris.get("installation_known", True)
+                    if iris.get("installations") or iris.get("running") or not iris.get("installation_known", True)
                     else not_installed
                 ).append(iris)
                 continue
@@ -711,21 +712,20 @@ def logs(request: Request, service_name: str, lines: int = 200) -> HTMLResponse:
 
 
 @app.post("/service/{service_name}/start")
-def service_start(service_name: str, soul_id: str = "", device_session_id: str = "") -> dict:
+def service_start(service_name: str, device_session_id: str = "", host_package: str = "") -> dict:
     spec = _find_service(service_name)
     _require_startable_setup(service_name)
     try:
-        target = None
-        if service_name == "iris-server" and (soul_id or device_session_id):
-            if not soul_id or not device_session_id:
-                raise ValueError("Iris Update/Repair requires its Soul and Phone ID")
-            target = {"soul_id": soul_id, "device_session_id": device_session_id}
-        if target:
-            services.start(spec, install_target=target)
+        if service_name == "iris-server":
+            if not device_session_id:
+                raise ValueError("Choose an Iris app installation")
+            _start_iris_install(spec, device_session_id, host_package)
         else:
             services.start(spec)
     except services.ServiceStoppingError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except services.OwnerServiceUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, **services.status(spec)}
@@ -743,23 +743,84 @@ def service_open(service_name: str) -> dict[str, bool]:
 
 @app.post("/iris/install")
 def iris_install(
-    soul_id: str = Form(), device_session_id: str = Form(), use_existing: bool = Form(default=False),
+    device_session_id: str = Form(default=""), host_package: str = Form(default=""),
 ) -> RedirectResponse:
     spec = _find_service("iris-server")
     _require_startable_setup("iris-server")
-    target = {"soul_id": soul_id, "device_session_id": device_session_id}
     try:
-        services.raise_if_stopping(spec)
-        services.iris_install_env(target)
-        target["soul_id"] = _resolve_soul(soul_id, use_existing)
-        services.start(spec, install_target=target)
+        _start_iris_install(spec, device_session_id, host_package)
     except services.ServiceStoppingError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except services.OwnerServiceUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(status_code=exc.code, detail=services._http_error_detail(exc)) from exc
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RedirectResponse("/iris", status_code=303)
+
+
+def _start_iris_install(spec: services.ServiceSpec, device_session_id: str, host_package: str) -> None:
+    if not services._IRIS_INSTALL_LOCK.acquire(blocking=False):
+        raise services.ServiceStoppingError("Iris installer is starting; wait before installing another app")
+    try:
+        services.raise_if_stopping(spec)
+        services.raise_if_iris_installer_busy(spec)
+        if not device_session_id:
+            if host_package:
+                raise ValueError("Choose an Iris app installation")
+            device_session_id = services.iris_installation_request()["device_session_id"]
+            host_package = "com.mentra.mentra"
+        target = _iris_install_target(device_session_id, host_package)
+        services._start(spec, install_target=target)
+    finally:
+        services._IRIS_INSTALL_LOCK.release()
+
+
+def _iris_install_target(device_session_id: str, host_package: str) -> dict[str, str]:
+    if not device_session_id or host_package not in {"com.mentra.mentra", "com.mentra.mentra.openalma"}:
+        raise ValueError("Choose an Iris app installation")
+    status = services._read_mentra_status(services.MEMU_SERVER_PORT, device_session_id=device_session_id)
+    if status.get("state") == "unavailable":
+        raise HTTPException(status_code=503, detail=status["detail"])
+    record = next((r for r in status.get("installations", []) if r["device_session_id"] == device_session_id), None)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Installation not found")
+    if status.get("active") or status.get("starting"):
+        raise HTTPException(status_code=409, detail="Stop Iris on this app before installing")
+    if ((record.get("host") or {}).get("host_package") or "com.mentra.mentra") != host_package:
+        raise ValueError("Mentra app does not match the selected installation")
+    return {"device_session_id": device_session_id, "host_package": host_package,
+            "display_name": record.get("display_name") or device_session_id}
+
+
+@app.post("/iris/installations/{device_session_id}/rename")
+def iris_rename(device_session_id: str, display_name: str = Form()) -> dict:
+    return _iris_metadata_action(device_session_id, display_name)
+
+
+@app.post("/iris/installations/{device_session_id}/forget")
+def iris_forget(device_session_id: str) -> dict:
+    if not services._IRIS_INSTALL_LOCK.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Wait for the Iris installer to start")
+    try:
+        spec = next((s for s in services.all_services() if s.name == "iris-server"), None)
+        if spec:
+            runtime = services._runtime_state(spec)
+            if (runtime.running or runtime.stuck or runtime.orphaned) and services._iris_release_record(spec).get("device_session_id") == device_session_id:
+                raise HTTPException(status_code=409, detail="Finish or stop this app's installer first")
+        return _iris_metadata_action(device_session_id)
+    finally:
+        services._IRIS_INSTALL_LOCK.release()
+
+
+def _iris_metadata_action(device_session_id: str, display_name: str | None = None) -> dict:
+    try:
+        return services.iris_installation_request(device_session_id, display_name)
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(status_code=exc.code, detail=services._http_error_detail(exc)) from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="memU Server is unavailable") from exc
 
 
 @app.get("/souls")

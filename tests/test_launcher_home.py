@@ -308,9 +308,8 @@ def test_uninstalled_iris_opens_phone_client_section_for_openalma_host(tmp_path,
 
     html = TestClient(app.app, base_url="http://127.0.0.1").get("/").text
 
-    assert '<details class="not-installed" open>' in html
     assert 'href="/iris">Setup</a>' in html
-    assert 'data-service="iris-server"' not in html
+    assert 'data-service="iris-server"' in html
 
 
 def test_phone_reported_iris_is_a_service(tmp_path, monkeypatch):
@@ -318,7 +317,7 @@ def test_phone_reported_iris_is_a_service(tmp_path, monkeypatch):
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
     monkeypatch.setattr(app.services, "all_services", lambda: [spec])
     monkeypatch.setattr(app.services, "status", lambda _spec: {
-        "state": "ready", "installed_package": "com.openalma.mentra",
+        "state": "ready", "installations": [{"device_session_id": "stock-test", "display_name": "Phone"}],
     })
     monkeypatch.setattr(app.setup_install, "optional_setup_status", lambda *_args: {"ready": True, "guidance": ""})
     monkeypatch.setattr(app.policy, "list_whatsapp_chats", lambda: [])
