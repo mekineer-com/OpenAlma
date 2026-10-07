@@ -61,6 +61,9 @@ def test_initial_and_polled_setup_actions_match():
         {"name": "iris-server", "action_kind": "install", "action_label": "Update"},
         {"name": "iris-server", "action_kind": "start", "action_label": "Update"},
         {"name": "iris-server", "action_kind": "stop", "action_label": "Cancel"},
+        {"name": "iris-server", "install_enabled": False},
+        {"name": "iris-server", "install_running": True, "force_stoppable": True},
+        {"name": "iris-server", "state": "stopping"},
         {"name": "channels-daemon", "startable": True},
         {"name": "channels-daemon", "running": True, "stoppable": True, "pairing_required": True},
     ]
@@ -77,7 +80,10 @@ console.log(JSON.stringify(JSON.parse(process.argv[2]).map(row=>actionHtml(row.n
     for row, dynamic in zip(cases, polled):
         initial = _render({}, services=[row]).split('<td class="svc-actions">', 1)[1].split("</td>", 1)[0]
         assert labels(initial) == labels(dynamic)
-    assert labels(polled[2]) == ["Setup", "Stock Install"]
+        if row["name"] == "iris-server":
+            assert "Stock Install" not in initial + dynamic
+            assert 'action="/iris/install"' not in initial + dynamic
+    assert labels(polled[2]) == ["Setup"]
     assert 'href="/hermes?pair=1"' in polled[-1]
 
 
@@ -92,6 +98,76 @@ def test_memorize_gauge_over_threshold_shows_sleep_gap_badge():
     assert "Memorize: 12,900 / 8,000 (161%)" in html
     assert 'style="width: 100%"' in html
     assert "waiting for sleep-gap" in html
+
+
+def test_iris_setup_names_open_existing_rename_and_live_fallback_is_readonly():
+    template_dir = Path(__file__).resolve().parents[1] / "launcher/templates"
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader(template_dir), autoescape=True)
+    installations = [
+        {"device_session_id": "confirmed-app", "display_name": "Test Phone",
+         "host_package": "com.mentra.mentra.openalma", "host_version": "3.2.1",
+         "package_name": "com.openalma.mentra", "action_kind": "start",
+         "action_label": "Install", "startable": True},
+        {"device_session_id": "forgotten-app", "display_name": "Unreported app",
+         "metadata_known": False, "active": True, "status_label": "Connected"},
+    ]
+    context = dict(
+        iris={"installations": installations},
+        iris_setup={"enabled": True, "ready": True, "rows": []},
+        iris_connection={"base_url": "http://fixture.invalid"},
+    )
+    html = env.get_template("iris.html").render(**context, selected_installation=installations[0])
+    confirmed = html.split('data-device-session-id="confirmed-app"', 1)[1].split("</li>", 1)[0]
+    assert '<details class="iris-rename">' in confirmed
+    assert 'aria-label="Rename Test Phone">Test Phone</summary>' in confirmed
+    assert 'action="/iris/installations/confirmed-app/rename"' in confirmed
+    assert 'action="/iris/install"' in confirmed
+    assert '<summary>Rename</summary>' not in html
+    assert '>Stock Install</button>' not in html
+    assert 'data-device-session-id="forgotten-app"' not in html
+    html = env.get_template("iris.html").render(**context, selected_installation=installations[1])
+    live = html.split('data-device-session-id="forgotten-app"', 1)[1].split("</li>", 1)[0]
+    assert 'data-device-session-id="confirmed-app"' not in html
+    assert 'title="App details unavailable version unknown, Iris not yet reported">Unreported app</strong>' in live
+    assert "<details" not in live
+    assert "<form" not in live
+
+
+def test_polled_iris_subrows_link_setup_to_their_own_app():
+    path = Path(__file__).resolve().parents[1] / "launcher/static/iris-services.js"
+    subprocess.run(["node", "-e", r"""
+const fs = require('fs'), vm = require('vm'), assert = require('assert');
+const installations = [
+  {device_session_id: 'stock-test', display_name: 'Stock test', host_package: 'com.mentra.mentra'},
+  {device_session_id: 'fork-test', display_name: 'Fork test', host_package: 'com.mentra.mentra.openalma',
+   action_kind: 'start', action_label: 'Install', startable: true}
+];
+const rows = installations.map(installation => {
+  const elements = new Map();
+  return {dataset: {irisInstallation: installation.device_session_id},
+    querySelector(selector) {
+      if (!elements.has(selector)) elements.set(selector, {
+        setAttribute() {}, querySelector() { return null; }
+      });
+      return elements.get(selector);
+    }
+  };
+});
+const parent = {parentNode: {querySelectorAll: () => rows}};
+global.document = {querySelector: () => parent};
+global.esc = value => String(value).replace(/&/g, '&amp;');
+global.irisInstallDisabled = () => false;
+vm.runInThisContext(fs.readFileSync(process.argv[1], 'utf8'));
+renderIrisInstallations({installations});
+for (let i = 0; i < rows.length; i++) {
+  const html = rows[i].querySelector('.iris-actions').innerHTML;
+  assert.ok(html.includes('href="/iris?device_session_id=' + encodeURIComponent(installations[i].device_session_id) + '">Setup</a>'));
+  assert.ok(!html.includes('href="/iris">Setup</a>'));
+  assert.ok(!html.includes('Stock Install'));
+}
+assert.match(rows[1].querySelector('.iris-actions').innerHTML, />Install<\/button>/);
+assert.match(rows[1].querySelector('.iris-actions').innerHTML, /name="device_session_id" value="fork-test"/);
+""", str(path)], check=True, timeout=10)
 
 
 def test_memorize_gauge_over_threshold_with_gap_detected():

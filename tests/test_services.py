@@ -143,7 +143,7 @@ def test_iris_status_tracks_target_not_lock_and_preserves_rows_on_outage(tmp_pat
         forgotten = services.status(spec)
         assert forgotten["starting"] is False
         assert forgotten["state"] != "starting"
-        assert forgotten["installations"][0]["state"] != "starting"
+        assert forgotten["installations"] == []
         assert "release_device_session_id" not in forgotten
 
         target_path = tmp_path / "build/release-private-status.json"
@@ -153,10 +153,15 @@ def test_iris_status_tracks_target_not_lock_and_preserves_rows_on_outage(tmp_pat
         assert preparing["starting"] is True
         assert preparing["action_kind"] == "stop"
         assert preparing["action_label"] == "Cancel"
-        assert preparing["installations"][0]["state"] == "starting"
+        assert preparing["installations"] == []
         assert preparing["release_device_session_id"] == "stock-test"
 
     assert services.status(spec)["starting"] is False
+
+    mentra["installations"][0]["package_name"] = services.IRIS_PACKAGE
+    assert len(services.status(spec)["installations"]) == 1
+    mentra["installations"] = [{"device_session_id": "fork-test", "host": {"host_package": "com.mentra.mentra.openalma"}}]
+    assert len(services.status(spec)["installations"]) == 1
 
     mentra = {"state": "unavailable", "detail": "Fictional outage"}
     unavailable = services.status(spec)

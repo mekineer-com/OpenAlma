@@ -3,7 +3,8 @@
 {% include "_settings_head.html" %}
 {% include "_header.html" %}
   {% set installer_busy = iris.running or iris.starting or iris.stuck or iris.orphaned %}
-  <h2>Iris &amp; Phone Setup</h2>
+  {% set show_installer = not selected_installation or iris.release_device_session_id == selected_installation.device_session_id %}
+  <h2>{{ selected_installation.display_name ~ ' setup' if selected_installation else 'Iris & Phone Setup' }}</h2>
   {% if not iris_setup.enabled %}
     <p class="muted">Disabled. Enable Mentra in <code>mcp-memu-server/config.json</code> to use Iris.</p>
   {% else %}
@@ -21,10 +22,12 @@
     <p class="hint">Use a trusted private VPN or connection. Devices allowed to reach this endpoint can access the Soul's Iris data; trust the permitted devices and network access rules.</p>
 
     <h3>Iris installer</h3>
+    {% if not selected_installation %}
     <form method="post" action="/iris/install" id="iris-install-form">
       <p><button class="btn" type="submit" {% if not iris_setup.ready or not iris_setup.enabled or installer_busy %}disabled{% endif %}>Stock Install</button></p>
     </form>
     <p class="hint">For a new Stock Mentra installation, use <a href="https://play.google.com/store/apps/details?id=com.mentra.mentra">Stock Mentra</a> and scan the Iris QR below. OpenAlma Mentra is recommended for automatic Iris installation; no verified APK download link is available here.</p>
+    {% endif %}
     {% if iris.github_status == "unavailable" %}
       <p class="muted">GitHub releases unavailable; local {{ iris.available_version }} selected.</p>
     {% elif iris.github_status == "none" %}
@@ -32,6 +35,7 @@
     {% elif iris.github_status == "invalid" %}
       <p class="muted">GitHub release is missing the expected Iris asset; local {{ iris.available_version }} selected.</p>
     {% endif %}
+    {% if show_installer %}
     {% if installer_busy %}
       <p>{{ iris.status_label }}</p>
       {% if iris.release_device_session_id %}
@@ -60,15 +64,26 @@
     {% endif %}
     {% if iris.force_stoppable %}<p><button class="btn" type="button" onclick="irisAction('force-stop', this)">Force Stop</button></p>
     {% elif iris.stoppable %}<p><button class="btn" type="button" onclick="irisAction('stop', this)">Cancel</button></p>{% endif %}
+    {% elif installer_busy %}<p class="muted">Another Iris installation is in progress.</p>{% endif %}
     <p id="iris-action-error" class="failure" role="alert"></p>
 
-    <h3>App installations</h3>
+    {% if selected_installation %}
+    <h3>App status</h3>
     <ul class="checklist" id="iris-installations">
-      {% for row in iris.installations %}
+      {% for row in [selected_installation] %}
       {% set fork = row.host_package == 'com.mentra.mentra.openalma' %}
       {% set target_busy = row.active or (installer_busy and iris.release_device_session_id == row.device_session_id) %}
       <li data-device-session-id="{{ row.device_session_id }}">
-        <strong title="{{ 'App details unavailable' if row.metadata_known is sameas false else 'OpenAlma Mentra' if fork else 'Mentra' }} {{ 'v' ~ row.host_version if row.host_version else 'version unknown' }}, Iris {{ 'v' ~ row.installed_version if row.installed_version else 'not yet reported' }}">{{ row.display_name }}</strong>
+        {% set name_tooltip = ('App details unavailable' if row.metadata_known is sameas false else 'OpenAlma Mentra' if fork else 'Mentra') ~ ' ' ~ ('v' ~ row.host_version if row.host_version else 'version unknown') ~ ', Iris ' ~ ('v' ~ row.installed_version if row.installed_version else 'not yet reported') %}
+        {% if row.metadata_known is not sameas false %}
+        <details class="iris-rename">
+          <summary title="{{ name_tooltip }}" aria-label="Rename {{ row.display_name }}">{{ row.display_name }}</summary>
+          <form method="post" action="/iris/installations/{{ row.device_session_id|urlencode }}/rename">
+            <label>Display name<input type="text" name="display_name" value="{{ row.display_name }}" required></label>
+            <p><button class="btn" type="submit">Save name</button></p>
+          </form>
+        </details>
+        {% else %}<strong title="{{ name_tooltip }}">{{ row.display_name }}</strong>{% endif %}
         <p data-status>{{ row.status_label }}{% if row.detail %} &mdash; {{ row.detail }}{% endif %}</p>
         <p>Soul: {{ row.soul_id or 'Not chosen' }}</p>
         {% if row.action_kind == 'start' or (row.repair_available and fork and not row.active) %}
@@ -79,13 +94,6 @@
         </form>
         {% elif row.action_kind == 'settings' %}<span class="muted">Setup needed: see host readiness above.</span>{% endif %}
         {% if row.metadata_known is not sameas false %}
-        <details>
-          <summary>Rename</summary>
-          <form method="post" action="/iris/installations/{{ row.device_session_id|urlencode }}/rename">
-            <label>Display name<input type="text" name="display_name" value="{{ row.display_name }}" required></label>
-            <p><button class="btn" type="submit">Save name</button></p>
-          </form>
-        </details>
         <form class="inline" method="post" action="/iris/installations/{{ row.device_session_id|urlencode }}/forget" data-forget>
           <button class="btn" type="submit" {% if target_busy %}disabled{% endif %}>Forget</button>
         </form>
@@ -94,6 +102,15 @@
       {% else %}<li class="muted">No app installations reported. Use Stock Install, or connect OpenAlma Mentra in its Settings.</li>{% endfor %}
     </ul>
     <p class="hint">Forget removes only this launcher record, not phone storage, chats or memories. A later app report can restore it. Update updates Iris, not the Mentra host app. Repair preserves the installation identity and is available only for idle OpenAlma Mentra.</p>
+    <p><a href="/iris">General Iris setup</a></p>
+    {% else %}
+    <h3>App installations</h3>
+    <ul class="tight">
+      {% for row in iris.installations %}
+      <li><a href="/iris?device_session_id={{ row.device_session_id|urlencode }}">{{ row.display_name }}</a></li>
+      {% else %}<li class="muted">No app installations reported.</li>{% endfor %}
+    </ul>
+    {% endif %}
 
     <h3>Phone steps</h3>
     <ol class="tight">
@@ -109,6 +126,7 @@
 <script src="/static/iris-services.js"></script>
 <script>
     const initialStatus = {{ iris|tojson }};
+    const selectedDevice = {{ (selected_installation.device_session_id if selected_installation else '')|tojson }};
     const actionError = document.getElementById('iris-action-error');
     let submitting = false;
     function statusSignature(status) {
@@ -117,7 +135,7 @@
         status.stoppable, status.force_stoppable, status.status_label, status.release_uri,
         status.release_device_session_id, status.release_host_package,
         status.github_status, status.available_version, status.setup,
-        (status.installations || []).map(row => [
+        (status.installations || []).filter(row => !selectedDevice || row.device_session_id === selectedDevice).map(row => [
           row.device_session_id, row.display_name, row.host_package,
           row.host_version, row.installed_version, row.soul_id,
           row.action_kind, row.action_label, row.startable,
@@ -155,7 +173,8 @@
           const payload = await response.json();
           throw new Error(irisErrorMessage(payload, 'Iris action failed.'));
         }
-        location.reload();
+        if (url.endsWith('/forget')) location.assign('/iris');
+        else location.reload();
       } catch (err) {
         actionError.textContent = err.message;
         if (button) button.disabled = false;
@@ -175,7 +194,7 @@
       });
     });
 
-    {% if iris.running and iris.release_uri and iris.release_host_package == 'com.mentra.mentra' %}
+    {% if show_installer and iris.running and iris.release_uri and iris.release_host_package == 'com.mentra.mentra' %}
     try {
       QRCode.toCanvas(document.getElementById('iris-install-qr'), {{ iris.release_uri|tojson }}, { width: 220, margin: 1 });
     } catch (_err) {}

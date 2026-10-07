@@ -230,6 +230,7 @@ class MentraStatusTest(TestCase):
         page = templates.get_template("iris.html").render(
             iris_setup={"enabled": True, "ready": True, "rows": []},
             iris={**openalma, "installations": [{**openalma, "device_session_id": "test-phone", "display_name": "Phone", "host_package": "com.mentra.mentra.openalma", "soul_id": "Fictional Soul"}]},
+            selected_installation={**openalma, "device_session_id": "test-phone", "display_name": "Phone", "host_package": "com.mentra.mentra.openalma", "soul_id": "Fictional Soul"},
             iris_connection={},
             host_prerequisites={"rows": []},
         )
@@ -283,7 +284,8 @@ class MentraStatusTest(TestCase):
                     {"device_session_id": "stock-pending", "display_name": "stock_01"},
                     {"device_session_id": "fork", "display_name": "Phone", "package_name": services.IRIS_PACKAGE,
                      "version": "0.1.0", "host": {"host_package": "com.mentra.mentra.openalma", "host_version": "3.2.1"}},
-                    {"device_session_id": "stock-idle", "display_name": "stock_02"},
+                    {"device_session_id": "fork-idle", "display_name": "Idle app",
+                     "host": {"host_package": "com.mentra.mentra.openalma"}},
                 ],
             }) as read,
             patch.object(services, "_iris_release_candidate", return_value=(services.IRIS_PACKAGE, "0.1.0", None, "available")),
@@ -293,8 +295,8 @@ class MentraStatusTest(TestCase):
         self.assertEqual(read.call_args_list[0].args, (services.MEMU_SERVER_PORT,))
         self.assertEqual(read.call_args_list[1].kwargs, {"device_session_id": "fork"})
         self.assertEqual(result["action_kind"], "stop")
-        target, active, idle = result["installations"]
-        self.assertEqual(target["state"], "installing")
+        active, idle = result["installations"]
+        self.assertNotIn("stock-pending", [row["device_session_id"] for row in result["installations"]])
         self.assertTrue(active["active"])
         self.assertEqual(active["state"], "transcript_gap")
         self.assertIn("Only this app failed", active["detail"])
@@ -884,7 +886,7 @@ class MentraStatusTest(TestCase):
                 target = {"device_session_id": "test-phone", "host_package": "com.mentra.mentra"}
                 saved = client.post("/iris/install", data=target, follow_redirects=False)
                 self.assertEqual(saved.status_code, 303)
-                self.assertEqual(saved.headers["location"], "/iris")
+                self.assertEqual(saved.headers["location"], "/iris?device_session_id=test-phone")
                 start.assert_called_once_with(iris, install_target={**target, "display_name": "Phone"})
                 start.reset_mock()
                 response = client.post(

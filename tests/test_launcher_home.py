@@ -98,16 +98,31 @@ def test_launcher_mutations_reject_foreign_browser_origins(monkeypatch):
 
 
 def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    installations = [
+        {"device_session_id": "stock-test", "display_name": "Stock test",
+         "host_package": "com.mentra.mentra", "status_label": "Stock-only status",
+         "detail": "Stock-only detail", "soul_id": "Stock Soul"},
+        {"device_session_id": "fork-test", "display_name": "Fork test",
+         "host_package": "com.mentra.mentra.openalma", "status_label": "Fork-only status",
+         "detail": "Fork-only detail", "soul_id": "Fork Soul",
+         "action_kind": "start", "action_label": "Install", "startable": True},
+    ]
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
-    monkeypatch.setattr(app.services, "all_services", lambda: [])
-    monkeypatch.setattr(app.services, "mentra_readiness", lambda _root: {"enabled": False})
+    monkeypatch.setattr(app.services, "all_services", lambda: [spec])
+    monkeypatch.setattr(app.services, "status", lambda _spec: {
+        "installations": installations, "running": True,
+        "release_device_session_id": "stock-test", "release_host_package": "com.mentra.mentra",
+        "release_uri": "miniapp://fixture.invalid/stock", "status_label": "Stock installer active",
+    })
+    monkeypatch.setattr(app.services, "mentra_readiness", lambda _root: {"enabled": True, "ready": True, "rows": []})
     monkeypatch.setattr(app.services, "list_souls", lambda: ["TestSoul"])
     monkeypatch.setattr(app.soul, "CHANNELS_CONFIG_PATH", tmp_path / "missing-config.json")
     monkeypatch.setattr(app.policy, "list_whatsapp_chats", lambda: [])
     monkeypatch.setattr(app.policy, "read_channel_settings", lambda: {})
     monkeypatch.setattr(app.policy, "read_default_policy", lambda: "excluded")
     client = TestClient(app.app, base_url="http://127.0.0.1")
-    for page in ("/hermes", "/iris"):
+    for page in ("/hermes", "/iris", "/iris?device_session_id=stock-test", "/iris?device_session_id=fork-test"):
         response = client.get(page)
         assert response.status_code == 200
         assert '/static/vendor/qrcode.min.js' in response.text
@@ -115,12 +130,66 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
         assert '/static/window-position.js' in response.text
         assert 'aria-label="OpenAlma"' in response.text
         assert 'class="client-heading"' in response.text
-        assert f'/static/{page[1:]}-logo.svg' in response.text
+        assert f'/static/{page[1:].split("?", 1)[0]}-logo.svg' in response.text
         for link in ("https://openalma.org", "https://github.com/mekineer-com/OpenAlma", "https://discord.gg/MyhGFhdN3b"):
             assert f'href="{link}"' in response.text
         assert 'aria-label="OpenAlma community"' in response.text
+        if page.startswith("/iris"):
+            visible = response.text.split('<script src="/static/vendor/qrcode.min.js">', 1)[0]
+            assert "OpenAlma Mentra" in visible
+            assert 'href="https://play.google.com/store/apps/details?id=com.mentra.mentra"' in visible
+            assert "trusted private VPN or connection" in visible
+            assert "Choose a Soul on the phone" in visible
+            selected = next((row for row in installations if page.endswith("=" + row["device_session_id"])), None)
+            for row in installations:
+                if row is selected:
+                    assert f'data-device-session-id="{row["device_session_id"]}"' in visible
+                    assert row["status_label"] in visible
+                    assert row["detail"] in visible
+                    assert row["soul_id"] in visible
+                else:
+                    assert f'data-device-session-id="{row["device_session_id"]}"' not in visible
+                    assert row["status_label"] not in visible
+                    assert row["detail"] not in visible
+                    assert row["soul_id"] not in visible
+            if selected:
+                assert f'<h2>{selected["display_name"]} setup</h2>' in visible
+                assert '>Stock Install</button>' not in visible
+            else:
+                assert '>Stock Install</button>' in visible
+                for row in installations:
+                    assert f'href="/iris?device_session_id={row["device_session_id"]}"' in visible
+            assert ('id="iris-install-qr"' in visible) == (selected is not installations[1])
+            assert ("Stock installer active" in visible) == (selected is not installations[1])
+    assert client.get("/iris?device_session_id=unknown-app").status_code == 404
+    with pytest.MonkeyPatch.context() as unavailable:
+        unavailable.setattr(services, "status", lambda _spec: {"state": "unavailable"})
+        assert client.get("/iris?device_session_id=stock-test").status_code == 503
     assert 'id="pair-panel"' in client.get("/hermes").text
     assert 'id="pair-panel"' not in client.get("/iris").text
+
+
+@pytest.mark.parametrize("device_session_id,host_package,target", [
+    ("stock-test", "com.mentra.mentra", "/iris?device_session_id=stock-test"),
+    ("fork-test", "com.mentra.mentra.openalma", "/iris?device_session_id=fork-test"),
+    ("", "", "/iris"),
+])
+def test_iris_install_redirect_preserves_provided_target(tmp_path, monkeypatch, device_session_id, host_package, target):
+    spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    started = []
+    monkeypatch.setattr(app, "_find_service", lambda _name: spec)
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.setup_install, "start_issue", lambda *_args: "")
+    monkeypatch.setattr(app, "_start_iris_install", lambda *args: started.append(args))
+
+    response = TestClient(app.app, base_url="http://127.0.0.1").post(
+        "/iris/install", data={"device_session_id": device_session_id, "host_package": host_package},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == target
+    assert started == [(spec, device_session_id, host_package)]
 
 
 def test_policy_save_returns_to_hermes(monkeypatch):

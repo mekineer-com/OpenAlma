@@ -1,7 +1,6 @@
 function irisParentActions(data) {
   var links = ' <a class="btn" href="/iris">Setup</a>';
-  if (data.install_enabled === false) return links + ' <button class="btn" disabled>Stock Install</button>';
-  if (!data.install_setup && data.action_kind !== 'install') links += ' <form class="inline" method="post" action="/iris/install"><button class="btn" type="submit"' + (irisInstallDisabled(data) ? ' disabled' : '') + '>Stock Install</button></form>';
+  if (data.install_enabled === false) return links;
   if (data.install_running || data.state === 'stopping') {
     return '<span class="spinner" role="status" aria-label="Working"></span>' +
       (data.force_stoppable ? ' <button class="btn" onclick="svcAction(\'iris-server\',\'force-stop\',this)">Force Stop</button>' : '') + links;
@@ -31,8 +30,7 @@ function renderIrisInstallations(data) {
     if (!row) {
       row = document.createElement('tr');
       row.dataset.irisInstallation = id;
-      row.innerHTML = '<td><span class="iris-name-view"><span class="iris-name"></span> ' +
-        '<button class="btn" type="button">Rename</button></span>' +
+      row.innerHTML = '<td><span class="iris-name-view"><button class="iris-name" type="button"></button></span>' +
         '<form hidden><input name="display_name" aria-label="Display name" required> ' +
         '<button class="btn" type="submit">Save</button> <button class="btn" type="button">Cancel</button></form></td>' +
         '<td><span class="iris-status"></span><div class="svc-detail iris-detail"></div>' +
@@ -76,13 +74,14 @@ function renderIrisInstallations(data) {
     // Keep existing rows in place so reordered reports cannot interrupt Rename.
     previous = row;
     var known = installation.metadata_known !== false;
-    row.querySelector('.iris-name-view button').hidden = !known;
+    row.querySelector('.iris-name-view button').disabled = !known;
     var appName = !known ? 'App details unavailable' : installation.host_package === 'com.mentra.mentra.openalma' ? 'OpenAlma Mentra' : 'Mentra';
     var tooltip = appName + (installation.host_version ? ' v' + installation.host_version : ' (version unknown)') +
       ', Iris ' + (installation.installed_version ? 'v' + installation.installed_version : known ? 'not installed' : '(version unknown)');
     var name = row.querySelector('.iris-name');
     name.textContent = installation.display_name;
     name.title = tooltip;
+    name.setAttribute('aria-label', known ? 'Rename ' + installation.display_name : installation.display_name);
     var input = row.querySelector('input');
     input.title = tooltip;
     if (row.querySelector('form').hidden) input.value = installation.display_name;
@@ -91,7 +90,7 @@ function renderIrisInstallations(data) {
     status.textContent = installation.status_label || 'Status unavailable';
     row.querySelector('.iris-detail').textContent = installation.detail || '';
     row.querySelector('.iris-soul').textContent = 'Soul: ' + (installation.soul_id || 'Not chosen');
-    var actions = ' <a class="btn" href="/iris">Setup</a>' + (known ? ' <button class="btn" type="button" data-forget>Forget</button>' : '');
+    var actions = ' <a class="btn" href="/iris?device_session_id=' + encodeURIComponent(id) + '">Setup</a>' + (known ? ' <button class="btn" type="button" data-forget>Forget</button>' : '');
     if (installation.startable && installation.action_kind === 'start') {
       actions = '<form class="inline" method="post" action="/iris/install">' +
         '<input type="hidden" name="device_session_id" value="' + esc(id) + '">' +

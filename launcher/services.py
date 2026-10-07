@@ -1204,7 +1204,7 @@ def status(spec: ServiceSpec) -> dict:
         if result["starting"]:
             result.update(state="starting", status_label="◐ preparing installer", action_kind="stop", action_label="Cancel", startable=False, stoppable=True)
         installations = []
-        records = list(mentra.get("installations", []))
+        records = [r for r in mentra.get("installations", []) if r.get("host") or r.get("package_name")]
         known_devices = {r["device_session_id"] for r in records}
         records.extend({"device_session_id": s["device_session_id"], "soul_id": s["soul_id"]}
                        for s in mentra.get("sessions", []) if s["device_session_id"] not in known_devices)
@@ -1229,7 +1229,7 @@ def status(spec: ServiceSpec) -> dict:
                 projection.update(state="starting", status_label="◐ preparing installer", action_kind=None, startable=False)
             installations.append({
                 **projection, "device_session_id": device,
-                "display_name": record.get("display_name") or device,
+                "display_name": record.get("display_name") or "Unreported app",
                 "host_package": host.get("host_package") or ("com.mentra.mentra" if device in known_devices else None),
                 "host_version": host.get("host_version"), "soul_id": scoped["installed_soul"],
                 "metadata_known": device in known_devices,

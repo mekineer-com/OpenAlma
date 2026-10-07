@@ -21,8 +21,15 @@
     h2 { border-bottom: 1px solid #333; padding-bottom: 0.3rem; margin-top: 2rem; color: #f0f0f0; }
     p.muted, .muted { color: #888; }
     table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 0.35rem 0.4rem; text-align: left; border-bottom: 1px solid #2a2a2a; vertical-align: middle; }
+    th, td { padding: calc(0.35rem + 2px) 0.4rem; text-align: left; border-bottom: 1px solid #2a2a2a; vertical-align: middle; }
     th { font-weight: 600; background: #222; color: #eee; }
+    tr[data-iris-installation] td { border-bottom: 0; }
+    tr[data-iris-installation]:not(:has(+ tr[data-iris-installation])) td { border-bottom: 1px solid #2a2a2a; }
+    tr[data-iris-installation] td:first-child { padding-left: 1.6rem; }
+    tr[data-service="iris-server"]:has(+ tr[data-iris-installation]) td { border-bottom: 0; }
+    .iris-name { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+    .iris-name:disabled { cursor: default; }
+    .iris-name:focus-visible { outline: 2px solid #7cb7ff; outline-offset: 2px; }
     details.excluded-chats { margin-top: 0.8rem; }
     details.excluded-chats summary { cursor: pointer; color: #aaa; margin-bottom: 0.4rem; }
     details.not-installed { margin-top: 0.8rem; }

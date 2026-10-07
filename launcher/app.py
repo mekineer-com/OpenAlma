@@ -536,10 +536,18 @@ def hermes_page(request: Request) -> HTMLResponse:
 
 
 @app.get("/iris", response_class=HTMLResponse)
-def iris_page(request: Request) -> HTMLResponse:
+def iris_page(request: Request, device_session_id: str = "") -> HTMLResponse:
     apps_root = settings.apps_root()
     iris_spec = next((spec for spec in services.all_services() if spec.name == "iris-server"), None)
     iris = services.status(iris_spec) if iris_spec else {}
+    selected_installation = None
+    if device_session_id:
+        if "installations" not in iris:
+            raise HTTPException(status_code=503, detail="Iris app status is unavailable")
+        selected_installation = next((row for row in iris.get("installations", [])
+                                      if row["device_session_id"] == device_session_id), None)
+        if selected_installation is None:
+            raise HTTPException(status_code=404, detail="App installation not found")
     iris_setup = iris.get("setup") or services.mentra_readiness(apps_root)
     iris_connection = {}
     if apps_root:
@@ -555,6 +563,7 @@ def iris_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "iris.html", {
         "page_title": "Iris setup", "iris": iris, "iris_setup": iris_setup,
         "iris_connection": iris_connection,
+        "selected_installation": selected_installation,
     })
 
 
@@ -764,7 +773,8 @@ def iris_install(
         raise HTTPException(status_code=exc.code, detail=services._http_error_detail(exc)) from exc
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return RedirectResponse("/iris", status_code=303)
+    target_url = "/iris" + ("?" + urllib.parse.urlencode({"device_session_id": device_session_id}) if device_session_id else "")
+    return RedirectResponse(target_url, status_code=303)
 
 
 def _start_iris_install(spec: services.ServiceSpec, device_session_id: str, host_package: str) -> None:
