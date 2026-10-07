@@ -37,6 +37,11 @@ class MentraStatusTest(TestCase):
             return_value=((services.IRIS_PACKAGE, "0.1.11", "https://example.invalid/new.zip"), "available"),
         ):
             self.assertEqual(services._iris_release_candidate(spec)[1:3], ("0.1.11", "https://example.invalid/new.zip"))
+        with (
+            patch.object(services, "_iris_release_identity", return_value=(services.IRIS_PACKAGE, "0.1.11")),
+            patch.object(services, "_github_iris_release", return_value=((services.IRIS_PACKAGE, "0.1.11", "https://example.invalid/same.zip"), "available")),
+        ):
+            self.assertEqual(services._iris_release_candidate(spec)[1:3], ("0.1.11", "https://example.invalid/same.zip"))
 
         status = services._iris_product_status(
             services.RuntimeState(),
@@ -906,16 +911,16 @@ class MentraStatusTest(TestCase):
                 patch.object(services, "STATE_DIR", root),
             ):
                 spawn.return_value.pid = 123
-                services.start(spec)
+                services.start(spec, install_target={"device_session_id": "test-phone", "host_package": "com.mentra.mentra"})
                 built = spawn.call_args.args[1]
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_BEARER"], "new-key")
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_USER_ID"], "Fictional%20User")
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID"], "test-phone")
-                self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_SOUL_ID"], "Fictional%20%22Soul%22")
-                self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_PREVIOUS_VERSION"], "")
+                self.assertNotIn("MENTRA_PUBLIC_OPENALMA_SOUL_ID", built)
+                self.assertEqual(built["MENTRA_RELEASE_HOST_PACKAGE"], "com.mentra.mentra")
                 self.assertEqual(built["MENTRA_RELEASE_BUNDLE"], str(root / "iris.zip"))
                 self.assertIn('BEARER="new-key"', env_path.read_text())
-                self.assertIn('SOUL_ID="Fictional%20%22Soul%22"', env_path.read_text())
+                self.assertNotIn("SOUL_ID=", env_path.read_text())
                 self.assertIn("old-key", (root / ".env.local.orig").read_text())
                 self.assertEqual(env_path.stat().st_mode & 0o777, 0o600)
                 self.assertEqual((root / ".env.local.orig").stat().st_mode & 0o777, 0o600)

@@ -728,31 +728,24 @@ def iris_install_env(target: dict[str, str] | None) -> dict[str, str]:
     if owner_id is None:
         raise ValueError("Establish the OpenAlma owner before installing Iris")
     if target is None:
-        installed = _read_mentra_status(MEMU_SERVER_PORT)
-        target = {key: installed.get(f"installed_{field}") or "" for key, field in (
-            ("soul_id", "soul"), ("device_session_id", "device")
-        )}
-    else:
-        installed = _read_mentra_status(
-            MEMU_SERVER_PORT, device_session_id=str(target.get("device_session_id") or "")
-        )
+        raise ValueError("Choose an Iris app installation")
+    host_package = str(target.get("host_package") or "")
+    if host_package not in ("com.mentra.mentra", "com.mentra.mentra.openalma"):
+        raise ValueError("Unknown Mentra app installation")
     target = {**target, "user_id": owner_id}
     values = {
         "BASE_URL": str(mentra.get("public_base_url") or ""),
         "BEARER": str(mentra.get("integration_bearer_token") or ""),
-        **{key.upper(): str(target.get(key) or "").strip() for key in ("user_id", "soul_id", "device_session_id")},
+        **{key.upper(): str(target.get(key) or "").strip() for key in ("user_id", "device_session_id")},
     }
     for key, value in values.items():
         if not value or any(char in value for char in "\r\n"):
             raise ValueError(f"Set a valid Iris install {key} on the Iris setup page")
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", values["DEVICE_SESSION_ID"]):
         raise ValueError("Iris device ID must be 1-128 letters, digits, dots, underscores or hyphens")
-    for key in ("USER_ID", "SOUL_ID"):
-        values[key] = urllib.parse.quote(values[key], safe="")
+    values["USER_ID"] = urllib.parse.quote(values["USER_ID"], safe="")
     env = {f"MENTRA_PUBLIC_OPENALMA_{key}": value for key, value in values.items()}
-    env["MENTRA_PUBLIC_OPENALMA_PREVIOUS_VERSION"] = str(
-        installed.get("installed_version") or ""
-    )
+    env["MENTRA_RELEASE_HOST_PACKAGE"] = host_package
     return env
 
 
@@ -1027,7 +1020,7 @@ def _iris_release_candidate(spec: ServiceSpec) -> tuple[str, str, str | None, st
     local = _iris_semver(local_version) if local_package == IRIS_PACKAGE else None
     github, github_status = _github_iris_release()
     github_version = _iris_semver(github[1]) if github else None
-    if github and github_version and (local is None or github_version > local):
+    if github and github_version and (local is None or github_version >= local):
         return *github, github_status
     return local_package, local_version, None, github_status
 
@@ -1384,8 +1377,9 @@ def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None) ->
     if spec.name == "iris-server":
         env.update(_iris_build_env(spec, install_target))
         package, version, url, _ = _iris_release_candidate(spec)
-        if url:
-            env["MENTRA_RELEASE_BUNDLE"] = str(_download_iris_release(url, package, version))
+        if not url:
+            raise ValueError("Published Iris bundle unavailable; development builds must be run explicitly")
+        env["MENTRA_RELEASE_BUNDLE"] = str(_download_iris_release(url, package, version))
     proc = _spawn_background(spec, env)
     spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
     spec.pid_path.write_text(str(proc.pid))
