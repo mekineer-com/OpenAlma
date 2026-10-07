@@ -19,10 +19,10 @@
 
   {% endif %}
 
-    <h3>Connection values</h3>
-    <form method="post" action="/iris/address">
-      <label>OpenAlma address<input type="url" name="public_base_url" required value="{{ iris_connection.base_url or '' }}" placeholder="http://10.77.0.1"></label>
-      <p><button class="btn" type="submit">Save</button></p>
+    <h3>memU Server address</h3>
+    <form method="post" action="/iris/address" class="iris-address">
+      <input type="url" name="public_base_url" aria-label="memU Server address" required value="{{ iris_connection.base_url or '' }}" placeholder="http://10.77.0.1">
+      <button class="btn" type="submit">Save</button>
     </form>
     <p class="hint">Use the server address assigned by your private network. Saving does not configure the VPN or server listener. Restart memU Server after changing it.</p>
     <p class="hint">OpenAlma Mentra: enter this address in Settings if the default does not connect. Stock Mentra: Iris receives this address with its installation settings.</p>
@@ -138,11 +138,14 @@
     const actionError = document.getElementById('iris-action-error');
     let submitting = false;
     function statusSignature(status) {
+      const setup = status.setup || {};
       return JSON.stringify([
         status.running, status.starting, status.stuck, status.orphaned,
         status.stoppable, status.force_stoppable, status.status_label, status.release_uri,
         status.release_device_session_id, status.release_host_package,
-        status.github_status, status.available_version, status.setup,
+        status.github_status, status.available_version,
+        [setup.enabled, setup.ready, setup.reason, setup.step,
+          (setup.rows || []).map(row => [row.label, row.state, row.detail])],
         (status.installations || []).filter(row => !selectedDevice || row.device_session_id === selectedDevice).map(row => [
           row.device_session_id, row.display_name, row.host_package,
           row.host_version, row.installed_version, row.soul_id,
@@ -167,7 +170,7 @@
         }
         // Keep an open Rename form (including an unsaved name) intact.
         if (statusSignature(status) !== initialSignature &&
-            !document.querySelector('#iris-installations details[open]')) location.reload();
+            !document.querySelector('#iris-installations details[open], .iris-address:focus-within')) location.reload();
       } catch (_err) {}
     }, 2000);
     async function irisRequest(url, options, button) {

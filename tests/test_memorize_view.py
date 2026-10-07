@@ -133,6 +133,21 @@ def test_iris_setup_names_open_existing_rename_and_live_fallback_is_readonly():
     assert "<form" not in live
 
 
+def test_iris_status_signature_ignores_json_key_order():
+    template = (Path(__file__).resolve().parents[1] / "launcher/templates/iris.html").read_text()
+    function = template.split("function statusSignature(status) {", 1)[1].split("const initialSignature", 1)[0]
+    script = "const selectedDevice = ''; function statusSignature(status) {" + function + r"""
+const assert = require('assert');
+const status = {setup: {enabled: true, ready: true, reason: 'Ready', step: 'ready',
+  rows: [{label: 'Server', state: 'ready', detail: 'Ready'}]}, installations: []};
+const sorted = JSON.parse(JSON.stringify(status, ['setup', 'installations', 'detail', 'enabled', 'label', 'ready', 'reason', 'rows', 'state', 'step']));
+assert.equal(statusSignature(status), statusSignature(sorted));
+sorted.setup.rows[0].state = 'failure';
+assert.notEqual(statusSignature(status), statusSignature(sorted));
+"""
+    subprocess.run(["node", "-e", script], check=True, timeout=10)
+
+
 def test_polled_iris_subrows_link_setup_to_their_own_app():
     path = Path(__file__).resolve().parents[1] / "launcher/static/iris-services.js"
     subprocess.run(["node", "-e", r"""
