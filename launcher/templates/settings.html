@@ -39,6 +39,7 @@
 
   <h2>Edit configs</h2>
   <p class="muted">Opens in your default editor.</p>
+  <p class="hint">In memU Server config, set <code>llm.chat_model</code> and <code>llm.context_window_tokens</code> together. Use the model's total input/output context size, not its output limit. For Claude Code, set <code>claude_code_context_window_tokens</code> to your account's limit instead. Memory reflection requires this setting.</p>
   <ul class="tight">
     {% for c in editable_configs %}
       <li>

@@ -62,6 +62,15 @@ SillyTavern lives elsewhere (it's a full app, not a sibling). The plugin and ext
 | `memu.path` | path to `memu/src` (the engine source, from step 2) |
 | `storage.metadata_store.dsn` | where the SQLite DB will live |
 | `llm.embedding.api_key` | Gemini API key for the server-owned embedding model |
+| `llm.chat_model` | the chat model used for memory processing |
+| `llm.context_window_tokens` | that model's total input/output context size in tokens; required for memory reflection |
+
+Set the model and its context size together through **Settings → Edit configs**,
+opening `mcp-memu-server/config.json`. Use the capacity available through your provider/account, not the
+maximum output length; do not leave the context size blank. If using Claude Code,
+set `claude_code_context_window_tokens` instead. If advanced settings select
+different models for individual memory steps, give their capacities in
+`llm.step_context_window_tokens` as explained in `mcp-memu-server/config.json.md`.
 
 ## Core (required)
 

@@ -1,5 +1,4 @@
 __pycache__/
 .pytest_cache/
-mentra/transcripts/
-mentra/installations.json
+/mentra/
 imports/*.db*
