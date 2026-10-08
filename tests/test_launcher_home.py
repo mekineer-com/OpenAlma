@@ -106,6 +106,7 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
         {"device_session_id": "fork-test", "display_name": "Fork test",
          "host_package": "com.mentra.mentra.openalma", "status_label": "Fork-only status",
          "detail": "Fork-only detail", "soul_id": "Fork Soul",
+         "host_reporting": True,
          "action_kind": "start", "action_label": "Install", "startable": True},
     ]
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
@@ -144,7 +145,7 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
             assert 'href="https://github.com/mekineer-com/MentraOS"' in visible
             assert visible.index('>Phone steps</h3>') < visible.index('>Iris installer</h3>')
             assert "they do not check your phone" in visible
-            assert "Iris receives this address with its installation settings" in visible
+            assert "For first installation, Iris receives this address automatically" in visible
             selected = next((row for row in installations if page.endswith("=" + row["device_session_id"])), None)
             for row in installations:
                 if row is selected:
@@ -160,12 +161,17 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
             if selected:
                 assert f'<h2>{selected["display_name"]} setup</h2>' in visible
                 assert '>Stock Install</button>' not in visible
+                forget = visible.split('data-forget>', 1)[1].split('</form>', 1)[0]
+                assert 'disabled' in forget
             else:
                 assert '>Stock Install</button>' in visible
                 for row in installations:
                     assert f'href="/iris?device_session_id={row["device_session_id"]}"' in visible
             assert ('id="iris-install-qr"' in visible) == (selected is not installations[1])
             assert ("Stock installer active" in visible) == (selected is not installations[1])
+    installations[1]["host_reporting"] = False
+    visible = client.get("/iris?device_session_id=fork-test").text
+    assert 'disabled' not in visible.split('data-forget>', 1)[1].split('</form>', 1)[0]
     assert client.get("/iris?device_session_id=unknown-app").status_code == 404
     with pytest.MonkeyPatch.context() as unavailable:
         unavailable.setattr(services, "status", lambda _spec: {"state": "unavailable"})

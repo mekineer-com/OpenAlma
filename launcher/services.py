@@ -1233,6 +1233,7 @@ def status(spec: ServiceSpec) -> dict:
                 "host_package": host.get("host_package") or ("com.mentra.mentra" if device in known_devices else None),
                 "host_version": host.get("host_version"), "soul_id": scoped["installed_soul"],
                 "metadata_known": device in known_devices,
+                "host_reporting": bool(record.get("host_reporting")),
             })
         if mentra.get("state") != "unavailable":
             result["installations"] = installations

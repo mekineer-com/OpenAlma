@@ -24,8 +24,8 @@
       <input type="url" name="public_base_url" aria-label="memU Server address" required value="{{ iris_connection.base_url or '' }}" placeholder="http://10.77.0.1">
       <button class="btn" type="submit">Save</button>
     </form>
-    <p class="hint iris-address-hint">Use the server address assigned by your private network. Saving does not configure the VPN or server listener. Restart memU Server after changing it.</p>
-    <p class="hint">OpenAlma Mentra: enter this address in Settings if the default does not connect. Stock Mentra: Iris receives this address with its installation settings.</p>
+    <p class="hint iris-address-hint">Use the server address assigned by your private network. Saving does not configure the VPN or server listener.</p>
+    <p class="hint">For first installation, Iris receives this address automatically. If you change it later, also change it in Iris's Edit Connection and OpenAlma Mentra's Settings, where applicable.</p>
     <p class="hint">Use a trusted private VPN or connection. Devices allowed to reach this endpoint can access the Soul's Iris data; trust the permitted devices and network access rules.</p>
 
     <h3 class="iris-section">Phone steps</h3>
@@ -114,13 +114,13 @@
         {% elif row.action_kind == 'settings' %}<span class="muted">Setup needed: see host readiness above.</span>{% endif %}
         {% if row.metadata_known is not sameas false %}
         <form class="inline" method="post" action="/iris/installations/{{ row.device_session_id|urlencode }}/forget" data-forget>
-          <button class="btn" type="submit" {% if target_busy %}disabled{% endif %}>Forget</button>
+          <button class="btn" type="submit" title="Close the app and wait 15 seconds before forgetting it. Opening it again restores its row." {% if target_busy or row.active or row.host_reporting %}disabled{% endif %}>Forget</button>
         </form>
         {% endif %}
       </li>
       {% else %}<li class="muted">No app installations reported. Use Stock Install, or connect OpenAlma Mentra in its Settings.</li>{% endfor %}
     </ul>
-    <p class="hint">Forget removes only this launcher record, not phone storage, chats or memories. A later app report can restore it. Update updates Iris, not the Mentra host app. Repair preserves the installation identity and is available only for idle OpenAlma Mentra.</p>
+    <p class="hint">Forget removes only this launcher record, not phone storage, chats or memories. Close the app and wait 15 seconds first; opening it again restores its row. Update updates Iris, not the Mentra host app. Repair preserves the installation identity and is available only for idle OpenAlma Mentra.</p>
     <p><a href="/iris">General Iris setup</a></p>
     {% else %}
     <h3 class="iris-section">App installations</h3>
@@ -151,7 +151,7 @@
           row.device_session_id, row.display_name, row.host_package,
           row.host_version, row.installed_version, row.soul_id,
           row.action_kind, row.action_label, row.startable,
-          row.repair_available, row.active, row.metadata_known
+          row.repair_available, row.active, row.metadata_known, row.host_reporting
         ])
       ]);
     }

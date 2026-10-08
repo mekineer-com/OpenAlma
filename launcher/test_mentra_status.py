@@ -285,6 +285,7 @@ class MentraStatusTest(TestCase):
                     {"device_session_id": "fork", "display_name": "Phone", "package_name": services.IRIS_PACKAGE,
                      "version": "0.1.0", "host": {"host_package": "com.mentra.mentra.openalma", "host_version": "3.2.1"}},
                     {"device_session_id": "fork-idle", "display_name": "Idle app",
+                     "host_reporting": True,
                      "host": {"host_package": "com.mentra.mentra.openalma"}},
                 ],
             }) as read,
@@ -305,6 +306,7 @@ class MentraStatusTest(TestCase):
         self.assertIsNone(active["action_kind"])
         self.assertEqual(idle["action_label"], "Install")
         self.assertIsNone(idle["host_version"])
+        self.assertTrue(idle["host_reporting"])
 
     def test_installer_refuses_other_targets_before_download(self) -> None:
         import app
