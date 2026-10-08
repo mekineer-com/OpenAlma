@@ -579,6 +579,7 @@ def iris_address_save(public_base_url: str = Form()) -> RedirectResponse:
                 or parsed.path or parsed.query or parsed.fragment
                 or any(char.isspace() for char in address)):
             raise ValueError("Enter an HTTP or HTTPS server address")
+        address = services._iris_base_url(address)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     root = settings.apps_root()
@@ -784,7 +785,7 @@ def service_open(service_name: str) -> dict[str, bool]:
 def open_url(url: str = Form()) -> dict[str, bool]:
     try:
         target = urllib.parse.urlsplit(url)
-        if target.scheme not in {"http", "https", "miniapp"} or not target.hostname:
+        if target.scheme not in {"http", "https"} or not target.hostname:
             raise ValueError("Invalid link")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid link") from exc

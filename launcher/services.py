@@ -11,6 +11,7 @@ relative to the launcher's own directory, otherwise None.
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import platform
@@ -720,6 +721,29 @@ def _read_mentra_status(
     return data if isinstance(data, dict) else {"state": "unavailable", "detail": "Invalid Mentra status"}
 
 
+def _iris_base_url(value: str) -> str:
+    base_url = value.rstrip("/")
+    try:
+        parsed = urllib.parse.urlsplit(base_url)
+        host = parsed.hostname or ""
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("Iris base URL has an invalid host or port") from exc
+    if (parsed.scheme not in {"http", "https"} or not host or port == 0
+            or any(char.isspace() for char in host)
+            or parsed.username or parsed.password or parsed.query or parsed.fragment):
+        raise ValueError("Iris base URL must be HTTP or HTTPS without credentials, query, or fragment")
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        address = None
+    host = host.rstrip(".")
+    if host == "localhost" or host.endswith(".localhost") or (
+            address is not None and (getattr(address, "ipv4_mapped", None) or address).is_loopback):
+        raise ValueError("Iris base URL must not use loopback or localhost")
+    return base_url
+
+
 def iris_install_env(target: dict[str, str] | None) -> dict[str, str]:
     root = _resolve_apps_root()
     if root is None:
@@ -743,6 +767,7 @@ def iris_install_env(target: dict[str, str] | None) -> dict[str, str]:
     for key, value in values.items():
         if not value or any(char in value for char in "\r\n"):
             raise ValueError(f"Set a valid Iris install {key} on the Iris setup page")
+    values["BASE_URL"] = _iris_base_url(values["BASE_URL"])
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", values["DEVICE_SESSION_ID"]):
         raise ValueError("Iris device ID must be 1-128 letters, digits, dots, underscores or hyphens")
     values["USER_ID"] = urllib.parse.quote(values["USER_ID"], safe="")
@@ -910,17 +935,11 @@ def _mentra_readiness_uncached(root: Path) -> dict:
         return fail("server", "memU Server", "Start memU Server")
     rows.append({"label": "memU Server", "state": "ready", "detail": "Ready"})
 
-    base_url = str(mentra["public_base_url"]).rstrip("/")
     try:
-        parsed = urllib.parse.urlsplit(base_url)
-        host = parsed.hostname or ""
-        port = parsed.port
-    except ValueError:
-        return fail("route", "Phone address", "Iris base URL has an invalid host or port")
-    if (parsed.scheme not in {"http", "https"} or not host or port == 0
-            or any(char.isspace() for char in host)
-            or parsed.username or parsed.password or parsed.query or parsed.fragment):
-        return fail("route", "Phone address", "Iris base URL must be HTTP or HTTPS without credentials, query, or fragment")
+        base_url = _iris_base_url(str(mentra["public_base_url"]))
+    except ValueError as exc:
+        return fail("route", "Phone address", str(exc))
+    host = urllib.parse.urlsplit(base_url).hostname
     rows.append({"label": "Phone address", "state": "ready", "detail": host})
 
     status = _mentra_http_status(f"{base_url}/integration/mentra/health")

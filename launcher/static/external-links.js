@@ -3,7 +3,7 @@ async function openExternalLink(event) {
   var link = event.target.closest('a[href]');
   if (!link) return;
   var url = new URL(link.href);
-  if (url.origin === location.origin || !['http:', 'https:', 'miniapp:'].includes(url.protocol)) return;
+  if (url.origin === location.origin || !['http:', 'https:'].includes(url.protocol)) return;
   event.preventDefault();
   try {
     var response = await fetch('/open-url', {

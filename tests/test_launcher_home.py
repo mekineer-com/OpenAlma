@@ -223,10 +223,12 @@ def test_iris_address_save_preserves_config_and_backs_up(tmp_path, monkeypatch):
     path.write_text(original)
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
     client = TestClient(app.app, base_url="http://127.0.0.1")
-    for address in ("http://bad host", "http://server:99999", "http://user@server", "ftp://server", "http://server/path"):
+    for address in ("http://bad host", "http://server:99999", "http://user@server", "ftp://server", "http://server/path",
+                    "http://127.0.0.1:8099", "http://127.2.3.4", "http://[::1]:8099",
+                    "http://localhost:8099", "http://LOCALHOST.:8099"):
         assert client.post("/iris/address", data={"public_base_url": address}).status_code == 400
     assert path.read_text() == original
-    for address in ("http://100.90.1.2", "https://server.example"):
+    for address in ("http://100.90.1.2", "https://server.example", "https://8.8.8.8"):
         assert client.post("/iris/address", data={"public_base_url": address}, follow_redirects=False).status_code == 303
         assert json.loads(path.read_text()) == {"mentra": {"enabled": True, "public_base_url": address}, "other": "keep"}
     assert Path(str(path) + ".orig").read_text() == original
@@ -470,9 +472,10 @@ def test_open_route_uses_default_browser_tab(tmp_path, monkeypatch):
     client = TestClient(app.app, base_url="http://127.0.0.1")
     assert client.post("/open-url", data={"url": "https://example.org/guide"}).status_code == 200
     assert opened[-1] == "https://example.org/guide"
-    assert client.post("/open-url", data={"url": "miniapp://release?url=http%3A%2F%2Fprivate.example"}).status_code == 200
-    for url in ("javascript:alert(1)", "file:///private/secret", "https://[bad"):
+    for url in ("miniapp://release?url=http%3A%2F%2Fprivate.example", "javascript:alert(1)", "file:///private/secret", "https://[bad"):
+        before = len(opened)
         assert client.post("/open-url", data={"url": url}).status_code == 400
+        assert len(opened) == before
     before = len(opened)
     assert client.post("/open-url", data={"url": "https://example.org"}, headers={"Origin": "https://other.example"}).status_code == 403
     assert len(opened) == before

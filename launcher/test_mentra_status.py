@@ -464,7 +464,8 @@ class MentraStatusTest(TestCase):
             http.assert_called_once_with("http://10.77.0.1/integration/mentra/health")
 
             settings = json.loads(config.read_text())
-            for address in ("http://100.92.1.5:8080", "https://private.example", "http://127.0.0.1:8099", "http://[::1]:8099"):
+            target = {"host_package": "com.mentra.mentra", "device_session_id": "fictional-phone"}
+            for address in ("http://100.92.1.5:8080", "https://private.example", "https://8.8.8.8", "http://[fd00::1]:8099"):
                 settings["mentra"]["public_base_url"] = address
                 config.write_text(json.dumps(settings))
                 with (
@@ -473,11 +474,19 @@ class MentraStatusTest(TestCase):
                     patch.object(services, "_mentra_http_status", side_effect=[200, 404]),
                 ):
                     self.assertTrue(services._mentra_readiness_uncached(root)["ready"])
+                with (
+                    patch.object(services, "_resolve_apps_root", return_value=root),
+                    patch.object(services, "read_owner", return_value="Fictional Owner"),
+                ):
+                    self.assertEqual(services.iris_install_env(target)["MENTRA_PUBLIC_OPENALMA_BASE_URL"], address)
             settings["mentra"]["public_base_url"] = "http://10.77.0.1"
             config.write_text(json.dumps(settings))
 
             for address in ("http://bad host", "http://private.example:0", "http://private.example:65536",
-                            "http://user:password@private.example", "http://private.example?key=value", "http://private.example#fragment"):
+                            "http://user:password@private.example", "http://private.example?key=value", "http://private.example#fragment",
+                            "http://127.0.0.1:8099", "http://127.2.3.4", "http://[::1]:8099",
+                            "http://[::ffff:127.0.0.1]", "http://localhost:8099", "http://LOCALHOST.:8099", "http://iris.localhost:8099",
+                            "ftp://private.example", "http://[bad"):
                 settings["mentra"]["public_base_url"] = address
                 config.write_text(json.dumps(settings))
                 with (
@@ -486,6 +495,12 @@ class MentraStatusTest(TestCase):
                     patch.object(services, "_mentra_http_status", side_effect=AssertionError("invalid address must not be probed")),
                 ):
                     self.assertEqual(services._mentra_readiness_uncached(root)["step"], "route")
+                with (
+                    patch.object(services, "_resolve_apps_root", return_value=root),
+                    patch.object(services, "read_owner", return_value="Fictional Owner"),
+                    self.assertRaises(ValueError),
+                ):
+                    services.iris_install_env(target)
             settings["mentra"]["public_base_url"] = "http://10.77.0.1"
             config.write_text(json.dumps(settings))
 
@@ -1009,7 +1024,7 @@ class MentraStatusTest(TestCase):
                 patch.dict(services.os.environ, {"MENTRA_PUBLIC_OPENALMA_BASE_URL": "http://stale.example"}),
                 patch.object(services, "_runtime_state", return_value=services.RuntimeState()),
                 patch.object(services, "_iris_release_candidate", return_value=(services.IRIS_PACKAGE, "0.1.11", "https://example.invalid/iris.zip", "available")),
-                patch.object(services, "_download_iris_release", return_value=root / "iris.zip"),
+                patch.object(services, "_download_iris_release", return_value=root / "iris.zip") as download,
                 patch.object(services, "_spawn_background") as spawn,
                 patch.object(services, "STATE_DIR", root),
             ):
@@ -1028,6 +1043,18 @@ class MentraStatusTest(TestCase):
                 self.assertIn("http://old.example", (root / ".env.local.orig").read_text())
                 self.assertEqual(env_path.stat().st_mode & 0o777, 0o600)
                 self.assertEqual((root / ".env.local.orig").stat().st_mode & 0o777, 0o600)
+                original_env = env_path.read_text()
+                for address in ("http://127.0.0.1:8099", "http://[::1]:8099", "http://localhost:8099"):
+                    (root / "mcp-memu-server" / "config.json").write_text(json.dumps({"mentra": {
+                        "enabled": True, "public_base_url": address,
+                    }}))
+                    spawn.reset_mock()
+                    download.reset_mock()
+                    with self.assertRaisesRegex(ValueError, "loopback or localhost"):
+                        app._start_iris_install(spec, "test-phone", "com.mentra.mentra")
+                    spawn.assert_not_called()
+                    download.assert_not_called()
+                    self.assertEqual(env_path.read_text(), original_env)
                 (root / "mcp-memu-server" / "config.json").write_text("{}")
                 with self.assertRaisesRegex(ValueError, "Enable Mentra"):
                     services._iris_build_env(spec, None)
