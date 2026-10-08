@@ -20,28 +20,28 @@ class MentraStatusTest(TestCase):
         services._MENTRA_INGRESS_AUDIT_CACHE.clear()
         services._IRIS_RELEASE_CACHE = None
 
-    def test_iris_candidate_uses_highest_numeric_version(self) -> None:
-        spec = services.ServiceSpec("iris-server", "Iris", [], Path("."), Path("log"), Path("pid"))
-        with (
-            patch.object(services, "_iris_release_identity", return_value=(services.IRIS_PACKAGE, "0.1.10")),
-            patch.object(
-                services,
-                "_github_iris_release",
-                return_value=((services.IRIS_PACKAGE, "0.1.9", "https://example.invalid/old.zip"), "available"),
-            ),
-        ):
-            self.assertEqual(services._iris_release_candidate(spec)[:3], (services.IRIS_PACKAGE, "0.1.10", None))
-        with patch.object(
-            services,
-            "_github_iris_release",
-            return_value=((services.IRIS_PACKAGE, "0.1.11", "https://example.invalid/new.zip"), "available"),
-        ):
-            self.assertEqual(services._iris_release_candidate(spec)[1:3], ("0.1.11", "https://example.invalid/new.zip"))
-        with (
-            patch.object(services, "_iris_release_identity", return_value=(services.IRIS_PACKAGE, "0.1.11")),
-            patch.object(services, "_github_iris_release", return_value=((services.IRIS_PACKAGE, "0.1.11", "https://example.invalid/same.zip"), "available")),
-        ):
-            self.assertEqual(services._iris_release_candidate(spec)[1:3], ("0.1.11", "https://example.invalid/same.zip"))
+    def test_iris_candidate_uses_only_published_versions(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "miniapp.json").write_text(json.dumps({"packageName": services.IRIS_PACKAGE, "version": "0.1.12"}))
+            spec = services.ServiceSpec("iris-server", "Iris", [], root, root / "log", root / "pid")
+            for version in ("0.1.11", "0.1.12", "0.1.13"):
+                release = (services.IRIS_PACKAGE, version, "https://example.invalid/iris.zip")
+                with patch.object(services, "_github_iris_release", return_value=(release, "available")):
+                    self.assertEqual(services._iris_release_candidate(spec), (*release, "available"))
+            with patch.object(services, "_github_iris_release", return_value=(None, "unavailable")):
+                package, version, url, state = services._iris_release_candidate(spec)
+                self.assertEqual((package, version, url, state), (services.IRIS_PACKAGE, "", None, "unavailable"))
+                status = services._iris_product_status(
+                    services.RuntimeState(),
+                    {"state": "ready", "installed_package": services.IRIS_PACKAGE, "installed_version": "0.1.11",
+                     "host": {"host_package": "com.mentra.mentra.openalma"}},
+                    package, version,
+                )
+                self.assertFalse(status["update_available"])
+                self.assertFalse(status["startable"])
+                self.assertFalse(status["repair_available"])
+                self.assertEqual(status["state"], "ready")
 
         status = services._iris_product_status(
             services.RuntimeState(),
@@ -626,7 +626,6 @@ class MentraStatusTest(TestCase):
             patch.object(services, "mentra_readiness", return_value={"enabled": True, "ready": True, "soul_id": "Next Build", "device_session_id": "other-phone"}),
             patch.object(services, "_runtime_state", return_value=services.RuntimeState()),
             patch.object(services, "_read_channels_config", side_effect=AssertionError("Channels must not be consulted")),
-            patch.object(services, "_iris_release_identity", return_value=("com.openalma.mentra", "0.1.0")),
             patch.object(services, "_read_mentra_status", return_value={**installed, "active": True, "state": "active"}) as status,
         ):
             result = services.status(spec)
@@ -832,7 +831,6 @@ class MentraStatusTest(TestCase):
                     {"device_session_id": "other-phone", "display_name": "Other"},
                 ]}),
                 patch.object(services, "_runtime_state", return_value=services.RuntimeState()),
-                patch.object(services, "_iris_release_identity", return_value=("com.openalma.mentra", "0.1.0")),
                 patch.object(services, "resolve_soul", return_value="Fictional Soul"),
                 patch.object(services, "read_owner", return_value="Fictional User"),
                 patch.object(services, "iris_install_env", return_value={}),

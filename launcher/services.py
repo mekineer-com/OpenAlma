@@ -957,14 +957,6 @@ def mentra_readiness(root: Path | None = None) -> dict:
     return result
 
 
-def _iris_release_identity(spec: ServiceSpec) -> tuple[str, str]:
-    try:
-        manifest = json.loads((spec.cwd / "miniapp.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return "", ""
-    return str(manifest.get("packageName") or "").strip(), str(manifest.get("version") or "").strip()
-
-
 def _iris_semver(value: str) -> tuple[int, int, int] | None:
     match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", value)
     return tuple(map(int, match.groups())) if match else None
@@ -1001,13 +993,8 @@ def _github_iris_release() -> tuple[tuple[str, str, str] | None, str]:
 
 
 def _iris_release_candidate(spec: ServiceSpec) -> tuple[str, str, str | None, str]:
-    local_package, local_version = _iris_release_identity(spec)
-    local = _iris_semver(local_version) if local_package == IRIS_PACKAGE else None
     github, github_status = _github_iris_release()
-    github_version = _iris_semver(github[1]) if github else None
-    if github and github_version and (local is None or github_version >= local):
-        return *github, github_status
-    return local_package, local_version, None, github_status
+    return (*github, github_status) if github else (IRIS_PACKAGE, "", None, github_status)
 
 
 def _download_iris_release(url: str, package: str, version: str) -> Path:
@@ -1077,13 +1064,12 @@ def _iris_product_status(
     installed_version = str(mentra.get("installed_version") or "")
     host = mentra.get("host") if isinstance(mentra.get("host"), dict) else {}
     automatic_host = host.get("host_package") == "com.mentra.mentra.openalma"
-    repair_available = bool(installed_package and automatic_host)
     installed_semver = _iris_semver(installed_version)
     available_semver = _iris_semver(available_version)
-    mismatch = bool(installed_package) and (
+    repair_available = bool(installed_package and automatic_host and available_semver)
+    mismatch = bool(installed_package and available_package and available_semver) and (
         installed_package != available_package
         or installed_semver is None
-        or available_semver is None
         or available_semver > installed_semver
     )
     age = _seen_age(mentra.get("installed_seen_at"))
@@ -1115,8 +1101,7 @@ def _iris_product_status(
     elif setup_required:
         state, label, detail, action = "setup", "▲ setup needed", str(readiness.get("reason") or "Open Iris & Phone Setup"), "settings"
     elif (
-        not available_package
-        or not available_version
+        (not installed_package and (not available_package or not available_version))
         or not mentra
         or mentra.get("state") == "disabled"
         or runtime.port_blocked
@@ -1198,7 +1183,7 @@ def status(spec: ServiceSpec) -> dict:
         mentra = _read_mentra_status(MEMU_SERVER_PORT)
         package, version, url, github_status = _iris_release_candidate(spec)
         result = _iris_product_status(runtime, {**mentra, "active": False, "starting": False}, package, version, readiness)
-        result.update(available_source="github" if url else "local", github_status=github_status)
+        result.update(available_source="github" if url else None, github_status=github_status)
         result["setup"] = readiness
         result["starting"] = bool(release_device) and _IRIS_INSTALL_LOCK.locked() and not runtime.running
         if result["starting"]:
