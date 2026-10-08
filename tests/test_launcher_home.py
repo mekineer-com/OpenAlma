@@ -137,6 +137,7 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
         if page.startswith("/iris"):
             visible = response.text.split('<script src="/static/vendor/qrcode.min.js">', 1)[0]
             assert "OpenAlma Mentra" in visible
+            assert "choose OpenAlma Mentra if Android offers sign-in apps, or use email sign-in" in visible
             assert 'href="https://play.google.com/store/apps/details?id=com.mentra.mentra"' in visible
             assert "trusted private VPN or connection" in visible
             assert "Choose a Soul on the phone" in visible
