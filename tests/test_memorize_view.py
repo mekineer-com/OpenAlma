@@ -146,6 +146,38 @@ sorted.setup.rows[0].state = 'failure';
 assert.notEqual(statusSignature(status), statusSignature(sorted));
 """
     subprocess.run(["node", "-e", script], check=True, timeout=10)
+    poll = template.split("setInterval(async function() {", 1)[1].split("async function irisRequest", 1)[0]
+    script = "const selectedDevice = ''; function statusSignature(status) {" + function + r"""
+const assert = require('assert');
+const initialStatus = {installations: [{device_session_id: 'test-phone'}]};
+const initialSignature = statusSignature(initialStatus);
+let statusAvailable = true, submitting = false, reloads = 0, poll, editing = true;
+const actionError = {textContent: ''}, button = {disabled: false};
+const document = {querySelectorAll: selector => {
+  if (selector === '[data-device-session-id]') return [];
+  assert.equal(selector, 'form[action="/iris/install"] button, form[data-forget] button');
+  return [button];
+}, querySelector: () => editing};
+const location = {reload: () => reloads++};
+let status = {state: 'unavailable', detail: 'memU Server is unavailable'};
+const fetch = async () => ({ok: true, json: async () => status});
+const setInterval = callback => {poll = callback;};
+setInterval(async function() {
+""" + poll + r"""
+(async () => {
+await poll();
+assert.match(actionError.textContent, /unavailable/);
+assert.equal(button.disabled, true);
+assert.equal(reloads, 0); // Keep rows and unsaved Rename text during an outage.
+status = initialStatus;
+await poll();
+assert.equal(reloads, 0); // Recovery still must not discard an open Rename draft.
+editing = false;
+await poll();
+assert.equal(reloads, 1);
+})().catch(error => {console.error(error); process.exitCode = 1;});
+"""
+    subprocess.run(["node", "-e", script], check=True, timeout=10)
 
 
 def test_polled_iris_subrows_link_setup_to_their_own_app():
@@ -182,6 +214,12 @@ for (let i = 0; i < rows.length; i++) {
 }
 assert.match(rows[1].querySelector('.iris-actions').innerHTML, />Install<\/button>/);
 assert.match(rows[1].querySelector('.iris-actions').innerHTML, /name="device_session_id" value="fork-test"/);
+installations[1].action_label = 'Repair';
+renderIrisInstallations({installations, ready: false});
+assert.match(rows[1].querySelector('.iris-actions').innerHTML, /disabled>Repair<\/button>/);
+renderIrisInstallations({installations, ready: true});
+assert.match(rows[1].querySelector('.iris-actions').innerHTML, /type="submit">Repair<\/button>/);
+assert.ok(!rows[0].querySelector('.iris-actions').innerHTML.includes('>Repair<'));
 """, str(path)], check=True, timeout=10)
 
 

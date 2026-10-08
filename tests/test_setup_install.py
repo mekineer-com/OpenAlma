@@ -108,7 +108,9 @@ def test_windows_subprocesses_hide_console(monkeypatch):
     assert process_flags.hidden_process_kwargs() == {"creationflags": 0x08000000}
 
 
-def test_launcher_update_uses_selected_channel_without_downgrades(monkeypatch):
+@pytest.mark.parametrize("malformed_tag", ["nightly", "v1.0"])
+@pytest.mark.parametrize("malformed_index", [0, 2])
+def test_launcher_update_uses_selected_channel_without_downgrades(monkeypatch, malformed_tag, malformed_index):
     releases = [
         {
             "tag_name": "v3.0.0", "draft": False, "prerelease": True,
@@ -122,6 +124,7 @@ def test_launcher_update_uses_selected_channel_without_downgrades(monkeypatch):
             "assets": [{"name": "OpenAlma-v2.0.0-Windows.exe", "browser_download_url": "stable-update"}],
         },
     ]
+    releases.insert(malformed_index, {"tag_name": malformed_tag, "draft": False, "prerelease": False})
 
     class Response:
         def __enter__(self):

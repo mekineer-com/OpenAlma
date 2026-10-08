@@ -42,6 +42,12 @@ class MentraStatusTest(TestCase):
                 self.assertFalse(status["startable"])
                 self.assertFalse(status["repair_available"])
                 self.assertEqual(status["state"], "ready")
+                uninstalled = services._iris_product_status(
+                    services.RuntimeState(), {"state": "ready"}, package, version,
+                    {"enabled": True, "ready": True},
+                )
+                self.assertEqual(uninstalled["status_label"], "Iris bundle unavailable")
+                self.assertIsNone(uninstalled["action_kind"])
 
         status = services._iris_product_status(
             services.RuntimeState(),
@@ -224,8 +230,25 @@ class MentraStatusTest(TestCase):
             "0.1.0",
         )
         self.assertTrue(openalma["repair_available"])
-        self.assertIsNone(openalma["action_kind"])
-        self.assertEqual(openalma["action_label"], "")
+        self.assertEqual(openalma["action_kind"], "start")
+        self.assertEqual(openalma["action_label"], "Repair")
+        for state in ("degraded", "transcript_gap"):
+            row = services._iris_product_status(
+                services.RuntimeState(), {**installed, "state": state,
+                    "host": {"host_package": "com.mentra.mentra.openalma"}},
+                services.IRIS_PACKAGE, "0.1.0",
+            )
+            self.assertEqual(row["action_label"], "Repair")
+        for release in ("", "0.1.0"):
+            row = services._iris_product_status(
+                services.RuntimeState(), {"state": "ready"},
+                services.IRIS_PACKAGE if release else "", release,
+                {"enabled": True, "ready": True},
+            )
+            self.assertEqual(row["state"], "stopped" if release else "unavailable")
+            self.assertEqual(row["action_kind"], "start" if release else None)
+            if not release:
+                self.assertEqual(row["status_label"], "Iris bundle unavailable")
         from app import templates
         page = templates.get_template("iris.html").render(
             iris_setup={"enabled": True, "ready": True, "rows": []},

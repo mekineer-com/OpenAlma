@@ -219,17 +219,22 @@ def launcher_update() -> dict[str, str] | None:
             releases = json.loads(response.read().decode("utf-8"))
         if not isinstance(releases, list):
             raise ValueError("Invalid GitHub releases response")
+        current_version = release_version(current)
         candidates = []
         for release in releases:
             tag = str(release.get("tag_name") or "")
             if release.get("draft") or (release.get("prerelease") and channel != "prerelease"):
                 continue
-            if release_version(tag) <= release_version(current):
+            try:
+                version = release_version(tag)
+            except ValueError:
+                continue
+            if version <= current_version:
                 continue
             expected = f"OpenAlma-{tag}-Windows.exe"
             asset = next((item for item in release.get("assets") or [] if item.get("name") == expected), None)
             if asset and asset.get("browser_download_url"):
-                candidates.append((release_version(tag), tag, str(asset["browser_download_url"])))
+                candidates.append((version, tag, str(asset["browser_download_url"])))
         if candidates:
             _version, tag, url = max(candidates)
             update = {"tag": tag, "url": url}

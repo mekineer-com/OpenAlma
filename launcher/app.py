@@ -541,7 +541,7 @@ def hermes_page(request: Request) -> HTMLResponse:
 def iris_page(request: Request, device_session_id: str = "") -> HTMLResponse:
     apps_root = settings.apps_root()
     iris_spec = next((spec for spec in services.all_services() if spec.name == "iris-server"), None)
-    iris = services.status(iris_spec) if iris_spec else {}
+    iris = _setup_aware_status(iris_spec, apps_root, verify_runtime=False) if iris_spec and apps_root else {}
     selected_installation = None
     if device_session_id:
         if "installations" not in iris:
@@ -588,7 +588,7 @@ def iris_address_save(public_base_url: str = Form()) -> RedirectResponse:
     path = root / "mcp-memu-server" / "config.json"
     try:
         config = json.loads(path.read_text(encoding="utf-8"))
-        config["mentra"]["public_base_url"] = address
+        config.setdefault("mentra", {})["public_base_url"] = address
         backup = Path(str(path) + ".orig")
         number = 2
         while backup.exists():

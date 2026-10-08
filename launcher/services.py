@@ -1127,12 +1127,13 @@ def _iris_product_status(
     elif setup_required:
         state, label, detail, action = "setup", "▲ setup needed", str(readiness.get("reason") or "Open Iris & Phone Setup"), "settings"
     elif (
-        (not installed_package and (not available_package or not available_version))
-        or not mentra
+        not mentra
         or mentra.get("state") == "disabled"
         or runtime.port_blocked
     ):
         state, label, detail, action = "setup", "▲ setup needed", "Open Iris & Phone Setup", "settings"
+    elif not installed_package and (not available_package or not available_version):
+        state, label, detail, action = "unavailable", "Iris bundle unavailable", "Check GitHub releases in Iris Setup", None
     elif not installed_package:
         state, label, detail, action = "stopped", "○ not installed", "Not yet verified", "start"
     elif mismatch:
@@ -1140,10 +1141,10 @@ def _iris_product_status(
     elif mentra.get("state") in {"degraded", "transcript_gap"}:
         state = str(mentra["state"])
         label = f"▲ {state.replace('_', ' ')}"
-        detail, action = str(mentra.get("detail") or ""), None
+        detail, action = str(mentra.get("detail") or ""), "start" if repair_available else None
     else:
         state, label, detail = "ready", "● Host ready", ""
-        action = None
+        action = "start" if repair_available else None
 
     if age and state not in {"update", "installing"}:
         detail = "; ".join(part for part in (detail, age) if part)

@@ -127,7 +127,7 @@ function renderIrisInstallations(data) {
 }
 
 function irisInstallDisabled(data) {
-  return data.running || data.starting || data.stuck || data.orphaned || (data.setup && !data.setup.ready);
+  return data.running || data.starting || data.stuck || data.orphaned || data.ready === false || (data.setup && !data.setup.ready);
 }
 
 async function irisMetadataAction(id, action, body) {

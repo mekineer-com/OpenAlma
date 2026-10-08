@@ -41,9 +41,10 @@
     </ol>
 
     <h3 class="iris-section">Iris installer</h3>
+    {% if iris.ready is sameas false %}<p class="failure">{{ iris.status_label }}: {{ iris.detail }}</p>{% endif %}
     {% if not selected_installation %}
     <form method="post" action="/iris/install" id="iris-install-form">
-      <p><button class="btn" type="submit" {% if not iris_setup.ready or not iris_setup.enabled or installer_busy %}disabled{% endif %}>Stock Install</button></p>
+      <p><button class="btn" type="submit" {% if not iris_setup.ready or not iris_setup.enabled or iris.ready is sameas false or installer_busy or not iris.available_package or not iris.available_version or iris.installations is not defined %}disabled{% endif %}>Stock Install</button></p>
     </form>
     <p class="hint">For Stock Mentra, click Stock Install and scan the Iris QR below. For OpenAlma Mentra, use Install beside its app in Services.</p>
     {% endif %}
@@ -84,7 +85,7 @@
     {% if iris.force_stoppable %}<p><button class="btn" type="button" onclick="irisAction('force-stop', this)">Force Stop</button></p>
     {% elif iris.stoppable %}<p><button class="btn" type="button" onclick="irisAction('stop', this)">Cancel</button></p>{% endif %}
     {% elif installer_busy %}<p class="muted">Another Iris installation is in progress.</p>{% endif %}
-    <p id="iris-action-error" class="failure" role="alert"></p>
+    <p id="iris-action-error" class="failure" role="alert">{% if iris.installations is not defined %}Iris app status is unavailable.{% endif %}</p>
 
     {% if selected_installation %}
     <h3>App status</h3>
@@ -105,11 +106,11 @@
         {% else %}<strong title="{{ name_tooltip }}">{{ row.display_name }}</strong>{% endif %}
         <p data-status>{{ row.status_label }}{% if row.detail %} &mdash; {{ row.detail }}{% endif %}</p>
         <p>Soul: {{ row.soul_id or 'Not chosen' }}</p>
-        {% if row.action_kind == 'start' or (row.repair_available and fork and not row.active) %}
+        {% if row.action_kind == 'start' %}
         <form class="inline" method="post" action="/iris/install">
           <input type="hidden" name="device_session_id" value="{{ row.device_session_id }}">
           <input type="hidden" name="host_package" value="{{ row.host_package }}">
-          <button class="btn" type="submit" {% if installer_busy or row.active or not iris_setup.ready or not iris_setup.enabled or (row.action_kind == 'start' and not row.startable) %}disabled{% endif %}>{{ row.action_label if row.action_kind == 'start' else 'Repair' }}</button>
+          <button class="btn" type="submit" {% if installer_busy or iris.ready is sameas false or not iris_setup.ready or not iris_setup.enabled or not row.startable %}disabled{% endif %}>{{ row.action_label }}</button>
         </form>
         {% elif row.action_kind == 'settings' %}<span class="muted">Setup needed: see host readiness above.</span>{% endif %}
         {% if row.metadata_known is not sameas false %}
@@ -138,6 +139,7 @@
     const selectedDevice = {{ (selected_installation.device_session_id if selected_installation else '')|tojson }};
     const actionError = document.getElementById('iris-action-error');
     let submitting = false;
+    let statusAvailable = Array.isArray(initialStatus.installations);
     function statusSignature(status) {
       const setup = status.setup || {};
       return JSON.stringify([
@@ -145,6 +147,7 @@
         status.stoppable, status.force_stoppable, status.status_label, status.release_uri,
         status.release_device_session_id, status.release_host_package,
         status.github_status, status.available_version,
+        status.ready, status.install_running,
         [setup.enabled, setup.ready, setup.reason, setup.step,
           (setup.rows || []).map(row => [row.label, row.state, row.detail])],
         (status.installations || []).filter(row => !selectedDevice || row.device_session_id === selectedDevice).map(row => [
@@ -162,7 +165,12 @@
         const response = await fetch('/service/iris-server/status');
         if (!response.ok) return;
         const status = await response.json();
-        if (!Array.isArray(status.installations)) return;
+        if (!Array.isArray(status.installations)) {
+          statusAvailable = false;
+          actionError.textContent = status.detail || 'Iris app status is unavailable.';
+          document.querySelectorAll('form[action="/iris/install"] button, form[data-forget] button').forEach(button => { button.disabled = true; });
+          return;
+        }
         const items = Array.from(document.querySelectorAll('[data-device-session-id]'));
         for (const row of status.installations || []) {
           const item = items.find(item => item.dataset.deviceSessionId === row.device_session_id);
@@ -170,7 +178,7 @@
             [row.status_label, row.detail].filter(Boolean).join(' — ');
         }
         // Keep an open Rename form (including an unsaved name) intact.
-        if (statusSignature(status) !== initialSignature &&
+        if ((!statusAvailable || statusSignature(status) !== initialSignature) &&
             !document.querySelector('#iris-installations details[open], .iris-address:focus-within')) location.reload();
       } catch (_err) {}
     }, 2000);

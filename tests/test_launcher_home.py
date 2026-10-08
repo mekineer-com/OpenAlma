@@ -117,6 +117,7 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
         "release_uri": "miniapp://fixture.invalid/stock", "status_label": "Stock installer active",
     })
     monkeypatch.setattr(app.services, "mentra_readiness", lambda _root: {"enabled": True, "ready": True, "rows": []})
+    monkeypatch.setattr(app.setup_install, "optional_setup_status", lambda *_args: {"ready": True, "guidance": ""})
     monkeypatch.setattr(app.services, "list_souls", lambda: ["TestSoul"])
     monkeypatch.setattr(app.soul, "CHANNELS_CONFIG_PATH", tmp_path / "missing-config.json")
     monkeypatch.setattr(app.policy, "list_whatsapp_chats", lambda: [])
@@ -181,10 +182,19 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
         ("none", "No GitHub release published."),
         ("invalid", "GitHub release is missing the expected Iris asset."),
     ):
-        monkeypatch.setattr(services, "status", lambda _spec, state=release_state: {"github_status": state})
+        monkeypatch.setattr(services, "status", lambda _spec, state=release_state: {
+            "github_status": state, "installations": [], "available_package": services.IRIS_PACKAGE,
+            "available_version": "",
+        })
         visible = client.get("/iris").text
         assert message in visible
         assert ' selected.' not in visible
+        assert 'disabled' in visible.split('id="iris-install-form">', 1)[1].split('</form>', 1)[0]
+    monkeypatch.setattr(services, "status", lambda _spec: {
+        "installations": [], "available_package": services.IRIS_PACKAGE, "available_version": "0.1.0",
+    })
+    visible = client.get("/iris").text
+    assert 'disabled' not in visible.split('id="iris-install-form">', 1)[1].split('</form>', 1)[0]
     with pytest.MonkeyPatch.context() as unavailable:
         unavailable.setattr(services, "status", lambda _spec: {"state": "unavailable"})
         assert client.get("/iris?device_session_id=stock-test").status_code == 503
@@ -215,11 +225,12 @@ def test_iris_install_redirect_preserves_provided_target(tmp_path, monkeypatch, 
     assert started == [(spec, device_session_id, host_package)]
 
 
-def test_iris_address_save_preserves_config_and_backs_up(tmp_path, monkeypatch):
+@pytest.mark.parametrize("mentra", [None, {"enabled": True, "public_base_url": "http://10.77.0.1"}])
+def test_iris_address_save_preserves_config_and_backs_up(tmp_path, monkeypatch, mentra):
     import json
     path = tmp_path / "mcp-memu-server/config.json"
     path.parent.mkdir()
-    original = '{"mentra":{"enabled":true,"public_base_url":"http://10.77.0.1"},"other":"keep"}\n'
+    original = json.dumps({"other": "keep", **({"mentra": mentra} if mentra is not None else {})}) + "\n"
     path.write_text(original)
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
     client = TestClient(app.app, base_url="http://127.0.0.1")
@@ -230,7 +241,7 @@ def test_iris_address_save_preserves_config_and_backs_up(tmp_path, monkeypatch):
     assert path.read_text() == original
     for address in ("http://100.90.1.2", "https://server.example", "https://8.8.8.8"):
         assert client.post("/iris/address", data={"public_base_url": address}, follow_redirects=False).status_code == 303
-        assert json.loads(path.read_text()) == {"mentra": {"enabled": True, "public_base_url": address}, "other": "keep"}
+        assert json.loads(path.read_text()) == {"mentra": {**(mentra or {}), "public_base_url": address}, "other": "keep"}
     assert Path(str(path) + ".orig").read_text() == original
     assert json.loads(Path(str(path) + "2.orig").read_text())["mentra"]["public_base_url"] == "http://100.90.1.2"
 
@@ -399,6 +410,36 @@ def test_iris_runtime_setup_state_is_not_an_install_row(tmp_path, monkeypatch):
 
     assert status == {"state": "setup", "action_kind": "settings"}
     assert "install_setup" not in status
+
+
+@pytest.mark.parametrize("setup", [
+    {"ready": False, "status_label": "Installing", "install_running": True, "detail": "Dependencies"},
+    {"ready": False, "status_label": "Installation incomplete", "detail": "Missing dependencies"},
+    {"ready": True, "guidance": ""},
+])
+def test_iris_page_and_poll_share_setup_status(tmp_path, monkeypatch, setup):
+    import json
+    import re
+    spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    row = {"device_session_id": "fork-test", "display_name": "Test Phone",
+           "host_package": "com.mentra.mentra.openalma", "action_kind": "start",
+           "action_label": "Repair", "startable": True}
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "all_services", lambda: [spec])
+    monkeypatch.setattr(app.services, "is_installed", lambda _spec: True)
+    monkeypatch.setattr(app.services, "status", lambda _spec: {
+        "status_label": "Host ready", "installations": [row],
+        "available_package": services.IRIS_PACKAGE, "available_version": "0.1.0",
+        "setup": {"enabled": True, "ready": True, "rows": []},
+    })
+    monkeypatch.setattr(app.setup_install, "optional_setup_status", lambda *_args: setup)
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    for url in ("/iris", "/iris?device_session_id=fork-test"):
+        html = client.get(url).text
+        initial = json.loads(html.split("const initialStatus = ", 1)[1].split(";", 1)[0])
+        assert initial == client.get("/service/iris-server/status").json()
+        install = html.split('action="/iris/install"', 1)[1].split("</form>", 1)[0]
+        assert bool(re.search(r'<button[^>]*disabled', install)) == (not setup["ready"])
 
 
 def test_uninstalled_iris_opens_phone_client_section_for_openalma_host(tmp_path, monkeypatch):
