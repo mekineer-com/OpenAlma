@@ -128,7 +128,7 @@ def test_iris_setup_names_open_existing_rename_and_live_fallback_is_readonly():
     html = env.get_template("iris.html").render(**context, selected_installation=installations[1])
     live = html.split('data-device-session-id="forgotten-app"', 1)[1].split("</li>", 1)[0]
     assert 'data-device-session-id="confirmed-app"' not in html
-    assert 'title="App details unavailable version unknown, Iris not yet reported">Unreported app</strong>' in live
+    assert 'title="App details unavailable (version unknown), Iris not yet reported">Unreported app</strong>' in live
     assert "<details" not in live
     assert "<form" not in live
 
