@@ -32,8 +32,8 @@
     <ol class="tight">
       <li>Make the OpenAlma address above reachable through your trusted private connection.</li>
       <li>Connect the phone to that private VPN or connection.</li>
-      <li>Install Mentra: <a href="https://github.com/mekineer-com/MentraOS">OpenAlma Mentra</a> (recommended for Iris automation) or <a href="https://play.google.com/store/apps/details?id=com.mentra.mentra">Stock Mentra</a>.</li>
-      <li>Signing in to OpenAlma Mentra: choose OpenAlma Mentra if Android offers sign-in apps, or use email sign-in.</li>
+      <li>Install Mentra: <a href="https://github.com/mekineer-com/MentraOS/releases">OpenAlma Mentra</a> (recommended for Iris automation) or <a href="https://play.google.com/store/apps/details?id=com.mentra.mentra">Stock Mentra</a>.</li>
+      <li>Signing in to OpenAlma Mentra: choose OpenAlma if Android offers sign-in apps, or use email sign-in.</li>
       <li>For OpenAlma Mentra, enter the OpenAlma address in its Settings if the default does not connect.</li>
       <li>Install or update Iris using the installer below, then open it once.</li>
       <li>Allow Mentra microphone access. Android/Mentra asks for camera or photo access when needed.</li>
@@ -93,7 +93,7 @@
       {% set fork = row.host_package == 'com.mentra.mentra.openalma' %}
       {% set target_busy = row.active or (installer_busy and iris.release_device_session_id == row.device_session_id) %}
       <li data-device-session-id="{{ row.device_session_id }}">
-        {% set name_tooltip = ('App details unavailable' if row.metadata_known is sameas false else 'OpenAlma Mentra' if fork else 'Mentra') ~ ' ' ~ ('v' ~ row.host_version if row.host_version else 'version unknown') ~ ', Iris ' ~ ('v' ~ row.installed_version if row.installed_version else 'not yet reported') %}
+        {% set name_tooltip = ('App details unavailable' if row.metadata_known is sameas false else 'OpenAlma Mentra' if fork else 'Mentra') ~ (' v' ~ row.host_version if row.host_version else ' (version unknown)') ~ ', Iris ' ~ ('v' ~ row.installed_version if row.installed_version else 'not yet reported') %}
         {% if row.metadata_known is not sameas false %}
         <details class="iris-rename">
           <summary title="{{ name_tooltip }}" aria-label="Rename {{ row.display_name }}">{{ row.display_name }}</summary>

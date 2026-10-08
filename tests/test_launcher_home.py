@@ -138,11 +138,11 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
         if page.startswith("/iris"):
             visible = response.text.split('<script src="/static/vendor/qrcode.min.js">', 1)[0]
             assert "OpenAlma Mentra" in visible
-            assert "choose OpenAlma Mentra if Android offers sign-in apps, or use email sign-in" in visible
+            assert "choose OpenAlma if Android offers sign-in apps, or use email sign-in" in visible
             assert 'href="https://play.google.com/store/apps/details?id=com.mentra.mentra"' in visible
             assert "trusted private VPN or connection" in visible
             assert "Choose a Soul on the phone" in visible
-            assert 'href="https://github.com/mekineer-com/MentraOS"' in visible
+            assert 'href="https://github.com/mekineer-com/MentraOS/releases"' in visible
             assert visible.index('>Phone steps</h3>') < visible.index('>Iris installer</h3>')
             assert "they do not check your phone" in visible
             assert "For first installation, Iris receives this address automatically" in visible
@@ -172,6 +172,9 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
     installations[1]["host_reporting"] = False
     visible = client.get("/iris?device_session_id=fork-test").text
     assert 'disabled' not in visible.split('data-forget>', 1)[1].split('</form>', 1)[0]
+    installations[1]["metadata_known"] = False
+    visible = client.get("/iris?device_session_id=fork-test").text
+    assert 'App details unavailable (version unknown), Iris not yet reported' in visible
     assert client.get("/iris?device_session_id=unknown-app").status_code == 404
     with pytest.MonkeyPatch.context() as unavailable:
         unavailable.setattr(services, "status", lambda _spec: {"state": "unavailable"})

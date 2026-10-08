@@ -90,7 +90,11 @@ function renderIrisInstallations(data) {
     status.textContent = installation.status_label || 'Status unavailable';
     row.querySelector('.iris-detail').textContent = installation.detail || '';
     row.querySelector('.iris-soul').textContent = 'Soul: ' + (installation.soul_id || 'Not chosen');
-    var actions = ' <a class="btn" href="/iris?device_session_id=' + encodeURIComponent(id) + '">Setup</a>' + (known ? ' <button class="btn" type="button" data-forget>Forget</button>' : '');
+    var forgetBlocked = installation.active || installation.host_reporting ||
+      (data.release_device_session_id === id && (data.running || data.starting || data.stuck || data.orphaned));
+    var actions = ' <a class="btn" href="/iris?device_session_id=' + encodeURIComponent(id) + '">Setup</a>' + (known ?
+      ' <button class="btn" type="button" data-forget title="Close the app and wait 15 seconds before forgetting it. Opening it again restores its row."' +
+      (forgetBlocked ? ' disabled' : '') + '>Forget</button>' : '');
     if (installation.startable && installation.action_kind === 'start') {
       actions = '<form class="inline" method="post" action="/iris/install">' +
         '<input type="hidden" name="device_session_id" value="' + esc(id) + '">' +
@@ -114,7 +118,7 @@ function renderIrisInstallations(data) {
           alert(error.message);
         } finally {
           delete row.dataset.forgetting;
-          this.disabled = false;
+          this.disabled = Boolean(forgetBlocked);
         }
       };
     }
