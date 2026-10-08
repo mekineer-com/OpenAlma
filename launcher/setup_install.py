@@ -600,11 +600,6 @@ def _update_core(
             _checkout_release(entry, destination, log)
         _set_operation(operation, step="Refreshing core Python packages")
         _refresh_core(operation.root, log)
-        _set_operation(operation, step="Migrating soul databases")
-        _run(
-            [str(_venv_python(operation.root)), "migrate_release.py"],
-            cwd=operation.root / "mcp-memu-server", log=log,
-        )
         issue = core_issue(operation.root)
         if issue:
             raise SetupError(issue)

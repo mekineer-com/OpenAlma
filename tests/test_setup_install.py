@@ -266,17 +266,17 @@ def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatc
     monkeypatch.setattr(setup_install, "_checkout_release", lambda *_args: events.append("new-code"))
     monkeypatch.setattr(setup_install, "_refresh_core", lambda *_args: events.append("environment"))
     monkeypatch.setattr(setup_install, "_restore_databases", lambda *_args: events.append("databases"))
-    monkeypatch.setattr(setup_install, "core_issue", lambda *_args, **_kwargs: "")
+    issues = iter(["core verification failed", ""])
+    monkeypatch.setattr(setup_install, "core_issue", lambda *_args, **_kwargs: next(issues))
 
     def run(command, **_kwargs):
-        if "migrate_release.py" in command:
-            raise RuntimeError("migration failed")
+        assert "migrate_release.py" not in command
         if command[:3] == ["git", "checkout", "--detach"]:
             events.append("old-code")
 
     monkeypatch.setattr(setup_install, "_run", run)
 
-    with pytest.raises(setup_install.SetupError, match="migration failed"):
+    with pytest.raises(setup_install.SetupError, match="core verification failed"):
         setup_install._update_core(operation, "v2.0.0", {"memu-server": entries}, None)
 
     assert events.index("databases") < events.index("old-code")
