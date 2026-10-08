@@ -91,7 +91,8 @@ function bindSoulCombobox(soulForm, names, onSaved, onChanged) {
       }
       function saveSoul(name) {
         void submitSoulForm(soulForm, function() {
-          if (soulInput.value.trim() !== name || !soulReady.hidden) return;
+          if (soulInput.value.trim() !== name) return;
+          const wasReady = !soulReady.hidden;
           if (!knownSouls.has(name)) {
             knownSouls.add(name);
             addSoulOption(name);
@@ -100,7 +101,7 @@ function bindSoulCombobox(soulForm, names, onSaved, onChanged) {
           soulNew.hidden = true;
           soulReady.hidden = false;
           closeSoulMenu();
-          if (onSaved) onSaved(name);
+          if (onSaved && !wasReady) onSaved(name);
         });
       }
       knownSouls.forEach(addSoulOption);

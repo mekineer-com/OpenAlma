@@ -45,7 +45,18 @@ const nodes = Object.fromEntries(['[name=soul_id]', '.soul-options', '.soul-read
 const form = {...field(), querySelector:key=>nodes[key]};
 let saved=[], changed=0;
 global.submitSoulForm = (_form, done)=>done();
+nodes['[name=soul_id]'].value='MissingSoul'; nodes['.soul-ready'].hidden=false;
 bindSoulCombobox(form, ['KnownSoul'], name=>saved.push(name), ()=>changed++);
+form.events.submit({preventDefault(){}});
+assert.equal(nodes['.soul-new'].hidden,false);
+form.events.submit({preventDefault(){}});
+assert.equal(nodes['.soul-new'].hidden,true);
+assert.equal(nodes['.soul-ready'].hidden,false);
+assert.deepEqual(nodes['.soul-options'].children.map(node=>node.textContent),['KnownSoul','MissingSoul']);
+assert.deepEqual(saved,[]); assert.equal(changed,0);
+form.events.submit({preventDefault(){}});
+assert.equal(nodes['[name=use_existing]'].value,'true');
+assert.equal(nodes['.soul-new'].hidden,true); assert.deepEqual(saved,[]);
 nodes['[name=soul_id]'].value='NewSoul'; nodes['[name=soul_id]'].events.input();
 form.events.submit({preventDefault(){}});
 assert.deepEqual(saved, []); assert.equal(nodes['.soul-new'].hidden,false);
