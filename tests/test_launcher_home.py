@@ -176,6 +176,15 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
     visible = client.get("/iris?device_session_id=fork-test").text
     assert 'App details unavailable (version unknown), Iris not yet reported' in visible
     assert client.get("/iris?device_session_id=unknown-app").status_code == 404
+    for release_state, message in (
+        ("unavailable", "GitHub releases unavailable."),
+        ("none", "No GitHub release published."),
+        ("invalid", "GitHub release is missing the expected Iris asset."),
+    ):
+        monkeypatch.setattr(services, "status", lambda _spec, state=release_state: {"github_status": state})
+        visible = client.get("/iris").text
+        assert message in visible
+        assert ' selected.' not in visible
     with pytest.MonkeyPatch.context() as unavailable:
         unavailable.setattr(services, "status", lambda _spec: {"state": "unavailable"})
         assert client.get("/iris?device_session_id=stock-test").status_code == 503

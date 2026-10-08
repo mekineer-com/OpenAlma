@@ -1181,9 +1181,9 @@ def status(spec: ServiceSpec) -> dict:
         release = _read_iris_release_status(spec, runtime)
         release_device = str(release.get("device_session_id") or "")
         mentra = _read_mentra_status(MEMU_SERVER_PORT)
-        package, version, url, github_status = _iris_release_candidate(spec)
+        package, version, _, github_status = _iris_release_candidate(spec)
         result = _iris_product_status(runtime, {**mentra, "active": False, "starting": False}, package, version, readiness)
-        result.update(available_source="github" if url else None, github_status=github_status)
+        result["github_status"] = github_status
         result["setup"] = readiness
         result["starting"] = bool(release_device) and _IRIS_INSTALL_LOCK.locked() and not runtime.running
         if result["starting"]:

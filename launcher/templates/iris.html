@@ -48,11 +48,11 @@
     <p class="hint">For Stock Mentra, click Stock Install and scan the Iris QR below. For OpenAlma Mentra, use Install beside its app in Services.</p>
     {% endif %}
     {% if iris.github_status == "unavailable" %}
-      <p class="muted">GitHub releases unavailable; local {{ iris.available_version }} selected.</p>
+      <p class="muted">GitHub releases unavailable.</p>
     {% elif iris.github_status == "none" %}
-      <p class="muted">No GitHub release published; local {{ iris.available_version }} selected.</p>
+      <p class="muted">No GitHub release published.</p>
     {% elif iris.github_status == "invalid" %}
-      <p class="muted">GitHub release is missing the expected Iris asset; local {{ iris.available_version }} selected.</p>
+      <p class="muted">GitHub release is missing the expected Iris asset.</p>
     {% endif %}
     {% if show_installer %}
     {% if installer_busy %}
