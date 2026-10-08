@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sqlite3
 import urllib.error
 import urllib.parse
 import webbrowser
@@ -976,7 +977,11 @@ def soul_save(soul_id: str = Form(default=""), use_existing: bool = Form(default
         or channels.get("state") == "stopping"
     ):
         raise HTTPException(status_code=409, detail="Stop Hermes Channels before changing its Soul")
-    soul.set_active_soul_id(_resolve_soul(soul_id, use_existing))
+    try:
+        soul.read_reply_prefix_template()
+        soul.set_active_soul_id(_resolve_soul(soul_id, use_existing))
+    except (RuntimeError, OSError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return RedirectResponse("/hermes", status_code=303)
 
 

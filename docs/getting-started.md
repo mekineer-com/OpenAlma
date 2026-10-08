@@ -120,7 +120,7 @@ After setup, open the memU extension panel in SillyTavern and set **Server URL**
    What's inside:
 
    - **Services panel** — start, stop, and restart local services (memU Server, Atomic Mind Map, Hermes Channels, SillyTavern), plus a permanent Iris row for phone status and installation. View live logs for each. No terminal juggling needed.
-   - **Settings** — edit `config.json` for the server, and pair WhatsApp inline via QR code (no terminal needed). If your repo layout differs from the default siblings arrangement, set the parent directory here.
+   - **Settings** — edit `config.json` for the server. If your repo layout differs from the default siblings arrangement, set the parent directory here. Pair WhatsApp on the Hermes page, reached from Services → Hermes Channels → Setup.
    - **Memorize-pressure gauge** (home page) — how many unmemorized tokens are queued across all conversations vs the 8,000-token threshold, and whether a sleep gap has been detected. Useful for knowing if memorize is about to fire or is just waiting.
    - **WhatsApp Channel Policy** — tell the soul which conversations matter: whether she can respond to, only listen to, or ignore each chat, and whether it feeds memory. Detailed under [WhatsApp](#whatsapp-hermes-channels).
 
@@ -136,7 +136,7 @@ The soul appears as a WhatsApp contact. Hermes Channels routes each incoming mes
 
 **Channel policy** — each WhatsApp chat has two independent settings: **Policy** (`full` / `listen_only` / `excluded`) controls whether the soul can respond, can only listen, or is dropped entirely. **Mem** controls whether messages from that chat are included in memory extraction. Configure both per-chat via the Stack Launcher's WhatsApp Channel Policy page.
 
-**Bot mode** — in group chats, set `reply_prefix` via the `WHATSAPP_REPLY_PREFIX` env variable (or in the Hermes Channels config) so the soul only responds to messages that start with a trigger (e.g. `!siri`). In direct chats, she responds to everything.
+**Reply prefix** — to change the name shown on WhatsApp replies, edit `reply_prefix_template` in Hermes Channels' config, keeping `{soul}` where the selected Soul's name belongs. `reply_prefix` is regenerated when you change Souls.
 
 **Autonomous follow-ups** — she can check in with you unprompted, not just when you write first — immediately, or scheduled for a later moment she picks. What she does between turns is logged as her own activity, visible to her next turn under `My Activities:`.
 
