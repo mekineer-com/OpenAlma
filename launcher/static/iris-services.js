@@ -95,7 +95,7 @@ function renderIrisInstallations(data) {
     var actions = ' <a class="btn" href="/iris?device_session_id=' + encodeURIComponent(id) + '">Setup</a>' + (known ?
       ' <button class="btn" type="button" data-forget title="Close the app and wait 15 seconds before forgetting it. Opening it again restores its row."' +
       (forgetBlocked ? ' disabled' : '') + '>Forget</button>' : '');
-    if (installation.startable && installation.action_kind === 'start') {
+    if (installation.startable && installation.action_kind === 'start' && installation.action_label !== 'Repair') {
       actions = '<form class="inline" method="post" action="/iris/install">' +
         '<input type="hidden" name="device_session_id" value="' + esc(id) + '">' +
         '<input type="hidden" name="host_package" value="' + esc(installation.host_package) + '">' +

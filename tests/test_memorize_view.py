@@ -214,11 +214,18 @@ for (let i = 0; i < rows.length; i++) {
 }
 assert.match(rows[1].querySelector('.iris-actions').innerHTML, />Install<\/button>/);
 assert.match(rows[1].querySelector('.iris-actions').innerHTML, /name="device_session_id" value="fork-test"/);
-installations[1].action_label = 'Repair';
+installations[1].action_label = 'Update';
 renderIrisInstallations({installations, ready: false});
-assert.match(rows[1].querySelector('.iris-actions').innerHTML, /disabled>Repair<\/button>/);
+assert.match(rows[1].querySelector('.iris-actions').innerHTML, /disabled>Update<\/button>/);
 renderIrisInstallations({installations, ready: true});
-assert.match(rows[1].querySelector('.iris-actions').innerHTML, /type="submit">Repair<\/button>/);
+assert.match(rows[1].querySelector('.iris-actions').innerHTML, /type="submit">Update<\/button>/);
+installations[1].action_label = 'Repair';
+for (const ready of [false, true]) {
+  renderIrisInstallations({installations, ready});
+  const html = rows[1].querySelector('.iris-actions').innerHTML;
+  assert.doesNotMatch(html, /<form|>Repair</);
+  assert.match(html, /href="\/iris\?device_session_id=fork-test">Setup<\/a>/);
+}
 assert.ok(!rows[0].querySelector('.iris-actions').innerHTML.includes('>Repair<'));
 """, str(path)], check=True, timeout=10)
 
