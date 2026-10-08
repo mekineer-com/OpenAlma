@@ -817,7 +817,7 @@ def iris_install(
 def _start_iris_install(spec: services.ServiceSpec, device_session_id: str, host_package: str) -> None:
     if not services._IRIS_INSTALL_LOCK.acquire(blocking=False):
         raise services.ServiceStoppingError("Iris installer is starting; wait before installing another app")
-    reserved_id = ""
+    installation_ticket = ""
     try:
         services._IRIS_INSTALL_CANCELLED.clear()
         services.raise_if_stopping(spec)
@@ -825,14 +825,18 @@ def _start_iris_install(spec: services.ServiceSpec, device_session_id: str, host
         if not device_session_id:
             if host_package:
                 raise ValueError("Choose an Iris app installation")
-            device_session_id = services.iris_installation_request()["device_session_id"]
-            reserved_id = device_session_id
             host_package = "com.mentra.mentra"
-        target = _iris_install_target(device_session_id, host_package)
+            target = {"device_session_id": "", "host_package": host_package}
+        else:
+            target = _iris_install_target(device_session_id, host_package)
+        if host_package == "com.mentra.mentra":
+            reservation = services.iris_installation_request(device_session_id, reserve=True)
+            installation_ticket = reservation["installation_ticket"]
+            target = {**target, **reservation}
         services.start(spec, install_target=target)
     except Exception:
-        if reserved_id:
-            services.iris_installation_request(reserved_id)
+        if installation_ticket:
+            services.iris_installation_request(installation_ticket)
         raise
     finally:
         services._IRIS_INSTALL_LOCK.release()
@@ -868,8 +872,14 @@ def iris_forget(device_session_id: str) -> dict:
         spec = next((s for s in services.all_services() if s.name == "iris-server"), None)
         if spec:
             runtime = services._runtime_state(spec)
-            if (runtime.running or runtime.stuck or runtime.orphaned) and services._iris_release_record(spec).get("device_session_id") == device_session_id:
-                raise HTTPException(status_code=409, detail="Finish or stop this app's installer first")
+            if runtime.running or runtime.stuck or runtime.orphaned:
+                release = services._iris_release_record(spec)
+                targeted = release.get("device_session_id") == device_session_id
+                if not targeted and release.get("installation_ticket"):
+                    targeted = any(r["device_session_id"] == device_session_id and r.get("installation_ticket") == release["installation_ticket"]
+                                   for r in services._read_mentra_status(services.MEMU_SERVER_PORT).get("installations", []))
+                if targeted:
+                    raise HTTPException(status_code=409, detail="Finish or stop this app's installer first")
         return _iris_metadata_action(device_session_id)
     finally:
         services._IRIS_INSTALL_LOCK.release()

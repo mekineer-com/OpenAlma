@@ -621,8 +621,10 @@ def _mcp_request(path: str, payload: dict | None = None, *, timeout: float = 2, 
     return data
 
 
-def iris_installation_request(device_session_id: str = "", display_name: str | None = None) -> dict:
+def iris_installation_request(device_session_id: str = "", display_name: str | None = None, *, reserve: bool = False) -> dict:
     path = "/mentra/installations"
+    if reserve:
+        return _mcp_request(path, {"device_session_id": device_session_id} if device_session_id else {}, method="POST")
     if device_session_id:
         path += "/" + urllib.parse.quote(device_session_id, safe="")
     return _mcp_request(
@@ -759,19 +761,24 @@ def iris_install_env(target: dict[str, str] | None) -> dict[str, str]:
     host_package = str(target.get("host_package") or "")
     if host_package not in ("com.mentra.mentra", "com.mentra.mentra.openalma"):
         raise ValueError("Unknown Mentra app installation")
-    target = {**target, "user_id": owner_id}
+    identity_key = "installation_ticket" if host_package == "com.mentra.mentra" else "device_session_id"
     values = {
         "BASE_URL": str(mentra.get("public_base_url") or ""),
-        **{key.upper(): str(target.get(key) or "").strip() for key in ("user_id", "device_session_id")},
+        "USER_ID": owner_id.strip(),
+        identity_key.upper(): str(target.get(identity_key) or "").strip(),
     }
     for key, value in values.items():
         if not value or any(char in value for char in "\r\n"):
             raise ValueError(f"Set a valid Iris install {key} on the Iris setup page")
     values["BASE_URL"] = _iris_base_url(values["BASE_URL"])
-    if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", values["DEVICE_SESSION_ID"]):
+    if host_package == "com.mentra.mentra.openalma" and not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", values["DEVICE_SESSION_ID"]):
         raise ValueError("Iris device ID must be 1-128 letters, digits, dots, underscores or hyphens")
     values["USER_ID"] = urllib.parse.quote(values["USER_ID"], safe="")
     env = {f"MENTRA_PUBLIC_OPENALMA_{key}": value for key, value in values.items()}
+    if host_package == "com.mentra.mentra":
+        env["MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID"] = str(target.get("device_session_id") or "")
+    else:
+        env["MENTRA_PUBLIC_OPENALMA_INSTALLATION_TICKET"] = ""
     env["MENTRA_RELEASE_HOST_PACKAGE"] = host_package
     return env
 
@@ -1048,7 +1055,7 @@ def _read_iris_release_status(spec: ServiceSpec, runtime: RuntimeState) -> dict:
     if not runtime.running and not _IRIS_INSTALL_LOCK.locked():
         return {}
     data = _iris_release_record(spec)
-    if data.get("device_session_id") and "pid" not in data:
+    if (data.get("installation_ticket") or data.get("device_session_id")) and "pid" not in data:
         return data  # Captured target while the wrapper starts.
     try:
         pid = int(data.get("pid"))
@@ -1200,11 +1207,16 @@ def status(spec: ServiceSpec) -> dict:
         release = _read_iris_release_status(spec, runtime)
         release_device = str(release.get("device_session_id") or "")
         mentra = _read_mentra_status(MEMU_SERVER_PORT)
+        if release.get("installation_ticket"):
+            receipt = next((r for r in mentra.get("installations", [])
+                            if r.get("installation_ticket") == release["installation_ticket"] and r.get("package_name") and not r.get("host")), None)
+            if receipt:
+                release_device = receipt["device_session_id"]
         package, version, _, github_status = _iris_release_candidate(spec)
         result = _iris_product_status(runtime, {**mentra, "active": False, "starting": False}, package, version, readiness)
         result["github_status"] = github_status
         result["setup"] = readiness
-        result["starting"] = bool(release_device) and _IRIS_INSTALL_LOCK.locked() and not runtime.running
+        result["starting"] = bool(release_device or release.get("installation_ticket")) and _IRIS_INSTALL_LOCK.locked() and not runtime.running
         if result["starting"]:
             result.update(state="starting", status_label="◐ preparing installer", action_kind="stop", action_label="Cancel", startable=False, stoppable=True)
         installations = []
@@ -1247,7 +1259,8 @@ def status(spec: ServiceSpec) -> dict:
                           action_kind="settings", action_label="Setup", startable=False)
         if release:
             result["release_uri"] = release.get("release_uri")
-            result["release_device_session_id"] = release.get("device_session_id")
+            result["release_device_session_id"] = release_device
+            result["release_installation_ticket"] = release.get("installation_ticket")
             result["release_host_package"] = release.get("host_package")
         return _stop_status(spec, result)
     runtime = _runtime_state(spec)

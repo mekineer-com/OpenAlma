@@ -464,7 +464,7 @@ class MentraStatusTest(TestCase):
             http.assert_called_once_with("http://10.77.0.1/integration/mentra/health")
 
             settings = json.loads(config.read_text())
-            target = {"host_package": "com.mentra.mentra", "device_session_id": "fictional-phone"}
+            target = {"host_package": "com.mentra.mentra", "device_session_id": "fictional-phone", "installation_ticket": "fictional-ticket"}
             for address in ("http://100.92.1.5:8080", "https://private.example", "https://8.8.8.8", "http://[fd00::1]:8099"):
                 settings["mentra"]["public_base_url"] = address
                 config.write_text(json.dumps(settings))
@@ -478,7 +478,15 @@ class MentraStatusTest(TestCase):
                     patch.object(services, "_resolve_apps_root", return_value=root),
                     patch.object(services, "read_owner", return_value="Fictional Owner"),
                 ):
-                    self.assertEqual(services.iris_install_env(target)["MENTRA_PUBLIC_OPENALMA_BASE_URL"], address)
+                    stock = services.iris_install_env({**target, "device_session_id": ""})
+                    self.assertEqual(stock["MENTRA_PUBLIC_OPENALMA_BASE_URL"], address)
+                    self.assertEqual(stock["MENTRA_PUBLIC_OPENALMA_INSTALLATION_TICKET"], "fictional-ticket")
+                    self.assertEqual(stock["MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID"], "")
+                    fork = services.iris_install_env({**target, "host_package": "com.mentra.mentra.openalma"})
+                    self.assertEqual(fork["MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID"], "fictional-phone")
+                    self.assertEqual(fork["MENTRA_PUBLIC_OPENALMA_INSTALLATION_TICKET"], "")
+                    with self.assertRaisesRegex(ValueError, "INSTALLATION_TICKET"):
+                        services.iris_install_env({**target, "installation_ticket": ""})
             settings["mentra"]["public_base_url"] = "http://10.77.0.1"
             config.write_text(json.dumps(settings))
 
@@ -834,6 +842,7 @@ class MentraStatusTest(TestCase):
                 self.assertNotIn("Your identity is saved", client.get("/").text)
             self.assertEqual(client.get("/memorize/status").json(), {"souls": []})
             iris = services.ServiceSpec("iris-server", "Iris", [], Path(directory), Path("log"), Path("pid"))
+            original_installation_request = services.iris_installation_request
             app.settings.apps_root.return_value = Path(directory)
             start_issue_patch = patch.object(app.setup_install, "start_issue", return_value="")
             start_issue_patch.start()
@@ -849,6 +858,10 @@ class MentraStatusTest(TestCase):
                 patch.object(services, "resolve_soul", return_value="Fictional Soul"),
                 patch.object(services, "read_owner", return_value="Fictional User"),
                 patch.object(services, "iris_install_env", return_value={}),
+                patch.object(services, "iris_installation_request", return_value={
+                    "installation_ticket": "test-ticket", "device_session_id": "test-phone",
+                    "user_id": "Fictional User", "display_name": "Phone",
+                }) as reservation,
                 patch.object(services, "start") as start,
             ):
                 home = client.get("/").text
@@ -902,7 +915,9 @@ class MentraStatusTest(TestCase):
                 saved = client.post("/iris/install", data=target, follow_redirects=False)
                 self.assertEqual(saved.status_code, 303)
                 self.assertEqual(saved.headers["location"], "/iris?device_session_id=test-phone")
-                start.assert_called_once_with(iris, install_target={**target, "display_name": "Phone"})
+                start.assert_called_once_with(iris, install_target={**target, "display_name": "Phone",
+                    "installation_ticket": "test-ticket", "user_id": "Fictional User"})
+                reservation.assert_called_once_with("test-phone", reserve=True)
                 start.reset_mock()
                 response = client.post(
                     "/service/iris-server/start",
@@ -932,21 +947,41 @@ class MentraStatusTest(TestCase):
                     with services._STOP_LOCK:
                         services._STOP_THREADS.pop(iris.name, None)
                 with (
-                    patch.object(services, "iris_installation_request", return_value={"device_session_id": "test-phone"}) as reserve,
+                    patch.object(services, "iris_installation_request", return_value={
+                        "installation_ticket": "new-ticket", "device_session_id": "", "user_id": "Fictional User",
+                        "display_name": "",
+                    }) as reserve,
                     patch.object(services, "resolve_soul", side_effect=AssertionError("installation must not create a soul")),
                 ):
                     self.assertEqual(client.post("/iris/install", follow_redirects=False).status_code, 303)
-                    reserve.assert_called_once_with()
+                    reserve.assert_called_once_with("", reserve=True)
+                    self.assertEqual(start.call_args.kwargs["install_target"], {
+                        "installation_ticket": "new-ticket", "device_session_id": "", "user_id": "Fictional User",
+                        "host_package": "com.mentra.mentra", "display_name": "",
+                    })
                     reserve.reset_mock()
                     with patch.object(services, "start", side_effect=ValueError("Fictional start failure")):
                         self.assertEqual(client.post("/iris/install").status_code, 400)
-                    self.assertEqual([call.args for call in reserve.call_args_list], [(), ("test-phone",)])
+                    self.assertEqual([call.args for call in reserve.call_args_list], [("",), ("new-ticket",)])
+                    self.assertEqual(reserve.call_args_list[0].kwargs, {"reserve": True})
                     self.assertEqual(client.post("/iris/install", data={**target, "host_package": "com.mentra.mentra.openalma"}).status_code, 400)
                     reserve.reset_mock()
                     with patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)):
                         self.assertEqual(client.post("/iris/install").status_code, 409)
                         reserve.assert_not_called()
-                with patch.object(services, "_mcp_request", return_value={"ok": True}) as request:
+                with (
+                    patch.object(services, "iris_installation_request", new=original_installation_request),
+                    patch.object(services, "_mcp_request", return_value={"ok": True}) as request,
+                ):
+                    services.iris_installation_request(reserve=True)
+                    request.assert_called_once_with("/mentra/installations", {}, method="POST")
+                    request.reset_mock()
+                    services.iris_installation_request("test-phone", reserve=True)
+                    request.assert_called_once_with("/mentra/installations", {"device_session_id": "test-phone"}, method="POST")
+                    request.reset_mock()
+                    services.iris_installation_request("test-ticket")
+                    request.assert_called_once_with("/mentra/installations/test-ticket", {}, method="DELETE")
+                    request.reset_mock()
                     self.assertEqual(client.post("/iris/installations/test-phone/rename", data={"display_name": "New name"}).status_code, 200)
                     request.assert_called_once_with("/mentra/installations/test-phone", {"display_name": "New name"}, method="PATCH")
                     request.reset_mock()
@@ -1021,6 +1056,10 @@ class MentraStatusTest(TestCase):
                     "installations": [{"device_session_id": "test-phone"}],
                 }),
                 patch.object(services, "read_owner", return_value="Fictional User"),
+                patch.object(services, "iris_installation_request", return_value={
+                    "installation_ticket": "test-ticket", "device_session_id": "test-phone",
+                    "user_id": "Fictional User", "display_name": "Phone",
+                }),
                 patch.dict(services.os.environ, {"MENTRA_PUBLIC_OPENALMA_BASE_URL": "http://stale.example"}),
                 patch.object(services, "_runtime_state", return_value=services.RuntimeState()),
                 patch.object(services, "_iris_release_candidate", return_value=(services.IRIS_PACKAGE, "0.1.11", "https://example.invalid/iris.zip", "available")),
@@ -1035,6 +1074,7 @@ class MentraStatusTest(TestCase):
                 self.assertNotIn("MENTRA_PUBLIC_OPENALMA_BEARER", built)
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_USER_ID"], "Fictional%20User")
                 self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID"], "test-phone")
+                self.assertEqual(built["MENTRA_PUBLIC_OPENALMA_INSTALLATION_TICKET"], "test-ticket")
                 self.assertNotIn("MENTRA_PUBLIC_OPENALMA_SOUL_ID", built)
                 self.assertEqual(built["MENTRA_RELEASE_HOST_PACKAGE"], "com.mentra.mentra")
                 self.assertEqual(built["MENTRA_RELEASE_BUNDLE"], str(root / "iris.zip"))

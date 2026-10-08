@@ -67,7 +67,7 @@
       <p>Scan this QR in Stock Mentra (one app installation only):</p>
       <canvas id="iris-install-qr" width="220" height="220"></canvas>
       <p><a href="{{ iris.release_uri }}">Open installation link</a></p>
-      <p>Phone ID: <code>{{ iris.release_device_session_id }}</code></p>
+      {% if iris.release_device_session_id %}<p>Phone ID: <code>{{ iris.release_device_session_id }}</code></p>{% endif %}
       <p>Stock Mentra installation:</p>
       <ol class="tight">
         <li>Open Mentra Settings.</li>
