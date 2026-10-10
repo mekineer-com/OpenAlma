@@ -32,15 +32,23 @@ function memorizeHtml(data) {
   if (!data || data.threshold == null) {
     return '<p class="muted">Memory status unavailable</p>';
   }
-  var tokens = Number(data.summed_unmemorized_tokens || 0);
   var threshold = Number(data.threshold || 0);
-  var pct = Number(data.pct || 0);
-  var html = '<p>Memorize: ' + fmt(tokens) + ' / ' + fmt(threshold) + ' (' + pct + '%)';
-  if (tokens >= threshold) {
-    html += ' <span class="badge">' + esc(data.sleep_gap_ready ? 'sleep-gap detected' : 'waiting for sleep-gap') + '</span>';
+  var html;
+  if (data.summed_unmemorized_tokens == null) {
+    html = '<p>Memorize: unknown</p>';
+  } else {
+    var tokens = Number(data.summed_unmemorized_tokens);
+    var pct = Number(data.pct || 0);
+    html = '<p>Memorize: ' + fmt(tokens) + ' / ' + fmt(threshold) + ' (' + pct + '%)';
+    if (tokens >= threshold) {
+      html += ' <span class="badge">' + esc(data.sleep_gap_ready ? 'sleep-gap detected' : 'waiting for sleep-gap') + '</span>';
+    }
+    html += '</p>';
+    html += '<div class="meter"><div class="meter-fill" style="width: ' + Math.min(pct, 100) + '%"></div></div>';
   }
-  html += '</p>';
-  html += '<div class="meter"><div class="meter-fill" style="width: ' + Math.min(pct, 100) + '%"></div></div>';
+  if (data.source_warning) {
+    html += '<p class="consolidation-warning" role="alert">' + esc(data.source_warning) + '</p>';
+  }
   if (data.paused) {
     var running = data.memorize_running || data.consolidation_running;
     html += '<p class="consolidation-warning" role="alert">Paused: ' +

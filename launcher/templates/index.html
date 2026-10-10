@@ -156,6 +156,7 @@
     {% if meter.error %}
       <p class="error" role="alert">{{ meter.error }}</p>
     {% elif meter.threshold is defined and meter.threshold is not none %}
+      {% if meter.summed_unmemorized_tokens is defined and meter.summed_unmemorized_tokens is not none %}
       <p>
         Memorize: {{ "{:,}".format(meter.summed_unmemorized_tokens) }} / {{ "{:,}".format(meter.threshold) }} ({{ meter.pct }}%)
         {% if meter.summed_unmemorized_tokens >= meter.threshold %}
@@ -163,6 +164,12 @@
         {% endif %}
       </p>
       <div class="meter"><div class="meter-fill" style="width: {{ [meter.pct, 100]|min }}%"></div></div>
+      {% else %}
+      <p>Memorize: unknown</p>
+      {% endif %}
+      {% if meter.source_warning %}
+      <p class="consolidation-warning" role="alert">{{ meter.source_warning }}</p>
+      {% endif %}
       {% if meter.paused %}
         <p class="consolidation-warning" role="alert">
           Paused: {% if meter.retry_operation == 'import' %}{{ 'Import failed.' if meter.pause_reason == 'Import failed. Retry in Echo.' else 'waiting for import.' }}{% elif meter.pause_reason == 'Waiting for Memorize after import.' %}waiting for Memorize.{% else %}{{ 'Memorize' if meter.retry_operation == 'memorize' else 'Consolidation' }} failed.{% endif %}

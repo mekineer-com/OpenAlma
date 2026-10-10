@@ -213,7 +213,7 @@ def test_memorize_gauge_over_threshold_with_gap_detected():
 
 
 def test_memorize_gauge_shows_failed_consolidation_retry():
-    html = _render({
+    state = {
         "summed_unmemorized_tokens": 2000,
         "threshold": 8000,
         "pct": 25,
@@ -225,11 +225,26 @@ def test_memorize_gauge_shows_failed_consolidation_retry():
         "consolidation_age_days": 103.5,
         "last_consolidation_error": "RuntimeError: reflection failed",
         "computed_at": "2026-09-26T10:00:00+00:00",
-    })
+    }
+    html = _render(state)
 
     assert "Paused: Consolidation failed" in html
     assert "RuntimeError: reflection failed" in html
     assert ">Retry</button>" in html
+    unknown = {**state, "summed_unmemorized_tokens": None, "pct": None, "sleep_gap_ready": None,
+               "source_warning": 'Cannot read <snapshot> & "source"'}
+    html = _render(unknown)
+    assert "Memorize: unknown" in html
+    assert "Cannot read &lt;snapshot&gt; &amp; &#34;source&#34;" in html
+    assert "<snapshot>" not in html
+    assert "Memorize: 0" not in html and "Memorize: 2,000" not in html
+    assert 'class="meter"' not in html and 'class="badge"' not in html
+    assert "Paused: Consolidation failed" in html and ">Retry</button>" in html
+    html = _render({**unknown, "memorize_running": True,
+                    "progress": {"phase": "extracting", "current": 1, "total": 2}})
+    assert "disabled>Retrying..." in html and "extracting: 1 / 2" in html
+    html = _render({**unknown, "retry_operation": "import", "pause_reason": "Waiting for import before Memorize."})
+    assert 'href="/echo"' in html and ">Retry</button>" not in html
 
 
 def test_memorize_gauge_distinguishes_overdue_and_running():
@@ -272,11 +287,30 @@ const context = {
 vm.createContext(context);
 vm.runInContext(script, context);
 (async () => {
-const base = {threshold: 8000, pending_consolidation_segments: 2, computed_at: '2026-09-26T10:00:00Z'};
+const base = {summed_unmemorized_tokens: 2000, pct: 25, sleep_gap_ready: false,
+  threshold: 8000, pending_consolidation_segments: 2, computed_at: '2026-09-26T10:00:00Z'};
 context.renderMemorize({souls: [{...base, paused: true, retry_operation: 'consolidation', pause_reason: '<bad>', soul_id: 'First Soul'}]});
 assert.match(box.innerHTML, /Retry<\/button>/);
 assert.match(box.innerHTML, /&lt;bad&gt;/);
 assert.doesNotMatch(box.innerHTML, /<bad>/);
+assert.match(box.innerHTML, /Memorize: 2,000 \/ 8,000 \(25%\)/);
+assert.match(box.innerHTML, /style="width: 25%"/);
+const unknown = {...base, summed_unmemorized_tokens: null, pct: null, sleep_gap_ready: null,
+  source_warning: 'Cannot read <snapshot> & "source"', paused: true,
+  retry_operation: 'consolidation', soul_id: 'First Soul'};
+context.renderMemorize({souls: [unknown]});
+assert.match(box.innerHTML, /Memorize: unknown/);
+assert.match(box.innerHTML, /Cannot read &lt;snapshot&gt; &amp; &quot;source&quot;/);
+assert.doesNotMatch(box.innerHTML, /<snapshot>|Memorize: (0|2,000)|class="meter"|class="badge"/);
+assert.match(box.innerHTML, /Paused: Consolidation failed/);
+assert.match(box.innerHTML, /Retry<\/button>/);
+context.renderMemorize({souls: [{...unknown, memorize_running: true,
+  progress: {phase: 'extracting', current: 1, total: 2}}]});
+assert.match(box.innerHTML, / disabled>Retrying\.\.\./);
+assert.match(box.innerHTML, /extracting: 1 \/ 2/);
+context.renderMemorize({souls: [{...unknown, retry_operation: 'import', pause_reason: 'Waiting for import before Memorize.'}]});
+assert.match(box.innerHTML, /href="\/echo"/);
+assert.doesNotMatch(box.innerHTML, /Retry<\/button>/);
 context.renderMemorize({souls: [{...base, paused: true, retry_operation: 'import', pause_reason: 'Waiting for import before Memorize.'}]});
 assert.match(box.innerHTML, /href="\/echo"/);
 assert.doesNotMatch(box.innerHTML, /Consolidation failed|Retry<\/button>/);
