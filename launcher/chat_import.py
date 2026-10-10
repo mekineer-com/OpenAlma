@@ -275,4 +275,5 @@ def file_progress(db_path: Path, file: dict, status: dict) -> dict:
             "percent": min(99 if pending or failed else 100, int(100 * extracted / eligible)) if eligible else None,
             "dismissible": complete, "running": bool(eligible and not complete and status.get("running")),
             "error": record.get("error") if eligible else None, "pending_consolidation": pending,
+            "followup_error": status.get("followup_error"),
             "registered": bool(record)}

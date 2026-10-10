@@ -203,7 +203,7 @@ function renderImports(files) {
       row.append(meter, ` ${file.percent}%. `);
     }
     row.append(!file.registered ? 'Registration required. ' : file.running ? 'Processing. ' :
-      file.error ? 'Import failed. Retry in Echo. ' : file.pending_consolidation ? 'Awaiting consolidation. ' :
+      file.error ? 'Import failed. Retry in Echo. ' : file.followup_error ? `Memory processing failed: ${file.followup_error}. Retry in Memorize. ` : file.pending_consolidation ? 'Awaiting consolidation. ' :
       file.eligible && file.percent === 100 ? 'Complete. ' : file.eligible ? 'Ready for next batch. ' : '');
     if (file.deferred) row.append(`${file.deferred} messages saved, not memorized. `);
     if (file.current) row.append(`${file.current} messages saved for ordinary Memorize. `);
@@ -250,7 +250,7 @@ async function refreshStatus() {
     document.getElementById('echo-show-results').disabled = !data.registered;
     if (data.stored) document.getElementById('echo-limitation').hidden = !data.deferred_history;
     const state = data.import_state;
-    document.getElementById('echo-status').textContent = !data.stored ? 'No source stored yet.' : !data.registered ? 'Source stored; register it to process.' : data.running ? `Soul memory work: ${data.progress.phase || 'running'}` : state.error ? `Import failed: ${state.error}` : state.stage === 'complete' ? (data.deferred_history ? 'History saved, not memorized. Current rows remain ordinary chat context.' : 'Historical processing complete. Current rows remain ordinary chat context.') : `History checkpoint ${state.memorize_cursor + 1} / ${state.history_end_index}; ${state.pending_segment_ids.length} segments awaiting consolidation.`;
+    document.getElementById('echo-status').textContent = !data.stored ? 'No source stored yet.' : !data.registered ? 'Source stored; register it to process.' : data.running ? `Soul memory work: ${data.progress.phase || 'running'}` : state.error ? `Import failed: ${state.error}` : state.stage === 'complete' ? (data.deferred_history ? 'History saved, not memorized.' : 'Historical processing complete.') + (data.followup_error ? ` Memory processing failed: ${data.followup_error}. Retry in Memorize.` : ' Current rows remain ordinary chat context.') : `History checkpoint ${state.memorize_cursor + 1} / ${state.history_end_index}; ${state.pending_segment_ids.length} segments awaiting consolidation.`;
     if (data.running && !continuationUpdate.pending && observedUpdate === continuationUpdate) continuous.checked = data.continuous;
     continuous.disabled = continuationUpdate.pending || !data.registered || state.stage === 'complete' || (busy && !data.running);
     if (accepted && data.registered && !data.running) {

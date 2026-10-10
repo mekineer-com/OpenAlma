@@ -115,6 +115,13 @@ async function run(mode, continuous) {
     meter.children.at(-1).events.click();
     ctx.renderImports([file]);assert.equal(field('echo-meters').childElementCount,0);
     ctx.renderImports([{...file,file_id:'next'}]);assert.equal(field('echo-meters').childElementCount,1);
+    ctx.renderImports([{...file,file_id:'followup',followup_error:'Fictional extraction failure'}]);
+    assert.match(field('echo-meters').children[0].children.join(' '),/memory processing failed.*Retry in Memorize/i);
+    ctx.readStatus=async()=>({stored:true,registered:true,running:false,
+      import_state:{...state,stage:'complete',error:null},followup_error:'Fictional extraction failure'});
+    await ctx.refreshStatus();
+    assert.match(field('echo-status').textContent,/Historical processing complete.*Fictional extraction failure.*Retry in Memorize/);
+    assert.equal(field('echo-retry').hidden,true);
     ctx.readStatus=async()=>({stored:true,registered:true,running:true,
       continuous:true,import_state:{...state,error:'Interrupted marker'},progress:{phase:'extracting'}});
     await ctx.refreshStatus();
@@ -387,6 +394,10 @@ def test_source_replay_split_and_atomic_conflict(tmp_path, monkeypatch):
     assert later_meter["eligible"] == 1 and later_meter["percent"] == 0
     status["import_state"].update(history_end_index=2, memorize_cursor=1, pending_segment_ids=[])
     assert chat_import.file_progress(db, files[0], status)["percent"] == 100
+    status["followup_error"] = "Fictional extraction failure"
+    followup = chat_import.file_progress(db, files[0], status)
+    assert followup["percent"] == 100 and followup["followup_error"] == status["followup_error"]
+    status.pop("followup_error")
     deferred = chat_import.file_progress(db, files[1], status)
     assert deferred["percent"] is None and deferred["deferred"] == 1 and deferred["dismissible"]
     status.update(running=True)
