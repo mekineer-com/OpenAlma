@@ -12,7 +12,6 @@ from settings import channels_home
 _CHANNELS_HOME = channels_home()
 HERMES_STATE_DB_PATH = _CHANNELS_HOME / "state.db"
 CHANNELS_CONFIG_PATH = _CHANNELS_HOME / "config.json"
-DEFAULT_REPLY_PREFIX_TEMPLATE = "✦ *{soul}*: "
 
 
 def _load_channels_config() -> dict:
@@ -66,15 +65,6 @@ def read_active_soul_id() -> str:
     return str(config.get("soul_id") or "").strip()
 
 
-def read_reply_prefix_template(config: dict | None = None) -> str:
-    if config is None:
-        config = _load_channels_config()
-    template_raw = config.get("reply_prefix_template", DEFAULT_REPLY_PREFIX_TEMPLATE)
-    if template_raw == "" or isinstance(template_raw, str) and "{soul}" in template_raw:
-        return template_raw
-    raise RuntimeError("reply_prefix_template must be empty or contain {soul}")
-
-
 def set_active_soul_id(soul_id: str) -> None:
     selected = str(soul_id or "").strip()
     if not selected:
@@ -95,12 +85,8 @@ def set_active_soul_id(soul_id: str) -> None:
     souls.sort(key=lambda v: v.lower())
     config["souls"] = souls
 
-    template_raw = read_reply_prefix_template(config)
-    if template_raw == "":
-        config["reply_prefix"] = ""
-    else:
-        config["reply_prefix_template"] = template_raw
-        config["reply_prefix"] = template_raw.replace("{soul}", selected)
+    config.pop("reply_prefix", None)
+    config.pop("reply_prefix_template", None)
 
     _write_channels_config(config)
     _stamp_soul_active_since(selected)

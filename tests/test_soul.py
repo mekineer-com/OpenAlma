@@ -54,7 +54,7 @@ def test_fresh_channels_config_is_created_by_soul_selection(tmp_path, monkeypatc
     monkeypatch.setattr(app.policy, "read_default_policy", lambda: "excluded")
     monkeypatch.setattr(app.policy, "ensure_channel_settings", lambda _: ({}, "excluded"))
     monkeypatch.setattr(app.services, "list_souls", lambda: soul_ids)
-    monkeypatch.setattr(app.services, "resolve_soul", lambda name, _existing: name)
+    monkeypatch.setattr(app.services, "resolve_soul", lambda name, _existing, _human: name)
     monkeypatch.setattr(app.services, "status", lambda _: {"state": "stopped"})
     monkeypatch.setattr(app, "_find_service", lambda _: None)
     assert soul.read_active_soul_id() == "" and not config.exists()
@@ -78,7 +78,61 @@ eval(process.argv[2]); assert.equal(callback,undefined);
 ''', *bindings], check=True)
     saved = json.loads(config.read_text())
     assert saved["soul_id"] == "TestSoul" and saved["souls"] == ["TestSoul"]
-    assert "TestSoul" in saved["reply_prefix"]
+    assert "reply_prefix" not in saved and "reply_prefix_template" not in saved
+
+
+@pytest.mark.parametrize("route", ["/owner", "/first-soul", "/soul", "/echo/soul"])
+def test_creation_routes_forward_explicit_human_name(monkeypatch, route):
+    from fastapi.testclient import TestClient
+    import app
+
+    calls, owners, selected = [], [], []
+    monkeypatch.setattr(app, "_echo_require_server", lambda: None)
+    monkeypatch.setattr(app, "_find_service", lambda _: None)
+    monkeypatch.setattr(app.services, "status", lambda _: {"state": "stopped"})
+    monkeypatch.setattr(app.services, "create_owner", owners.append)
+    monkeypatch.setattr(app.soul, "set_active_soul_id", selected.append)
+
+    def request(**payload):
+        calls.append(payload)
+        return {"soul_id": payload["soul_id"], "created": True}
+
+    monkeypatch.setattr(app.services, "_soul_request", request)
+    response = TestClient(app.app, base_url="http://127.0.0.1").post(route, data={
+        "soul_id": "Fable", "user_name": " Rowan ", "user_id": "AccountKey", "confirmed": "true",
+    }, follow_redirects=False)
+    assert response.status_code == (200 if route == "/echo/soul" else 303)
+    assert calls == [{"soul_id": "Fable", "use_existing": False, "user_name": "Rowan"}]
+    assert owners == (["AccountKey"] if route == "/owner" else [])
+    assert selected == (["Fable"] if route == "/soul" else [])
+
+
+@pytest.mark.parametrize("route", ["/soul", "/echo/soul"])
+def test_selection_omits_replacement_name_and_creation_refusal_does_not_select(monkeypatch, route):
+    from fastapi.testclient import TestClient
+    import app
+
+    calls, selected = [], []
+    monkeypatch.setattr(app, "_echo_require_server", lambda: None)
+    monkeypatch.setattr(app, "_find_service", lambda _: None)
+    monkeypatch.setattr(app.services, "status", lambda _: {"state": "stopped"})
+    monkeypatch.setattr(app.soul, "set_active_soul_id", selected.append)
+
+    def request(**payload):
+        calls.append(payload)
+        if not payload["use_existing"]:
+            raise ValueError("Enter what this Soul should call you")
+        return {"soul_id": payload["soul_id"], "created": False}
+
+    monkeypatch.setattr(app.services, "_soul_request", request)
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    response = client.post(route, data={"soul_id": "Fable"}, follow_redirects=False)
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Enter what this Soul should call you"}
+    assert selected == []
+    response = client.post(route, data={"soul_id": "Fable", "use_existing": "true", "user_name": "DoNotReplace"}, follow_redirects=False)
+    assert response.status_code == (200 if route == "/echo/soul" else 303)
+    assert calls[-1] == {"soul_id": "Fable", "use_existing": True}
 
 
 def test_set_active_soul_id_updates_soul_id_and_souls(tmp_path, monkeypatch):
@@ -96,67 +150,46 @@ def test_set_active_soul_id_updates_soul_id_and_souls(tmp_path, monkeypatch):
     assert data["user_id"] == "TestOwner"  # unrelated keys preserved
 
 
-def test_set_active_soul_id_recomputes_reply_prefix_from_template(tmp_path, monkeypatch):
+@pytest.mark.parametrize("obsolete", [
+    {}, {"reply_prefix": "old"},
+    {"reply_prefix": "old", "reply_prefix_template": "✦ *{soul}*: "},
+    {"reply_prefix": "", "reply_prefix_template": ""},
+    {"reply_prefix_template": "no placeholder"},
+    {"reply_prefix": None, "reply_prefix_template": None},
+    {"reply_prefix_template": 42},
+])
+def test_explicit_soul_save_removes_obsolete_prefix_keys_only(tmp_path, monkeypatch, obsolete):
+    from fastapi.testclient import TestClient
+    import app
+
     cfg = tmp_path / "config.json"
-    state_db = tmp_path / "state.db"
-    _write_cfg(cfg, {
-        "soul_id": "Lumen",
-        "souls": ["Lumen"],
-        "reply_prefix": "✦ *Lumen*: ",
-        "reply_prefix_template": "✦ *{soul}*: ",
-    })
-    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", cfg)
-    monkeypatch.setattr(soul, "HERMES_STATE_DB_PATH", state_db)
-
-    soul.set_active_soul_id("Echo")
-
-    data = json.loads(cfg.read_text(encoding="utf-8"))
-    assert data["reply_prefix"] == "✦ *Echo*: "
-    assert data["soul_id"] == "Echo"
-
-
-def test_set_active_soul_id_seeds_reply_prefix_template_when_missing(tmp_path, monkeypatch):
-    cfg = tmp_path / "config.json"
-    state_db = tmp_path / "state.db"
-    _write_cfg(cfg, {
-        "soul_id": "Lumen",
-        "souls": ["Lumen"],
-        "reply_prefix": "✦ *Lumen*: ",
-    })
-    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", cfg)
-    monkeypatch.setattr(soul, "HERMES_STATE_DB_PATH", state_db)
-
-    soul.set_active_soul_id("Echo")
-
-    data = json.loads(cfg.read_text(encoding="utf-8"))
-    assert data["reply_prefix_template"] == "✦ *{soul}*: "
-    assert data["reply_prefix"] == "✦ *Echo*: "
-
-
-def test_set_active_soul_id_preserves_empty_reply_prefix(tmp_path, monkeypatch):
-    cfg = tmp_path / "config.json"
-    _write_cfg(cfg, {"soul_id": "Lumen", "reply_prefix": "old", "reply_prefix_template": ""})
-    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", cfg)
-    monkeypatch.setattr(soul, "HERMES_STATE_DB_PATH", tmp_path / "state.db")
-
-    soul.set_active_soul_id("Echo")
-
-    assert json.loads(cfg.read_text(encoding="utf-8"))["reply_prefix"] == ""
-
-
-def test_set_active_soul_id_rejects_malformed_reply_prefix_template(tmp_path, monkeypatch):
-    cfg = tmp_path / "config.json"
-    _write_cfg(cfg, {"soul_id": "Lumen", "reply_prefix_template": "no placeholder"})
+    _write_cfg(cfg, {"soul_id": "Lumen", "souls": ["Lumen"], "user_id": "AccountKey", **obsolete})
     monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", cfg)
     state_db = tmp_path / "state.db"
     monkeypatch.setattr(soul, "HERMES_STATE_DB_PATH", state_db)
+    monkeypatch.setattr(app, "_find_service", lambda _: None)
+    monkeypatch.setattr(app.services, "status", lambda _: {"state": "stopped"})
+    requests = []
+    monkeypatch.setattr(app.services, "_soul_request", lambda **payload: requests.append(payload) or {"soul_id": "Echo", "created": False})
+    source_db = tmp_path / "Echo.db"
+    source_db.write_bytes(b"existing Soul/source data must not change")
+    source_before = source_db.read_bytes()
     original = cfg.read_bytes()
 
-    with pytest.raises(RuntimeError, match=r"contain \{soul\}"):
-        soul.set_active_soul_id("Echo")
-
+    assert soul.read_active_soul_id() == "Lumen"
     assert cfg.read_bytes() == original
     assert not state_db.exists()
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    response = client.post("/soul", data={"soul_id": "Echo", "use_existing": "true"}, follow_redirects=False)
+    assert response.status_code == 303
+    assert requests == [{"soul_id": "Echo", "use_existing": True}]
+    assert json.loads(cfg.read_text()) == {"soul_id": "Echo", "souls": ["Echo", "Lumen"], "user_id": "AccountKey"}
+    assert source_db.read_bytes() == source_before
+    with sqlite3.connect(state_db) as con:
+        first_activation = con.execute("SELECT active_since FROM souls WHERE soul_id = 'Echo'").fetchone()
+    soul.set_active_soul_id("Echo")
+    with sqlite3.connect(state_db) as con:
+        assert con.execute("SELECT active_since FROM souls WHERE soul_id = 'Echo'").fetchone() == first_activation
 
 
 def test_set_active_soul_id_does_not_stamp_when_write_fails(tmp_path, monkeypatch):
@@ -173,7 +206,7 @@ def test_set_active_soul_id_does_not_stamp_when_write_fails(tmp_path, monkeypatc
     assert stamped == []
 
 
-@pytest.mark.parametrize("failure", ["template", "config", "state-write"])
+@pytest.mark.parametrize("failure", ["config", "state-write"])
 def test_soul_picker_returns_save_errors_with_state_effects(tmp_path, monkeypatch, failure):
     from fastapi.testclient import TestClient
     import app
@@ -194,10 +227,7 @@ def test_soul_picker_returns_save_errors_with_state_effects(tmp_path, monkeypatc
         return {"soul_id": "Echo", "created": True}
 
     monkeypatch.setattr(app.services, "_soul_request", soul_request)
-    if failure == "template":
-        _write_cfg(cfg, {"soul_id": "Lumen", "reply_prefix_template": "no placeholder"})
-        detail = "reply_prefix_template must be empty or contain {soul}"
-    elif failure == "config":
+    if failure == "config":
         replace = Path.replace
 
         def fail_config_replace(path, target):
@@ -219,7 +249,7 @@ def test_soul_picker_returns_save_errors_with_state_effects(tmp_path, monkeypatc
 
     assert response.status_code == 503
     assert response.json() == {"detail": detail}
-    assert soul_db.exists() == (failure != "template")
+    assert soul_db.exists()
     if failure != "state-write":
         assert cfg.read_bytes() == original and not state_db.exists()
     else:

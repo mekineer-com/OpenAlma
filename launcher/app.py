@@ -92,9 +92,9 @@ def _find_service(name: str) -> services.ServiceSpec:
     raise HTTPException(status_code=404, detail=f"Unknown service: {name}")
 
 
-def _resolve_soul(soul_id: str, use_existing: bool) -> str:
+def _resolve_soul(soul_id: str, use_existing: bool, user_name: str | None = None) -> str:
     try:
-        return services.resolve_soul(soul_id, use_existing)
+        return services.resolve_soul(soul_id, use_existing, user_name)
     except services.SoulAlreadyExists as exc:
         raise HTTPException(
             status_code=409,
@@ -316,9 +316,9 @@ def echo_chats(soul_id: str) -> dict:
 
 
 @app.post("/echo/soul")
-def echo_soul(soul_id: str = Form(), use_existing: bool = Form(default=False)) -> dict:
+def echo_soul(soul_id: str = Form(), use_existing: bool = Form(default=False), user_name: str | None = Form(default=None)) -> dict:
     _echo_require_server()
-    return {"soul_id": _resolve_soul(soul_id, use_existing)}
+    return {"soul_id": _resolve_soul(soul_id, use_existing, user_name)}
 
 
 def _echo_upload(file: UploadFile, soul_id: str, label: str, history_count: int,
@@ -979,7 +979,7 @@ async def policy_save(request: Request) -> RedirectResponse:
 
 
 @app.post("/soul")
-def soul_save(soul_id: str = Form(default=""), use_existing: bool = Form(default=False)) -> RedirectResponse:
+def soul_save(soul_id: str = Form(default=""), use_existing: bool = Form(default=False), user_name: str | None = Form(default=None)) -> RedirectResponse:
     channels = services.status(_find_service("channels-daemon"))
     if (
         channels.get("running")
@@ -989,8 +989,7 @@ def soul_save(soul_id: str = Form(default=""), use_existing: bool = Form(default
     ):
         raise HTTPException(status_code=409, detail="Stop Hermes Channels before changing its Soul")
     try:
-        soul.read_reply_prefix_template()
-        soul.set_active_soul_id(_resolve_soul(soul_id, use_existing))
+        soul.set_active_soul_id(_resolve_soul(soul_id, use_existing, user_name))
     except (RuntimeError, OSError, sqlite3.Error) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return RedirectResponse("/hermes", status_code=303)
@@ -1001,13 +1000,14 @@ def owner_save(
     user_id: str = Form(),
     soul_id: str = Form(default=""),
     confirmed: bool = Form(default=False),
+    user_name: str | None = Form(default=None),
 ) -> RedirectResponse:
     if not confirmed:
         raise HTTPException(status_code=400, detail="Confirm the spelling of your name")
     try:
         services.create_owner(user_id)
         if soul_id.strip():
-            _resolve_soul(soul_id, False)
+            _resolve_soul(soul_id, False, user_name)
     except services.OwnerServiceUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
@@ -1016,10 +1016,10 @@ def owner_save(
 
 
 @app.post("/first-soul")
-def first_soul_save(soul_id: str = Form(), confirmed: bool = Form(default=False)) -> RedirectResponse:
+def first_soul_save(soul_id: str = Form(), confirmed: bool = Form(default=False), user_name: str | None = Form(default=None)) -> RedirectResponse:
     if not confirmed:
         raise HTTPException(status_code=400, detail="Confirm the spelling of the Soul's name")
-    _resolve_soul(soul_id, False)
+    _resolve_soul(soul_id, False, user_name)
     return RedirectResponse("/", status_code=303)
 
 

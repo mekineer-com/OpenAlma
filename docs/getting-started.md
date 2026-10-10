@@ -136,7 +136,7 @@ The soul appears as a WhatsApp contact. Hermes Channels routes each incoming mes
 
 **Channel policy** — each WhatsApp chat has two independent settings: **Policy** (`full` / `listen_only` / `excluded`) controls whether the soul can respond, can only listen, or is dropped entirely. **Mem** controls whether messages from that chat are included in memory extraction. Configure both per-chat via the Stack Launcher's WhatsApp Channel Policy page.
 
-**Reply prefix** — to change the name shown on WhatsApp replies, edit `reply_prefix_template` in Hermes Channels' config, keeping `{soul}` where the selected Soul's name belongs. `reply_prefix` is regenerated when you change Souls.
+**Reply prefix** — Soul replies use the fixed prefix `✦ <exact Soul name>: `, including split messages and supported captions. It is not configurable; choose the Soul in the launcher instead.
 
 **Autonomous follow-ups** — she can check in with you unprompted, not just when you write first — immediately, or scheduled for a later moment she picks. What she does between turns is logged as her own activity, visible to her next turn under `My Activities:`.
 
