@@ -56,7 +56,7 @@
     {% elif iris.github_status == "none" %}
       <p class="muted">No GitHub release published.</p>
     {% elif iris.github_status == "invalid" %}
-      <p class="muted">GitHub release is missing the expected Iris asset.</p>
+      <p class="muted">No supported stable Iris ZIP found in recent GitHub releases.</p>
     {% endif %}
     {% if show_installer %}
     {% if installer_busy %}

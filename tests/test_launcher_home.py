@@ -184,7 +184,7 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
     for release_state, message in (
         ("unavailable", "GitHub releases unavailable."),
         ("none", "No GitHub release published."),
-        ("invalid", "GitHub release is missing the expected Iris asset."),
+        ("invalid", "No supported stable Iris ZIP found in recent GitHub releases."),
     ):
         monkeypatch.setattr(services, "status", lambda _spec, state=release_state: {
             "github_status": state, "installations": [], "available_package": services.IRIS_PACKAGE,
