@@ -49,6 +49,9 @@
     .btn[hidden] { display: none; }
     .btn:disabled { opacity: 0.7; cursor: progress; }
     form.inline { display: inline; margin: 0; }
+    .config-link { padding: 0; border: 0; background: transparent; color: #7cb7ff;
+                   font: inherit; text-decoration: underline; cursor: pointer; }
+    .config-link:focus-visible, .context-info:focus-visible { outline: 2px solid #7cb7ff; outline-offset: 2px; }
     .svc-actions { white-space: nowrap; }
     .svc-actions + td { padding-left: 0.55rem; }
     select { font: inherit; padding: 0.15rem 0.25rem; background: #2a2a2a; color: #eee; border: 1px solid #444; }
@@ -72,6 +75,11 @@
              border: 1px solid #444; border-radius: 3px; overflow: hidden; }
     .meter-fill { height: 100%; background: #6aa9ff; }
     #memorize-meter p { margin: 0.35rem 0; }
+    .memorize-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1rem; }
+    .context-info { display: inline-flex; align-items: center; justify-content: center;
+                    width: 1em; height: 1em; border: 1px solid currentColor; border-radius: 50%;
+                    font-size: 0.8em; cursor: help; }
+    @media (max-width: 40rem) { .memorize-row { grid-template-columns: 1fr; gap: 0.35rem; } }
     .badge { display: inline-block; margin-left: 0.4rem; padding: 0.1rem 0.45rem; border-radius: 3px;
              background: #3a2415; color: #f5c084; border: 1px solid #6b3a16; font-size: 0.78rem; }
     .consolidation-warning { padding: 0.45rem 0.6rem; margin: 0.65rem 0; border-radius: 3px;

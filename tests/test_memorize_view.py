@@ -14,6 +14,7 @@ def _render(
     not_installed_services: list[dict] | None = None,
     services: list[dict] | None = None,
     template_name: str = "index.html",
+    editable_configs: list[dict] | None = None,
 ) -> str:
     template_dir = Path(__file__).resolve().parents[1] / "launcher" / "templates"
     env = jinja2.Environment(
@@ -29,7 +30,8 @@ def _render(
         policies=("full", "listen_only", "excluded"),
         active_soul="Fictional Soul",
         soul_ids=["Fictional Soul"],
-        editable_configs=[],
+        editable_configs=editable_configs or [],
+        host_prerequisites={"rows": []},
         apps_root="",
         needs_setup=False,
         memorize=memorize if isinstance(memorize, list) else ([{"soul_id": "Fictional Soul", **memorize}] if memorize else []),
@@ -48,11 +50,17 @@ def test_memorize_gauge_under_threshold():
         "pct": 25,
         "sleep_gap_ready": False,
         "computed_at": "2026-06-11T10:00:00+00:00",
+        "context_load_tokens": 43567,
     })
     assert "Memorize: 2,000 / 8,000 (25%)" in html
     assert 'style="width: 25%"' in html
     assert "waiting for sleep-gap" not in html
     assert 'title="Back to Services"' not in html
+    assert 'class="memorize-row"' in html and 'class="context-load"' in html
+    assert "&asymp; 43,567 tokens" in html
+    assert 'tabindex="0" role="note"' in html
+    assert "Actual prepared prompts are checked separately." in html
+    assert "@media (max-width: 40rem)" in html
 
 
 def test_initial_and_polled_setup_actions_match():
@@ -232,7 +240,7 @@ def test_memorize_gauge_shows_failed_consolidation_retry():
     assert "RuntimeError: reflection failed" in html
     assert ">Retry</button>" in html
     unknown = {**state, "summed_unmemorized_tokens": None, "pct": None, "sleep_gap_ready": None,
-               "source_warning": 'Cannot read <snapshot> & "source"'}
+               "source_warning": 'Cannot read <snapshot> & "source"', "context_load_tokens": 12000}
     html = _render(unknown)
     assert "Memorize: unknown" in html
     assert "Cannot read &lt;snapshot&gt; &amp; &#34;source&#34;" in html
@@ -240,6 +248,7 @@ def test_memorize_gauge_shows_failed_consolidation_retry():
     assert "Memorize: 0" not in html and "Memorize: 2,000" not in html
     assert 'class="meter"' not in html and 'class="badge"' not in html
     assert "Paused: Consolidation failed" in html and ">Retry</button>" in html
+    assert "&asymp; 12,000 tokens" in html
     html = _render({**unknown, "memorize_running": True,
                     "progress": {"phase": "extracting", "current": 1, "total": 2}})
     assert "disabled>Retrying..." in html and "extracting: 1 / 2" in html
@@ -287,7 +296,7 @@ const context = {
 vm.createContext(context);
 vm.runInContext(script, context);
 (async () => {
-const base = {summed_unmemorized_tokens: 2000, pct: 25, sleep_gap_ready: false,
+const base = {summed_unmemorized_tokens: 2000, pct: 25, sleep_gap_ready: false, context_load_tokens: 43567,
   threshold: 8000, pending_consolidation_segments: 2, computed_at: '2026-09-26T10:00:00Z'};
 context.renderMemorize({souls: [{...base, paused: true, retry_operation: 'consolidation', pause_reason: '<bad>', soul_id: 'First Soul'}]});
 assert.match(box.innerHTML, /Retry<\/button>/);
@@ -295,6 +304,26 @@ assert.match(box.innerHTML, /&lt;bad&gt;/);
 assert.doesNotMatch(box.innerHTML, /<bad>/);
 assert.match(box.innerHTML, /Memorize: 2,000 \/ 8,000 \(25%\)/);
 assert.match(box.innerHTML, /style="width: 25%"/);
+assert.match(box.innerHTML, /&asymp; 43,567 tokens/);
+assert.match(box.innerHTML, /class="memorize-row"/);
+assert.match(box.innerHTML, /tabindex="0" role="note"/);
+const tooltip = box.innerHTML.match(/class="context-info"[^>]*title="([^"]+)"/)[1];
+assert.ok(text.includes('title="' + tooltip + '"'));
+for (const missing of [{}, {context_load_tokens: null}]) {
+  context.renderMemorize({souls: [{...base, context_load_tokens: undefined, ...missing}]});
+  assert.match(box.innerHTML, /class="context-load"[\s\S]*<p>unknown<\/p>/);
+  assert.doesNotMatch(box.innerHTML, /&asymp; 0 tokens/);
+}
+context.renderMemorize({souls: [{...base, context_load_tokens: 0}]});
+assert.match(box.innerHTML, /&asymp; 0 tokens/);
+context.renderMemorize({souls: [
+  {...base, soul_id: 'First Soul', context_load_tokens: 12000},
+  {...base, soul_id: 'Other Soul', context_load_tokens: 34000},
+]});
+const firstSoul = box.innerHTML.split('<h3>First Soul</h3>')[1].split('<h3>Other Soul</h3>')[0];
+assert.match(firstSoul, /&asymp; 12,000 tokens/);
+assert.doesNotMatch(firstSoul, /&asymp; 34,000 tokens/);
+assert.match(box.innerHTML.split('<h3>Other Soul</h3>')[1], /&asymp; 34,000 tokens/);
 const unknown = {...base, summed_unmemorized_tokens: null, pct: null, sleep_gap_ready: null,
   source_warning: 'Cannot read <snapshot> & "source"', paused: true,
   retry_operation: 'consolidation', soul_id: 'First Soul'};
@@ -304,6 +333,7 @@ assert.match(box.innerHTML, /Cannot read &lt;snapshot&gt; &amp; &quot;source&quo
 assert.doesNotMatch(box.innerHTML, /<snapshot>|Memorize: (0|2,000)|class="meter"|class="badge"/);
 assert.match(box.innerHTML, /Paused: Consolidation failed/);
 assert.match(box.innerHTML, /Retry<\/button>/);
+assert.match(box.innerHTML, /&asymp; 43,567 tokens/);
 context.renderMemorize({souls: [{...unknown, memorize_running: true,
   progress: {phase: 'extracting', current: 1, total: 2}}]});
 assert.match(box.innerHTML, / disabled>Retrying\.\.\./);
@@ -347,16 +377,68 @@ def test_memorize_gauge_empty_state():
     assert '<div class="meter">' not in html
 
 
+@pytest.mark.parametrize("forecast", [{}, {"context_load_tokens": None}, {"context_load_tokens": 0}])
+def test_context_load_missing_is_unknown_without_hiding_recovery(forecast):
+    html = _render({"threshold": 6000, "summed_unmemorized_tokens": 0, "pct": 0,
+                    "paused": True, "retry_operation": "memorize", **forecast})
+    context = html.split('<div class="context-load">', 1)[1].split("</div>", 1)[0]
+    if forecast.get("context_load_tokens") == 0:
+        assert "&asymp; 0 tokens" in context
+    else:
+        assert "unknown" in context and "&asymp; 0 tokens" not in context
+    assert "Paused: Memorize failed" in html and ">Retry</button>" in html
+
+
+def test_context_load_guidance_uses_existing_private_config_opener(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    import app
+
+    html = _render({"threshold": 6000, "summed_unmemorized_tokens": 0, "pct": 0})
+    paragraph = "Configure your AI model’s published context-window size. The estimated <strong>context load</strong> of the conversation and supporting memory must fit within the context-window. Reduce min_chunk_tokens in config.json if the context load is too high."
+    assert paragraph in html
+    forms = re.findall(r'<form class="inline" method="post" action="/edit/memu-server-config">(.*?)</form>', html, re.S)
+    assert len(forms) == 2
+    for form, key in zip(forms, ("llm.context_window_tokens", "claude_code_context_window_tokens")):
+        assert f"<code>{key}</code>" in form
+        assert 'class="config-link" type="submit"' in form
+        assert html.index(form) < html.index('id="memorize-meter"')
+    assert html.index(paragraph) < html.index(forms[0])
+    assert 'href="/edit/' not in html
+    target = tmp_path / "mcp-memu-server" / "config.json"
+    target.parent.mkdir()
+    target.write_text('{"llm":{"api_key":"fictional-private-key"}}', encoding="utf-8")
+    original = target.read_bytes()
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    opened = []
+    monkeypatch.setattr(app.webbrowser, "open", opened.append)
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    for _form in forms:
+        response = client.post("/edit/memu-server-config", follow_redirects=False)
+        assert response.status_code == 303 and response.headers["location"] == "/"
+        assert "fictional-private-key" not in response.text
+    assert opened == [target.resolve().as_uri()] * 2
+    assert client.get("/edit/memu-server-config").status_code == 405
+    assert target.read_bytes() == original
+    settings_html = _render({}, template_name="settings.html",
+                            editable_configs=[{"key": "memu-server-config", "label": "memU Server config.json"}])
+    assert "Edit configs" in settings_html and 'method="post" action="/edit/memu-server-config"' in settings_html
+    assert "memU Server config.json" in settings_html
+    assert "Memory reflection requires this setting" not in settings_html
+
+
 def test_multi_soul_meters_are_named_and_retry_stays_paused():
     base = {"summed_unmemorized_tokens": 10, "threshold": 6000, "pct": 0, "computed_at": "2026-10-02T00:00:00Z"}
     html = _render([
-        {**base, "soul_id": "First Soul", "paused": True, "retry_operation": "memorize", "pause_reason": "Failed", "memorize_running": True, "progress": {"phase": "extracting", "current": 1, "total": 2}},
-        {**base, "soul_id": "Other Soul"},
+        {**base, "soul_id": "First Soul", "context_load_tokens": 12000, "paused": True, "retry_operation": "memorize", "pause_reason": "Failed", "memorize_running": True, "progress": {"phase": "extracting", "current": 1, "total": 2}},
+        {**base, "soul_id": "Other Soul", "context_load_tokens": 34000},
     ])
     assert "<h3>First Soul</h3>" in html and "<h3>Other Soul</h3>" in html
     assert "Paused: Memorize failed" in html
     assert "disabled>Retrying..." in html
     assert html.count('class="meter"') == 2
+    first = html.split("<h3>First Soul</h3>", 1)[1].split("<h3>Other Soul</h3>", 1)[0]
+    assert "&asymp; 12,000 tokens" in first and "&asymp; 34,000 tokens" not in first
+    assert "&asymp; 34,000 tokens" in html.split("<h3>Other Soul</h3>", 1)[1]
     assert "<h3>" not in _render(base)
     zero = _render({**base, "threshold": 0, "paused": True, "retry_operation": "memorize"})
     assert "Paused: Memorize failed" in zero and ">Retry</button>" in zero

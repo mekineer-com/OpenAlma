@@ -149,6 +149,17 @@
   {% endif %}
 
   <h2>Memorize</h2>
+  <p>Configure your AI model’s published context-window size. The estimated <strong>context load</strong> of the conversation and supporting memory must fit within the context-window. Reduce min_chunk_tokens in config.json if the context load is too high.</p>
+  <div>API:
+    <form class="inline" method="post" action="/edit/memu-server-config">
+      <button class="config-link" type="submit" title="Open config.json on the launcher machine"><code>llm.context_window_tokens</code></button>
+    </form>
+  </div>
+  <div>Claude Code:
+    <form class="inline" method="post" action="/edit/memu-server-config">
+      <button class="config-link" type="submit" title="Open config.json on the launcher machine"><code>claude_code_context_window_tokens</code></button>
+    </form>
+  </div>
   <div id="memorize-meter">
     {% for meter in memorize %}
     <div data-soul="{{ meter.soul_id }}">
@@ -156,6 +167,8 @@
     {% if meter.error %}
       <p class="error" role="alert">{{ meter.error }}</p>
     {% elif meter.threshold is defined and meter.threshold is not none %}
+      <div class="memorize-row">
+      <div class="memorize-pressure">
       {% if meter.summed_unmemorized_tokens is defined and meter.summed_unmemorized_tokens is not none %}
       <p>
         Memorize: {{ "{:,}".format(meter.summed_unmemorized_tokens) }} / {{ "{:,}".format(meter.threshold) }} ({{ meter.pct }}%)
@@ -167,6 +180,12 @@
       {% else %}
       <p>Memorize: unknown</p>
       {% endif %}
+      </div>
+      <div class="context-load">
+        <p>Context load <span class="context-info" tabindex="0" role="note" title="Conservative forecast when the Memorize meter reaches 100%, using current supporting memory. Supporting context varies, and waiting for a sleep gap can produce a larger actual batch. Actual prepared prompts are checked separately." aria-label="Conservative forecast when the Memorize meter reaches 100%, using current supporting memory. Supporting context varies, and waiting for a sleep gap can produce a larger actual batch. Actual prepared prompts are checked separately.">i</span></p>
+        <p>{% if meter.context_load_tokens is defined and meter.context_load_tokens is not none %}&asymp; {{ "{:,}".format(meter.context_load_tokens) }} tokens{% else %}unknown{% endif %}</p>
+      </div>
+      </div>
       {% if meter.source_warning %}
       <p class="consolidation-warning" role="alert">{{ meter.source_warning }}</p>
       {% endif %}

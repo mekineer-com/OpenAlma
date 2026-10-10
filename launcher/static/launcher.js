@@ -46,6 +46,10 @@ function memorizeHtml(data) {
     html += '</p>';
     html += '<div class="meter"><div class="meter-fill" style="width: ' + Math.min(pct, 100) + '%"></div></div>';
   }
+  var contextHelp = 'Conservative forecast when the Memorize meter reaches 100%, using current supporting memory. Supporting context varies, and waiting for a sleep gap can produce a larger actual batch. Actual prepared prompts are checked separately.';
+  html = '<div class="memorize-row"><div class="memorize-pressure">' + html + '</div>' +
+    '<div class="context-load"><p>Context load <span class="context-info" tabindex="0" role="note" title="' + contextHelp + '" aria-label="' + contextHelp + '">i</span></p><p>' +
+    (data.context_load_tokens == null ? 'unknown' : '&asymp; ' + fmt(data.context_load_tokens) + ' tokens') + '</p></div></div>';
   if (data.source_warning) {
     html += '<p class="consolidation-warning" role="alert">' + esc(data.source_warning) + '</p>';
   }
