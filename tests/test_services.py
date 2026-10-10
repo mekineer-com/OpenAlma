@@ -82,8 +82,10 @@ def test_iris_server_is_managed_by_launcher(tmp_path, monkeypatch):
     assert channels.env["CHANNELS_HOME"] == str(tmp_path / "channels_data")
 
 
-@pytest.mark.parametrize("stage", ["bundle", "download", "spawn", "stop", "force_stop"])
-@pytest.mark.parametrize("host_package", ["com.mentra.mentra", "com.mentra.mentra.openalma"])
+@pytest.mark.parametrize("stage,host_package", [
+    (stage, host) for stage in ("bundle", "download", "spawn", "stop", "force_stop")
+    for host in ("com.mentra.mentra", "com.mentra.mentra.openalma")
+] + [("cleanup", "com.mentra.mentra")])
 def test_iris_install_target_cleanup(tmp_path, monkeypatch, stage, host_package):
     import app as launcher_app
 
@@ -95,6 +97,8 @@ def test_iris_install_target_cleanup(tmp_path, monkeypatch, stage, host_package)
 
     def installation_request(device_session_id="", display_name=None, *, reserve=False):
         requests.append((device_session_id, reserve))
+        if not reserve and stage == "cleanup":
+            raise OSError("Fictional ticket cleanup failure")
         return reservation if reserve else {"ok": True}
 
     monkeypatch.setattr(services, "iris_installation_request", installation_request)
@@ -121,7 +125,7 @@ def test_iris_install_target_cleanup(tmp_path, monkeypatch, stage, host_package)
         return tmp_path / "iris.zip"
 
     def spawn(_spec, env):
-        assert stage == "spawn"
+        assert stage in {"spawn", "cleanup"}
         assert services._IRIS_INSTALL_LOCK.locked()
         assert json.loads(target_path.read_text()) == prepared
         assert env["MENTRA_RELEASE_BUNDLE"] == str(tmp_path / "iris.zip")
@@ -130,7 +134,7 @@ def test_iris_install_target_cleanup(tmp_path, monkeypatch, stage, host_package)
     monkeypatch.setattr(services, "_download_iris_release", download)
     monkeypatch.setattr(services, "_spawn_background", spawn)
 
-    message = "Published Iris bundle unavailable" if stage == "bundle" else "Iris installation cancelled" if stage in {"stop", "force_stop"} else f"Fictional {stage} failure"
+    message = "Published Iris bundle unavailable" if stage == "bundle" else "Iris installation cancelled" if stage in {"stop", "force_stop"} else f"Fictional {'spawn' if stage == 'cleanup' else stage} failure"
     with pytest.raises(launcher_app.HTTPException, match=message) as error:
         launcher_app.iris_install("stock-test", host_package)
     assert error.value.status_code == (409 if stage in {"stop", "force_stop"} else 400)

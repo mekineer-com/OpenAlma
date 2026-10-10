@@ -834,9 +834,12 @@ def _start_iris_install(spec: services.ServiceSpec, device_session_id: str, host
             installation_ticket = reservation["installation_ticket"]
             target = {**target, **reservation}
         services.start(spec, install_target=target)
-    except Exception:
+    except Exception as exc:
         if installation_ticket:
-            services.iris_installation_request(installation_ticket)
+            try:
+                services.iris_installation_request(installation_ticket)
+            except (OSError, ValueError) as cleanup_error:
+                exc.add_note(f"Could not release Iris setup ticket: {cleanup_error}")
         raise
     finally:
         services._IRIS_INSTALL_LOCK.release()
