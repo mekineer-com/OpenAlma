@@ -18,11 +18,21 @@ function irisParentActions(data) {
 }
 
 function renderIrisInstallations(data) {
-  if (!Array.isArray(data.installations)) return;
   var parent = document.querySelector('tr[data-service="iris-server"]');
   var rows = new Map(Array.from(parent.parentNode.querySelectorAll('tr[data-iris-installation]'), function(row) {
     return [row.dataset.irisInstallation, row];
   }));
+  if (!Array.isArray(data.installations)) {
+    rows.forEach(function(row) {
+      var status = row.querySelector('.iris-status');
+      status.className = 'iris-status unavailable';
+      status.textContent = 'Status unavailable';
+      row.querySelector('.iris-detail').textContent = data.detail || 'Iris app status is unavailable.';
+      row.querySelectorAll('.iris-name, button[type="submit"], [data-forget]').forEach(function(button) { button.disabled = true; });
+      row.querySelector('.iris-actions').irisActionsHtml = null;
+    });
+    return;
+  }
   var previous = parent;
   data.installations.forEach(function(installation) {
     var id = installation.device_session_id;
@@ -65,7 +75,7 @@ function renderIrisInstallations(data) {
         } catch (error) {
           alert(error.message);
         } finally {
-          save.disabled = false;
+          save.disabled = row.querySelector('.iris-name-view button').disabled;
         }
       };
       previous.after(row);
@@ -74,6 +84,7 @@ function renderIrisInstallations(data) {
     // Keep existing rows in place so reordered reports cannot interrupt Rename.
     previous = row;
     var known = installation.metadata_known !== false;
+    if (!known || row.querySelector('.iris-name-view button').disabled) row.querySelector('button[type="submit"]').disabled = !known;
     row.querySelector('.iris-name-view button').disabled = !known;
     var appName = !known ? 'App details unavailable' : installation.host_package === 'com.mentra.mentra.openalma' ? 'OpenAlma Mentra' : 'Mentra';
     var tooltip = appName + (installation.host_version ? ' v' + installation.host_version : ' (version unknown)') +
@@ -91,7 +102,7 @@ function renderIrisInstallations(data) {
     row.querySelector('.iris-detail').textContent = installation.detail || '';
     row.querySelector('.iris-soul').textContent = 'Soul: ' + (installation.soul_id || 'Not chosen');
     var forgetBlocked = installation.active || installation.host_reporting ||
-      (data.release_device_session_id === id && (data.running || data.starting || data.stuck || data.orphaned));
+      (data.release_device_session_id === id && irisInstallerBusy(data));
     var actions = ' <a class="btn" href="/iris?device_session_id=' + encodeURIComponent(id) + '">Setup</a>' + (known ?
       ' <button class="btn" type="button" data-forget title="Close the app and wait 15 seconds before forgetting it. Opening it again restores its row."' +
       (forgetBlocked ? ' disabled' : '') + '>Forget</button>' : '');
@@ -113,12 +124,12 @@ function renderIrisInstallations(data) {
         try {
           await irisMetadataAction(id, 'forget');
           row.remove();
-          pollStatus('iris-server');
         } catch (error) {
           alert(error.message);
         } finally {
           delete row.dataset.forgetting;
-          this.disabled = Boolean(forgetBlocked);
+          cell.irisActionsHtml = null;
+          pollStatus('iris-server');
         }
       };
     }
@@ -126,8 +137,14 @@ function renderIrisInstallations(data) {
   rows.forEach(function(row) { row.remove(); });
 }
 
+function irisInstallerBusy(data) {
+  return Boolean(data.running || data.starting || data.stuck || data.orphaned);
+}
+
 function irisInstallDisabled(data) {
-  return data.running || data.starting || data.stuck || data.orphaned || data.ready === false || (data.setup && !data.setup.ready);
+  return Boolean(irisInstallerBusy(data) || data.blocked ||
+    data.install_running || data.state === 'stopping' || data.ready === false ||
+    !Array.isArray(data.installations) || (data.setup && (!data.setup.enabled || !data.setup.ready)));
 }
 
 async function irisMetadataAction(id, action, body) {

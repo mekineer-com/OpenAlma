@@ -105,6 +105,7 @@ def test_iris_install_target_cleanup(tmp_path, monkeypatch, stage, host_package)
     target_path = tmp_path / "build/release-private-status.json"
     monkeypatch.setattr(launcher_app, "_find_service", lambda _name: spec)
     monkeypatch.setattr(launcher_app, "_require_startable_setup", lambda _name: None)
+    monkeypatch.setattr(services, "mentra_readiness", lambda: {"enabled": True, "ready": True})
     monkeypatch.setattr(services, "STATE_DIR", tmp_path)
     monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState())
     monkeypatch.setattr(services, "_iris_build_env", lambda *_args: {})
@@ -144,6 +145,94 @@ def test_iris_install_target_cleanup(tmp_path, monkeypatch, stage, host_package)
     assert not services._IRIS_INSTALL_LOCK.locked()
     assert requests == ([("stock-test", True), ("stock-ticket", False)] if host_package == "com.mentra.mentra" else [])
     assert target["device_session_id"] == "stock-test"
+
+
+def test_iris_address_save_refuses_busy_setup_and_uses_the_running_server_writer(tmp_path, monkeypatch):
+    import app as launcher_app
+    from fastapi.testclient import TestClient
+
+    path = tmp_path / "mcp-memu-server/config.json"
+    path.parent.mkdir()
+    original = {"llm": {"api_key": "fictional-secret"}, "other": "keep"}
+    path.write_text(json.dumps(original))
+    specs = [services.ServiceSpec(name, name, [], tmp_path, tmp_path / f"{name}.log", tmp_path / f"{name}.pid")
+             for name in ("memu-server", "iris-server")]
+    runtime = {spec.name: services.RuntimeState() for spec in specs}
+    calls = []
+    monkeypatch.setattr(launcher_app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(services, "all_services", lambda: specs)
+    monkeypatch.setattr(services, "_runtime_state", lambda spec: runtime[spec.name])
+
+    def save_in_server(route, payload):
+        assert services._IRIS_INSTALL_LOCK.locked()
+        assert route == "/config" and payload == {"mentra": {"public_base_url": "http://10.77.0.1"}}
+        calls.append(payload)
+        current = json.loads(path.read_text())
+        current["llm"]["api_key"] = "newer-fictional-secret"
+        current.update(payload)
+        path.write_text(json.dumps(current))
+        return {"ok": True}
+
+    monkeypatch.setattr(services, "_mcp_request", save_in_server)
+    client = TestClient(launcher_app.app, base_url="http://127.0.0.1")
+    def save():
+        return client.post("/iris/address", data={"public_base_url": "http://10.77.0.1"}, follow_redirects=False)
+
+    with services._IRIS_INSTALL_LOCK:
+        assert save().status_code == 409
+    for busy in (services.RuntimeState(running=True), services.RuntimeState(stuck=True)):
+        runtime["iris-server"] = busy
+        assert save().status_code == 409
+    assert json.loads(path.read_text()) == original and not calls
+    assert not Path(str(path) + ".orig").exists()
+    runtime["iris-server"] = services.RuntimeState(port_blocked=True)
+    runtime["memu-server"] = services.RuntimeState(running=True)
+    assert save().status_code == 303
+    assert json.loads(path.read_text()) == {"llm": {"api_key": "newer-fictional-secret"}, "other": "keep",
+                                         "mentra": {"public_base_url": "http://10.77.0.1"}}
+    assert json.loads(Path(str(path) + ".orig").read_text()) == original
+    assert len(calls) == 1 and not services._IRIS_INSTALL_LOCK.locked()
+    monkeypatch.setattr(services, "_mcp_request", lambda *_args: (_ for _ in ()).throw(OSError("Fictional outage")))
+    before = path.read_text()
+    assert save().status_code == 400
+    assert path.read_text() == before
+    runtime["memu-server"] = services.RuntimeState()
+    monkeypatch.setattr(launcher_app.os, "fsync", lambda *_args: (_ for _ in ()).throw(OSError("Fictional sync failure")))
+    assert save().status_code == 400
+    assert path.read_text() == before and not services._IRIS_INSTALL_LOCK.locked()
+    assert sorted(path.parent.iterdir()) == [path, *sorted(path.parent.glob("config.json*.orig"))]
+
+
+def test_iris_address_save_refuses_invalid_config_without_rewriting_it(tmp_path, monkeypatch):
+    import app as launcher_app
+    from fastapi.testclient import TestClient
+
+    path = tmp_path / "mcp-memu-server/config.json"
+    path.parent.mkdir()
+    monkeypatch.setattr(launcher_app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(services, "all_services", lambda: [])
+    client = TestClient(launcher_app.app, base_url="http://127.0.0.1", raise_server_exceptions=False)
+    for value in ("[]", "null"):
+        path.write_text(value)
+        response = client.post("/iris/address", data={"public_base_url": "http://10.77.0.1"})
+        assert response.status_code == 400
+        assert "JSON object" in response.json()["detail"]
+        assert path.read_text() == value
+        assert not Path(str(path) + ".orig").exists()
+        assert client.get("/iris").status_code == 200
+
+
+def test_iris_install_rechecks_readiness_before_reserving_or_starting(tmp_path, monkeypatch):
+    import app as launcher_app
+
+    spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState())
+    monkeypatch.setattr(services, "mentra_readiness", lambda: {"ready": False, "reason": "Restart memU Server"})
+    monkeypatch.setattr(services, "iris_installation_request", lambda *_args, **_kwargs: pytest.fail("Unready setup must not reserve"))
+    monkeypatch.setattr(services, "start", lambda *_args, **_kwargs: pytest.fail("Unready setup must not start"))
+    with pytest.raises(ValueError, match="Restart memU Server"):
+        launcher_app._start_iris_install(spec, "", "")
+    assert not services._IRIS_INSTALL_LOCK.locked()
 
 
 def test_iris_status_tracks_target_not_lock_and_preserves_rows_on_outage(tmp_path, monkeypatch):

@@ -20,6 +20,43 @@ class MentraStatusTest(TestCase):
         services._MENTRA_INGRESS_AUDIT_CACHE.clear()
         services._IRIS_RELEASE_CACHE = None
 
+    def test_iris_release_lookup_skips_broken_releases_and_selects_the_newest_valid_asset(self) -> None:
+        def release(version, **changes):
+            return {"tag_name": f"v{version}", "assets": [{
+                "name": f"{services.IRIS_PACKAGE}-{version}.zip",
+                "browser_download_url": f"https://example.invalid/iris-{version}.zip",
+            }], **changes}
+
+        releases = [release("0.2.0", assets=[]), release("broken"),
+                    release("0.3.0", prerelease=True), release("0.1.12"), release("0.1.13")]
+        services._IRIS_RELEASE_CACHE = None
+        with patch.object(services.urllib.request, "urlopen", return_value=BytesIO(json.dumps(releases).encode())) as lookup:
+            expected = ((services.IRIS_PACKAGE, "0.1.13", "https://example.invalid/iris-0.1.13.zip"), "available")
+            self.assertEqual(services._github_iris_release(), expected)
+            self.assertEqual(services._github_iris_release(), expected)
+            lookup.assert_called_once()
+            self.assertNotIn("/latest", lookup.call_args.args[0].full_url)
+
+    def test_iris_shared_address_validation_matches_install_and_saved_origin_rules(self) -> None:
+        for address in ("http://0.0.0.0", "http://[::]", "http://127.1", "http://2130706433",
+                        "http://0x7f000001", "http://127.0.0.1.", "http://[::ffff:0.0.0.0]",
+                        "http://server.example/prefix", "http://server.example/path?x=1"):
+            with self.subTest(address=address), self.assertRaises(ValueError):
+                services._iris_base_url(address)
+        for address in ("https://127.example.com", "http://10.77.0.1", "http://[fd00::1]"):
+            self.assertEqual(services._iris_base_url(address), address)
+
+    def test_blocked_installer_port_and_disabled_mentra_have_truthful_status(self) -> None:
+        blocked = services._iris_product_status(services.RuntimeState(port_blocked=True),
+            {"state": "ready"}, services.IRIS_PACKAGE, "0.1.12", {"enabled": True, "ready": True})
+        self.assertEqual(blocked["state"], "blocked")
+        self.assertIn("6789", blocked["detail"])
+        self.assertFalse(blocked["startable"])
+        disabled = services._iris_product_status(services.RuntimeState(),
+            {"state": "unavailable", "detail": "Server is stopped"}, services.IRIS_PACKAGE, "0.1.12",
+            {"enabled": False, "ready": False, "step": "disabled"})
+        self.assertEqual(disabled["state"], "disabled")
+
     def test_iris_candidate_uses_only_published_versions(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -535,7 +572,7 @@ class MentraStatusTest(TestCase):
             settings["mentra"]["public_base_url"] = "http://10.77.0.1"
             config.write_text(json.dumps(settings))
 
-            for responses, detail in (([0], "Cannot reach"), ([502], "HTTP 502"),
+            for responses, detail in (([0], "Cannot reach"), ([502], "HTTP 502"), ([404], "Restart memU Server"),
                                       ([200, 200], "exposes an unrelated path"), ([200, 0], "no connection")):
                 services._MENTRA_INGRESS_AUDIT_CACHE.clear()
                 with (
@@ -1074,6 +1111,7 @@ class MentraStatusTest(TestCase):
             env_path = root / ".env.local"
             env_path.write_text("MENTRA_PUBLIC_OPENALMA_BASE_URL=http://old.example\n")
             with (
+                patch.object(services, "mentra_readiness", return_value={"enabled": True, "ready": True}),
                 patch.object(services, "_resolve_apps_root", return_value=root),
                 patch.object(services, "_read_mentra_status", return_value={
                     "installed_user": "Wrong User", "installed_soul": 'Fictional "Soul"', "installed_device": "test-phone",

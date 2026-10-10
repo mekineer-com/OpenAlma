@@ -13,7 +13,10 @@ import services  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def _no_live_memorize_status(monkeypatch):
+def _no_live_status(monkeypatch):
+    def offline(*_args, **_kwargs):
+        raise OSError("Network disabled in launcher home tests")
+    monkeypatch.setattr(app.services.urllib.request, "urlopen", offline)
     monkeypatch.setattr(app.services, "memorize_pending", lambda *_args, **_kwargs: {})
 
 
@@ -142,6 +145,7 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
             assert "choose OpenAlma if Android offers sign-in apps, or use email sign-in" in visible
             assert 'href="https://play.google.com/store/apps/details?id=com.mentra.mentra"' in visible
             assert "trusted private VPN or connection" in visible
+            assert "only Mentra routes through your private proxy" in visible
             assert "Choose a Soul on the phone" in visible
             assert 'href="https://github.com/mekineer-com/MentraOS/releases"' in visible
             assert visible.index('>Phone steps</h3>') < visible.index('>Iris installer</h3>')
@@ -198,6 +202,9 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
     with pytest.MonkeyPatch.context() as unavailable:
         unavailable.setattr(services, "status", lambda _spec: {"state": "unavailable"})
         assert client.get("/iris?device_session_id=stock-test").status_code == 503
+        visible = client.get("/iris").text
+        assert 'disabled' in visible.split('id="iris-install-form">', 1)[1].split('</form>', 1)[0]
+        assert 'Iris app status is unavailable.' in visible
     assert 'id="pair-panel"' in client.get("/hermes").text
     assert 'id="pair-panel"' not in client.get("/iris").text
 
@@ -233,6 +240,8 @@ def test_iris_address_save_preserves_config_and_backs_up(tmp_path, monkeypatch, 
     original = json.dumps({"other": "keep", **({"mentra": mentra} if mentra is not None else {})}) + "\n"
     path.write_text(original)
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "all_services", lambda: [])
+    monkeypatch.setattr(app.services, "_runtime_state", lambda _spec: services.RuntimeState())
     client = TestClient(app.app, base_url="http://127.0.0.1")
     for address in ("http://bad host", "http://server:99999", "http://user@server", "ftp://server", "http://server/path",
                     "http://127.0.0.1:8099", "http://127.2.3.4", "http://[::1]:8099",
@@ -417,13 +426,17 @@ def test_iris_runtime_setup_state_is_not_an_install_row(tmp_path, monkeypatch):
     {"ready": False, "status_label": "Installation incomplete", "detail": "Missing dependencies"},
     {"ready": True, "guidance": ""},
 ])
-def test_iris_page_and_poll_share_setup_status(tmp_path, monkeypatch, setup):
+@pytest.mark.parametrize("runtime", [{}, {"blocked": True, "detail": "Free installer port 6789"},
+                                     {"starting": True}, {"state": "stopping"},
+                                     {"running": True}, {"stuck": True}, {"orphaned": True}])
+def test_iris_page_and_poll_share_setup_status(tmp_path, monkeypatch, setup, runtime):
     import json
     import re
     spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
     row = {"device_session_id": "fork-test", "display_name": "Test Phone",
            "host_package": "com.mentra.mentra.openalma", "action_kind": "start",
-           "action_label": "Repair", "startable": True}
+           "action_label": "Repair", "startable": True, "repair_available": True,
+           "installed_version": "0.2.0"}
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
     monkeypatch.setattr(app.services, "all_services", lambda: [spec])
     monkeypatch.setattr(app.services, "is_installed", lambda _spec: True)
@@ -431,15 +444,37 @@ def test_iris_page_and_poll_share_setup_status(tmp_path, monkeypatch, setup):
         "status_label": "Host ready", "installations": [row],
         "available_package": services.IRIS_PACKAGE, "available_version": "0.1.0",
         "setup": {"enabled": True, "ready": True, "rows": []},
+        **runtime,
     })
     monkeypatch.setattr(app.setup_install, "optional_setup_status", lambda *_args: setup)
     client = TestClient(app.app, base_url="http://127.0.0.1")
     for url in ("/iris", "/iris?device_session_id=fork-test"):
         html = client.get(url).text
-        initial = json.loads(html.split("const initialStatus = ", 1)[1].split(";", 1)[0])
+        initial = json.JSONDecoder().raw_decode(html.split("const initialStatus = ", 1)[1])[0]
         assert initial == client.get("/service/iris-server/status").json()
+        script = '<script src="/static/iris-services.js"></script>'
+        assert html.index(script) < html.index("const initialStatus = ")
+        if not runtime and setup["ready"] and url == "/iris":
+            shared = client.get("/static/iris-services.js")
+            assert shared.status_code == 200
+            assert "function irisInstallDisabled(data)" in shared.text
         install = html.split('action="/iris/install"', 1)[1].split("</form>", 1)[0]
-        assert bool(re.search(r'<button[^>]*disabled', install)) == (not setup["ready"])
+        assert bool(re.search(r'<button[^>]*disabled', install)) == (not setup["ready"] or bool(runtime))
+        address = html.split('class="iris-address">', 1)[1].split("</form>", 1)[0]
+        busy = any(runtime.get(key) for key in ("running", "starting", "stuck", "orphaned"))
+        assert bool(re.search(r'<button[^>]*disabled', address)) == busy
+        hint = html.split('id="iris-address-busy"', 1)[1].split(">", 1)[0]
+        assert ("hidden" in hint) == (not busy)
+        if runtime.get("blocked"):
+            assert runtime["detail"] in html.split('id="iris-installer-status"', 1)[1].split("</p>", 1)[0]
+        if "device_session_id" in url:
+            assert '>Repair</button>' in install
+
+
+def test_iris_status_consumer_node_checks():
+    import subprocess
+    path = Path(__file__).resolve().parents[1] / "launcher/static/iris-services.test.cjs"
+    subprocess.run(["node", "--test", str(path)], check=True, timeout=10)
 
 
 def test_uninstalled_iris_opens_phone_client_section_for_openalma_host(tmp_path, monkeypatch):

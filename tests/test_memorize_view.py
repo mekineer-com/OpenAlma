@@ -146,38 +146,8 @@ sorted.setup.rows[0].state = 'failure';
 assert.notEqual(statusSignature(status), statusSignature(sorted));
 """
     subprocess.run(["node", "-e", script], check=True, timeout=10)
-    poll = template.split("setInterval(async function() {", 1)[1].split("async function irisRequest", 1)[0]
-    script = "const selectedDevice = ''; function statusSignature(status) {" + function + r"""
-const assert = require('assert');
-const initialStatus = {installations: [{device_session_id: 'test-phone'}]};
-const initialSignature = statusSignature(initialStatus);
-let statusAvailable = true, submitting = false, reloads = 0, poll, editing = true;
-const actionError = {textContent: ''}, button = {disabled: false};
-const document = {querySelectorAll: selector => {
-  if (selector === '[data-device-session-id]') return [];
-  assert.equal(selector, 'form[action="/iris/install"] button, form[data-forget] button');
-  return [button];
-}, querySelector: () => editing};
-const location = {reload: () => reloads++};
-let status = {state: 'unavailable', detail: 'memU Server is unavailable'};
-const fetch = async () => ({ok: true, json: async () => status});
-const setInterval = callback => {poll = callback;};
-setInterval(async function() {
-""" + poll + r"""
-(async () => {
-await poll();
-assert.match(actionError.textContent, /unavailable/);
-assert.equal(button.disabled, true);
-assert.equal(reloads, 0); // Keep rows and unsaved Rename text during an outage.
-status = initialStatus;
-await poll();
-assert.equal(reloads, 0); // Recovery still must not discard an open Rename draft.
-editing = false;
-await poll();
-assert.equal(reloads, 1);
-})().catch(error => {console.error(error); process.exitCode = 1;});
-"""
-    subprocess.run(["node", "-e", script], check=True, timeout=10)
+    check = Path(__file__).resolve().parents[1] / "launcher/static/iris-services.test.cjs"
+    subprocess.run(["node", str(check)], check=True, timeout=10)
 
 
 def test_polled_iris_subrows_link_setup_to_their_own_app():

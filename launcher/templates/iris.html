@@ -3,6 +3,7 @@
 {% include "_settings_head.html" %}
 {% include "_header.html" %}
   {% set installer_busy = iris.running or iris.starting or iris.stuck or iris.orphaned %}
+  {% set install_disabled = not iris_setup.ready or not iris_setup.enabled or iris.ready is sameas false or installer_busy or iris.blocked or iris.install_running or iris.state == 'stopping' or iris.installations is not defined %}
   {% set show_installer = not selected_installation or iris.release_device_session_id == selected_installation.device_session_id %}
   <h2>{{ selected_installation.display_name ~ ' setup' if selected_installation else 'Iris & Phone Setup' }}</h2>
   {% if not iris_setup.enabled %}
@@ -22,9 +23,11 @@
     <h3 class="iris-section">memU Server address</h3>
     <form method="post" action="/iris/address" class="iris-address">
       <input type="url" name="public_base_url" aria-label="memU Server address" required value="{{ iris_connection.base_url or '' }}" placeholder="http://10.77.0.1">
-      <button class="btn" type="submit">Save</button>
+      <button class="btn" type="submit" {% if installer_busy %}disabled{% endif %}>Save</button>
     </form>
+    <p id="iris-address-busy" class="hint" {% if not installer_busy %}hidden{% endif %}>Finish or cancel the Iris installer before saving a new address; it uses the address captured when it starts.</p>
     <p class="hint iris-address-hint">Use the server address assigned by your private network. Saving does not configure the VPN or server listener.</p>
+    <p class="hint">The phone address must expose only Mentra routes through your private proxy; keep memU Server on loopback.</p>
     <p class="hint">For first installation, Iris receives this address automatically. If you change it later, also change it in Iris's Edit Connection and OpenAlma Mentra's Settings, where applicable.</p>
     <p class="hint">Use a trusted private VPN or connection. Devices allowed to reach this endpoint can access the Soul's Iris data; trust the permitted devices and network access rules.</p>
 
@@ -41,10 +44,10 @@
     </ol>
 
     <h3 class="iris-section">Iris installer</h3>
-    {% if iris.ready is sameas false %}<p class="failure">{{ iris.status_label }}: {{ iris.detail }}</p>{% endif %}
+    <p id="iris-installer-status" class="failure" role="alert">{% if iris.blocked %}{{ iris.detail or 'Iris installer port 6789 is occupied. Free the port before installing.' }}{% elif iris.ready is sameas false %}{{ iris.status_label }}: {{ iris.detail }}{% elif iris.installations is not defined %}Iris app status is unavailable.{% endif %}</p>
     {% if not selected_installation %}
     <form method="post" action="/iris/install" id="iris-install-form">
-      <p><button class="btn" type="submit" {% if not iris_setup.ready or not iris_setup.enabled or iris.ready is sameas false or installer_busy or not iris.available_package or not iris.available_version or iris.installations is not defined %}disabled{% endif %}>Stock Install</button></p>
+      <p><button class="btn" type="submit" {% if install_disabled or not iris.available_package or not iris.available_version %}disabled{% endif %}>Stock Install</button></p>
     </form>
     <p class="hint">For Stock Mentra, click Stock Install and scan the Iris QR below. For OpenAlma Mentra, use Install beside its app in Services.</p>
     {% endif %}
@@ -85,7 +88,7 @@
     {% if iris.force_stoppable %}<p><button class="btn" type="button" onclick="irisAction('force-stop', this)">Force Stop</button></p>
     {% elif iris.stoppable %}<p><button class="btn" type="button" onclick="irisAction('stop', this)">Cancel</button></p>{% endif %}
     {% elif installer_busy %}<p class="muted">Another Iris installation is in progress.</p>{% endif %}
-    <p id="iris-action-error" class="failure" role="alert">{% if iris.installations is not defined %}Iris app status is unavailable.{% endif %}</p>
+    <p id="iris-action-error" class="failure" role="alert"></p>
 
     {% if selected_installation %}
     <h3>App status</h3>
@@ -110,7 +113,7 @@
         <form class="inline" method="post" action="/iris/install">
           <input type="hidden" name="device_session_id" value="{{ row.device_session_id }}">
           <input type="hidden" name="host_package" value="{{ row.host_package }}">
-          <button class="btn" type="submit" {% if installer_busy or iris.ready is sameas false or not iris_setup.ready or not iris_setup.enabled or not row.startable %}disabled{% endif %}>{{ row.action_label }}</button>
+          <button class="btn" type="submit" {% if install_disabled or not row.startable %}disabled{% endif %}>{{ row.action_label }}</button>
         </form>
         {% elif row.action_kind == 'settings' %}<span class="muted">Setup needed: see host readiness above.</span>{% endif %}
         {% if row.metadata_known is not sameas false %}
@@ -138,15 +141,16 @@
     const initialStatus = {{ iris|tojson }};
     const selectedDevice = {{ (selected_installation.device_session_id if selected_installation else '')|tojson }};
     const actionError = document.getElementById('iris-action-error');
+    const installerStatus = document.getElementById('iris-installer-status');
     let submitting = false;
     let statusAvailable = Array.isArray(initialStatus.installations);
     function statusSignature(status) {
       const setup = status.setup || {};
       return JSON.stringify([
-        status.running, status.starting, status.stuck, status.orphaned,
+        status.state, status.running, status.starting, status.stuck, status.orphaned, status.blocked, status.detail,
         status.stoppable, status.force_stoppable, status.status_label, status.release_uri,
         status.release_device_session_id, status.release_host_package,
-        status.github_status, status.available_version,
+        status.github_status, status.available_package, status.available_version,
         status.ready, status.install_running,
         [setup.enabled, setup.ready, setup.reason, setup.step,
           (setup.rows || []).map(row => [row.label, row.state, row.detail])],
@@ -159,28 +163,48 @@
       ]);
     }
     const initialSignature = statusSignature(initialStatus);
+    function applyActionStatus(status) {
+      statusAvailable = Array.isArray(status.installations);
+      const installerBusy = irisInstallerBusy(status);
+      if (status.running !== undefined) {
+        document.querySelector('.iris-address button').disabled = installerBusy;
+        document.getElementById('iris-address-busy').hidden = !installerBusy;
+      }
+      installerStatus.textContent = status.blocked ? status.detail || 'Iris installer port 6789 is occupied. Free the port before installing.' :
+        !statusAvailable ? status.detail || 'Iris app status is unavailable.' :
+        status.ready === false ? status.detail || status.status_label :
+        status.setup && !status.setup.ready ? status.setup.reason : '';
+      document.querySelectorAll('form[action="/iris/install"] button').forEach(button => {
+        button.disabled = irisInstallDisabled(status) || !status.available_package || !status.available_version;
+      });
+      document.querySelectorAll('#iris-installations form button').forEach(button => { button.disabled = true; });
+      const items = Array.from(document.querySelectorAll('[data-device-session-id]'));
+      for (const row of status.installations || []) {
+        const item = items.find(item => item.dataset.deviceSessionId === row.device_session_id);
+        if (!item) continue;
+        item.querySelector('[data-status]').textContent = [row.status_label, row.detail].filter(Boolean).join(' — ');
+        const install = item.querySelector('form[action="/iris/install"] button');
+        if (install) install.disabled = irisInstallDisabled(status) || !row.startable;
+        const rename = item.querySelector('.iris-rename button');
+        if (rename) rename.disabled = row.metadata_known === false;
+        const forget = item.querySelector('form[data-forget] button');
+        if (forget) forget.disabled = row.active || row.host_reporting || row.metadata_known === false ||
+          (status.release_device_session_id === row.device_session_id && installerBusy);
+      }
+    }
     setInterval(async function() {
       if (submitting) return;
       try {
         const response = await fetch('/service/iris-server/status');
-        if (!response.ok) return;
+        if (!response.ok) throw new Error('Iris app status is unavailable.');
         const status = await response.json();
-        if (!Array.isArray(status.installations)) {
-          statusAvailable = false;
-          actionError.textContent = status.detail || 'Iris app status is unavailable.';
-          document.querySelectorAll('form[action="/iris/install"] button, form[data-forget] button').forEach(button => { button.disabled = true; });
-          return;
-        }
-        const items = Array.from(document.querySelectorAll('[data-device-session-id]'));
-        for (const row of status.installations || []) {
-          const item = items.find(item => item.dataset.deviceSessionId === row.device_session_id);
-          if (item) item.querySelector('[data-status]').textContent =
-            [row.status_label, row.detail].filter(Boolean).join(' — ');
-        }
+        const wasAvailable = statusAvailable;
+        applyActionStatus(status);
+        if (!statusAvailable) return;
         // Keep an open Rename form (including an unsaved name) intact.
-        if ((!statusAvailable || statusSignature(status) !== initialSignature) &&
+        if ((!wasAvailable || statusSignature(status) !== initialSignature) &&
             !document.querySelector('#iris-installations details[open], .iris-address:focus-within')) location.reload();
-      } catch (_err) {}
+      } catch (_err) { applyActionStatus({}); }
     }, 2000);
     async function irisRequest(url, options, button) {
       if (submitting) return;
@@ -197,7 +221,7 @@
         else location.reload();
       } catch (err) {
         actionError.textContent = err.message;
-        if (button) button.disabled = false;
+        if (button && (statusAvailable || !button.closest('form[action="/iris/install"], #iris-installations'))) button.disabled = false;
         submitting = false;
       }
     }

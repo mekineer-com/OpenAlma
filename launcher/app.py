@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sqlite3
+import tempfile
 import urllib.error
 import urllib.parse
 import webbrowser
@@ -554,9 +556,12 @@ def iris_page(request: Request, device_session_id: str = "") -> HTMLResponse:
     iris_connection = {}
     if apps_root:
         try:
-            mentra = json.loads(
+            config = json.loads(
                 (apps_root / "mcp-memu-server" / "config.json").read_text(encoding="utf-8")
-            ).get("mentra") or {}
+            )
+            if not isinstance(config, dict):
+                raise ValueError("mcp config.json must be a JSON object")
+            mentra = config.get("mentra") or {}
             iris_connection = {
                 "base_url": str(mentra.get("public_base_url") or ""),
             }
@@ -571,23 +576,27 @@ def iris_page(request: Request, device_session_id: str = "") -> HTMLResponse:
 
 @app.post("/iris/address")
 def iris_address_save(public_base_url: str = Form()) -> RedirectResponse:
-    address = public_base_url.strip().rstrip("/")
     try:
-        parsed = urllib.parse.urlsplit(address)
-        if (parsed.scheme not in {"http", "https"} or not parsed.hostname
-                or parsed.port == 0 or parsed.username or parsed.password
-                or parsed.path or parsed.query or parsed.fragment
-                or any(char.isspace() for char in address)):
-            raise ValueError("Enter an HTTP or HTTPS server address")
-        address = services._iris_base_url(address)
+        address = services._iris_base_url(public_base_url)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     root = settings.apps_root()
     if root is None:
         raise HTTPException(status_code=400, detail="Install OpenAlma first")
     path = root / "mcp-memu-server" / "config.json"
+    if not services._IRIS_INSTALL_LOCK.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Another Iris setup change is in progress; wait and try again")
+    temporary = None
     try:
+        specs = services.all_services()
+        iris_spec = next((spec for spec in specs if spec.name == "iris-server"), None)
+        if iris_spec:
+            runtime = services._runtime_state(iris_spec)
+            if runtime.running or runtime.stuck or runtime.orphaned:
+                raise services.ServiceStoppingError("Finish or cancel the Iris installer before changing the address")
         config = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(config, dict):
+            raise ValueError("mcp config.json must be a JSON object")
         config.setdefault("mentra", {})["public_base_url"] = address
         backup = Path(str(path) + ".orig")
         number = 2
@@ -595,11 +604,28 @@ def iris_address_save(public_base_url: str = Form()) -> RedirectResponse:
             backup = Path(str(path) + f"{number}.orig")
             number += 1
         shutil.copy2(path, backup)
-        temporary = path.with_suffix(".tmp")
-        temporary.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
-        temporary.replace(path)
+        backup.chmod(0o600)
+        memu_spec = next((spec for spec in specs if spec.name == "memu-server"), None)
+        if memu_spec and services._runtime_state(memu_spec).running:
+            services._mcp_request("/config", {"mentra": {"public_base_url": address}})
+        else:
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as output:
+                temporary = Path(output.name)
+                json.dump(config, output, indent=2)
+                output.write("\n")
+                output.flush()
+                os.fsync(output.fileno())
+            temporary.replace(path)
+    except services.ServiceStoppingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=f"Cannot save OpenAlma address: {exc}") from exc
+    finally:
+        try:
+            if temporary:
+                temporary.unlink(missing_ok=True)
+        finally:
+            services._IRIS_INSTALL_LOCK.release()
     services._MENTRA_READINESS_CACHE.clear()
     return RedirectResponse("/iris", status_code=303)
 
@@ -822,6 +848,9 @@ def _start_iris_install(spec: services.ServiceSpec, device_session_id: str, host
         services._IRIS_INSTALL_CANCELLED.clear()
         services.raise_if_stopping(spec)
         services.raise_if_iris_installer_busy(spec)
+        readiness = services.mentra_readiness()
+        if not readiness.get("ready"):
+            raise ValueError(readiness.get("reason") or "Finish Iris setup before installing")
         if not device_session_id:
             if host_package:
                 raise ValueError("Choose an Iris app installation")

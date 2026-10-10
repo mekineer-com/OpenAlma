@@ -59,7 +59,8 @@ _STOP_STARTED: dict[str, float] = {}
 _CHANNELS_HOME = _resolve_channels_home()
 
 IRIS_PACKAGE = "com.openalma.mentra"
-IRIS_RELEASES_URL = "https://api.github.com/repos/mekineer-com/iris/releases/latest"
+# ponytail: newest 100 releases; paginate only if a supported ZIP falls outside this window.
+IRIS_RELEASES_URL = "https://api.github.com/repos/mekineer-com/iris/releases?per_page=100"
 
 
 class StopConfirmationRequired(Exception):
@@ -725,25 +726,28 @@ def _read_mentra_status(
 
 
 def _iris_base_url(value: str) -> str:
-    base_url = value.rstrip("/")
+    base_url = value.strip().rstrip("/")
     try:
         parsed = urllib.parse.urlsplit(base_url)
-        host = parsed.hostname or ""
+        host = (parsed.hostname or "").rstrip(".")
         port = parsed.port
     except ValueError as exc:
         raise ValueError("Iris base URL has an invalid host or port") from exc
     if (parsed.scheme not in {"http", "https"} or not host or port == 0
-            or any(char.isspace() for char in host)
-            or parsed.username or parsed.password or parsed.query or parsed.fragment):
-        raise ValueError("Iris base URL must be HTTP or HTTPS without credentials, query, or fragment")
+            or any(char.isspace() for char in base_url)
+            or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment):
+        raise ValueError("Iris base URL must be HTTP or HTTPS without a path, credentials, query, or fragment")
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
-        address = None
-    host = host.rstrip(".")
+        try:
+            address = ipaddress.ip_address(socket.inet_aton(host))
+        except OSError:
+            address = None
+    address = getattr(address, "ipv4_mapped", None) or address
     if host == "localhost" or host.endswith(".localhost") or (
-            address is not None and (getattr(address, "ipv4_mapped", None) or address).is_loopback):
-        raise ValueError("Iris base URL must not use loopback or localhost")
+            address is not None and (address.is_loopback or address.is_unspecified)):
+        raise ValueError("Iris base URL must not use loopback or localhost, or an unspecified address")
     return base_url
 
 
@@ -895,7 +899,9 @@ def _mentra_readiness_uncached(root: Path) -> dict:
         config = json.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {"enabled": True, "ready": False, "reason": "Cannot read mcp config.json", "step": "config", "rows": []}
-    mentra = config.get("mentra") if isinstance(config, dict) else {}
+    if not isinstance(config, dict):
+        return {"enabled": True, "ready": False, "reason": "mcp config.json must be a JSON object", "step": "config", "rows": []}
+    mentra = config.get("mentra")
     mentra = mentra if isinstance(mentra, dict) else {}
     if not _coerce_bool(mentra.get("enabled")):
         return {"enabled": False, "ready": False, "reason": "Mentra is disabled", "step": "disabled", "rows": []}
@@ -953,6 +959,8 @@ def _mentra_readiness_uncached(root: Path) -> dict:
     status = _mentra_http_status(f"{base_url}/integration/mentra/health")
     if status != 200:
         reason = "Cannot reach Mentra; check the server and connection" if not status else f"Mentra health check failed (HTTP {status}); check the server and proxy"
+        if status == 404:
+            reason = "Restart memU Server after enabling Mentra; if HTTP 404 persists, check the private Mentra proxy"
         return fail("ingress", "Narrow ingress", reason)
     if base_url not in _MENTRA_INGRESS_AUDIT_CACHE:
         status = _mentra_http_status(f"{base_url}/health")
@@ -1000,21 +1008,32 @@ def _github_iris_release() -> tuple[tuple[str, str, str] | None, str]:
             headers={"Accept": "application/vnd.github+json", "User-Agent": "OpenAlma-launcher"},
         )
         with urllib.request.urlopen(request, timeout=2) as response:
-            release = json.load(response)
+            releases = json.load(response)
+        if not isinstance(releases, list):
+            raise ValueError("Invalid GitHub releases response")
+        candidates = []
+        for release in releases:
+            if not isinstance(release, dict) or release.get("draft") or release.get("prerelease"):
+                continue
+            version = str(release.get("tag_name") or "").removeprefix("v")
+            semver = _iris_semver(version)
+            if semver is None:
+                continue
+            expected_name = f"{IRIS_PACKAGE}-{version}.zip"
+            asset = next((item for item in release.get("assets") or []
+                          if isinstance(item, dict) and item.get("name") == expected_name
+                          and item.get("browser_download_url")), None)
+            if asset:
+                candidates.append((semver, version, str(asset["browser_download_url"])))
+        if candidates:
+            _, version, url = max(candidates)
+            result = (IRIS_PACKAGE, version, url), "available"
+        else:
+            result = None, "invalid" if releases else "none"
     except urllib.error.HTTPError as exc:
         result = None, "none" if exc.code == 404 else "unavailable"
     except (OSError, ValueError, TypeError):
         result = None, "unavailable"
-    else:
-        try:
-            version = str(release.get("tag_name") or "").removeprefix("v")
-            expected_name = f"{IRIS_PACKAGE}-{version}.zip"
-            asset = next(item for item in release.get("assets", []) if item.get("name") == expected_name)
-            if release.get("draft") or release.get("prerelease") or not _iris_semver(version):
-                raise ValueError("invalid release")
-            result = (IRIS_PACKAGE, version, str(asset["browser_download_url"])), "available"
-        except (ValueError, KeyError, StopIteration, TypeError):
-            result = None, "invalid"
     _IRIS_RELEASE_CACHE = (now, *result)
     return result
 
@@ -1104,7 +1123,8 @@ def _iris_product_status(
         readiness and readiness.get("enabled") and not readiness.get("ready")
     )
 
-    if mentra.get("state") == "unavailable" and not (readiness and readiness.get("step") == "server"):
+    if mentra.get("state") == "unavailable" and not (readiness and (
+            readiness.get("step") == "server" or not readiness.get("enabled"))):
         state, label, detail = "unavailable", "▲ status unavailable", mentra["detail"]
         action = "stop" if runtime.running or runtime.stuck or runtime.orphaned else None
     elif active:
@@ -1123,6 +1143,8 @@ def _iris_product_status(
         state, label, detail, action = "degraded", "▲ installer failed", "View the Iris log", "stop"
     elif readiness and not readiness.get("enabled"):
         state, label, detail, action = "disabled", "Disabled", "", None
+    elif runtime.port_blocked:
+        state, label, detail, action = "blocked", "▲ installer port occupied", "Free port 6789 before installing Iris", None
     elif readiness and readiness.get("step") == "server":
         state, label, detail, action = "stopped", "○ waiting for memU Server", "Start memU Server in Services", None
     elif setup_required:
@@ -1130,7 +1152,6 @@ def _iris_product_status(
     elif (
         not mentra
         or mentra.get("state") == "disabled"
-        or runtime.port_blocked
     ):
         state, label, detail, action = "setup", "▲ setup needed", "Open Iris & Phone Setup", "settings"
     elif not installed_package and (not available_package or not available_version):
