@@ -177,7 +177,7 @@ begin
     begin
       LastLauncherCheckCode := ResultCode;
       if ResultCode = 11 then
-        Result := 'Stop every OpenAlma service, then click Retry.'
+        Result := 'Stop every OpenAlma service and wait for any installation to finish, then click Retry.'
       else
         Result := 'OpenAlma could not verify that all services are stopped.';
     end;
@@ -199,7 +199,7 @@ begin
   if not RunHidden(PythonLauncher, Params, ResultCode) then
     Result := 'Could not check the running OpenAlma Launcher.'
   else if ResultCode = 11 then
-    Result := 'Stop all OpenAlma services, then click Retry.'
+    Result := 'Stop all OpenAlma services and wait for any installation to finish, then click Retry.'
   else if ResultCode = 12 then
     Result := 'Port 8765 is occupied by a process that is not a verified OpenAlma Launcher.'
   else if ResultCode = 13 then
@@ -307,7 +307,7 @@ begin
   if not Result then
   begin
     if LastLauncherCheckCode = 11 then
-      MsgBox('Open OpenAlma, stop every service, then retry uninstall.', mbError, MB_OK)
+      MsgBox('Open OpenAlma, stop every service and wait for any installation to finish, then retry uninstall.', mbError, MB_OK)
     else begin
       ServicesVerified := False;
       MsgBox(
@@ -347,7 +347,7 @@ begin
       Python := ExpandConstant('{app}\launcher\.venv\Scripts\python.exe');
       Script := ExpandConstant('{app}\launcher\windows_remove.py');
       if not RunHidden(Python, '"' + Script + '"', ResultCode) or (ResultCode <> 0) then
-        RaiseException('Remove Everything could not complete. OpenAlma data was not intentionally removed by the uninstaller.');
+        RaiseException('Remove Everything could not complete. Some files may already have been deleted. Close apps using the folder before trying again.');
     end;
   end;
 end;

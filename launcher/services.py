@@ -833,7 +833,6 @@ def host_prerequisites(root: Path | None, os_release_path: Path = Path("/etc/os-
 
     venv_python = Path("mcp-memu-server/.venv") / ("Scripts/python.exe" if os.name == "nt" else "bin/python3")
     required_paths = {
-        "OpenAlma launcher": ("openalma/launcher/run.py",),
         "memU Server": ("mcp-memu-server/run.py", str(venv_python)),
         "memU engine": ("memu/pyproject.toml",),
     }

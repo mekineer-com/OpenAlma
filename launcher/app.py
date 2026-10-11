@@ -68,6 +68,8 @@ def launcher_update_readiness() -> dict[str, object]:
         spec.label for spec in services.all_services()
         if _runtime_active(services.status(spec))
     ]
+    if setup_install._active_install_owner() is not None:
+        active.append("Installation in progress (wait for it to finish)")
     return {"application": LAUNCHER_ID, "active_services": active}
 
 

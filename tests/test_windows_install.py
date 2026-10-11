@@ -7,6 +7,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "launcher"))
 
 import settings  # noqa: E402
+import setup_install  # noqa: E402
 import windows_install  # noqa: E402
 import windows_remove  # noqa: E402
 
@@ -116,6 +117,12 @@ def test_windows_upgrade_resumes_partial_core_as_first_install(tmp_path, monkeyp
 
     assert (apps_root / windows_install.RELEASE_FILE).read_text(encoding="utf-8") == "v1.1.0\n"
     assert not (apps_root / windows_install.PENDING_RELEASE_FILE).exists()
+    monkeypatch.setattr(setup_install, "_OPERATION", None)
+    monkeypatch.setattr(setup_install, "release_issue", lambda *_args, **_kwargs: "Update required: memu")
+    monkeypatch.setattr(setup_install, "_prerequisite_issue", lambda _root: "")
+    status = setup_install.setup_status(apps_root, verify_runtime=False)
+    assert status["action_kind"] == "install"
+    assert status["action_label"] == "Continue Install"
 
 
 def test_windows_upgrade_uses_saved_apps_root(tmp_path, monkeypatch):

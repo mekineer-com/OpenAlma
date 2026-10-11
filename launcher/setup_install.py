@@ -291,8 +291,8 @@ def iris_release_entry(root: Path) -> dict[str, str]:
     }
 
 
-def _run(command: list[str], *, cwd: Path | None, log: Any) -> None:
-    printable = " ".join(command)
+def _run(command: list[str] | str, *, cwd: Path | None, log: Any) -> None:
+    printable = command if isinstance(command, str) else " ".join(command)
     log.write(f"\n$ {printable}\n")
     log.flush()
     subprocess.run(
@@ -755,12 +755,17 @@ def _install_core(operation: InstallOperation) -> None:
                 _write_recorded_release(operation.root, tag)
             _write_root_marker(operation.root)
             paths["apps_root"] = str(operation.root)
-            paths.pop("openalma_release_tag", None)
             settings.write_paths(paths)
 
             for entry in manifest["memu-server"]:
                 _set_operation(operation, step=f"Installing {entry['destination']}")
-                _clone(entry, operation.root, log)
+                destination = operation.root / entry["destination"]
+                if destination.exists() and not _config_ready(operation.root):
+                    _managed_checkout_state(entry, operation.root)
+                    if not _local_matching_checkout(destination, entry["repository"], entry["ref"]):
+                        _checkout_release(entry, destination, log)
+                else:
+                    _clone(entry, operation.root, log)
 
             _set_operation(operation, step="Creating Python environment")
             _run(
@@ -802,20 +807,22 @@ def _prerequisite_issue(root: Path) -> str:
     return ""
 
 
-def _package_command(tool: str, *arguments: str, windows: bool | None = None) -> list[str]:
+def _package_command(tool: str, *arguments: str, windows: bool | None = None) -> list[str] | str:
     windows = os.name == "nt" if windows is None else windows
     executable = shutil.which(tool) or tool
     if not windows or Path(executable).suffix.casefold() not in {".bat", ".cmd"}:
         return [executable, *arguments]
     command = subprocess.list2cmdline([executable, *arguments])
-    return [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/s", "/c", command]
+    shell = subprocess.list2cmdline([os.environ.get("COMSPEC", "cmd.exe")])
+    # Batch shims need a raw string, without subprocess quoting the command again.
+    return f'{shell} /d /s /c "{command}"'
 
 
-def _npm_command(*arguments: str) -> list[str]:
+def _npm_command(*arguments: str) -> list[str] | str:
     return _package_command("npm", *arguments)
 
 
-def _bun_command(*arguments: str) -> list[str]:
+def _bun_command(*arguments: str) -> list[str] | str:
     return _package_command("bun", *arguments)
 
 
@@ -910,14 +917,14 @@ def start_issue(service_name: str, root: Path) -> str:
 def _optional_entries(service_name: str, root: Path) -> list[dict[str, str]]:
     if service_name == "iris-server":
         return [iris_release_entry(root)]
-    manifest = recorded_manifest(root)
+    manifest = packaged_manifest(root) or recorded_manifest(root)
     try:
         return manifest[service_name]
     except KeyError as exc:
         raise SetupError(f"The selected OpenAlma release does not include {service_name}") from exc
 
 
-def _optional_commands(service_name: str, root: Path) -> list[tuple[list[str], Path]]:
+def _optional_commands(service_name: str, root: Path) -> list[tuple[list[str] | str, Path]]:
     if service_name == "channels-daemon":
         return [
             (_npm_command("ci"), root / "hermes-channels" / "bridge"),
@@ -941,8 +948,6 @@ def _optional_tool_issue(service_name: str) -> str:
 
 
 def _install_optional(operation: InstallOperation) -> None:
-    states: list[tuple[Path, str]] = []
-    entries: list[dict[str, str]] = []
     try:
         log_path = install_log_path(operation.service_name)
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -952,15 +957,14 @@ def _install_optional(operation: InstallOperation) -> None:
                 _optional_entries(operation.service_name, operation.root),
                 key=lambda entry: len(Path(entry["destination"]).parts),
             )
-            states = [
-                _managed_checkout_state(entry, operation.root)
+            existing_paths = {
+                _managed_checkout_state(entry, operation.root)[0]
                 for entry in entries if (operation.root / entry["destination"]).exists()
-            ]
-            state_by_path = {path: head for path, head in states}
+            }
             for entry in entries:
                 _set_operation(operation, step=f"Installing {entry['destination']}")
                 destination = operation.root / entry["destination"]
-                if destination in state_by_path:
+                if destination in existing_paths:
                     if not _local_matching_checkout(destination, entry["repository"], entry["ref"]):
                         _checkout_release(entry, destination, log)
                 else:
@@ -980,16 +984,7 @@ def _install_optional(operation: InstallOperation) -> None:
         _RELEASE_ISSUE_CACHE.clear()
         _set_operation(operation, state="ready", step="Installation complete", detail=detail)
     except Exception as exc:
-        rollback_errors = []
-        for destination, head in states:
-            try:
-                _run(["git", "checkout", "--detach", head], cwd=destination, log=log)
-            except Exception as rollback_error:
-                rollback_errors.append(str(rollback_error))
-        detail = str(exc)
-        if rollback_errors:
-            detail += "; rollback failed: " + "; ".join(rollback_errors)
-        _set_operation(operation, state="error", step="Installation failed", detail=detail)
+        _set_operation(operation, state="error", step="Installation failed", detail=str(exc))
 
 
 def _lock_handle(handle: Any) -> None:
@@ -1164,7 +1159,7 @@ def setup_status(
             "startable": False, "action_kind": "install",
             "action_label": "Retry" if operation["state"] == "error" else "Update",
         }
-    if present and release_issue("memu-server", root):
+    if present and _config_ready(root) and release_issue("memu-server", root):
         return {
             "state": "blocked", "install_setup": True,
             "status_label": "Update state incomplete",

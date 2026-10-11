@@ -337,7 +337,6 @@ def test_optional_service_install_marker_controls_visibility(tmp_path):
 
 def test_host_prerequisites_ignore_uninstalled_optional_clients(tmp_path, monkeypatch):
     for path in (
-        "openalma/launcher/run.py",
         "mcp-memu-server/run.py",
         "memu/pyproject.toml",
     ):
@@ -363,7 +362,7 @@ def test_host_prerequisites_without_apps_root_still_render():
     result = services.host_prerequisites(None)
 
     assert result["ready"] is False
-    assert "OpenAlma launcher" in result["rows"][1]["detail"]
+    assert "memU Server" in result["rows"][1]["detail"]
 
 
 def test_atomic_service_is_managed_by_launcher(tmp_path, monkeypatch):

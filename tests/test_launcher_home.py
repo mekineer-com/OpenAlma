@@ -282,16 +282,23 @@ def test_position_save_does_not_overwrite_invalid_settings(tmp_path, monkeypatch
     assert path.read_text(encoding="utf-8") == contents
 
 
-def test_update_readiness_names_active_services(tmp_path, monkeypatch):
+@pytest.mark.parametrize("install_running", [False, True])
+def test_update_readiness_names_active_services(tmp_path, monkeypatch, install_running):
     spec = services.ServiceSpec("atomic", "Atomic Mind Map", [], tmp_path, tmp_path / "log", tmp_path / "pid")
     monkeypatch.setattr(app.services, "all_services", lambda: [spec])
     monkeypatch.setattr(app.services, "status", lambda _spec: {"running": True})
 
-    response = TestClient(app.app, base_url="http://127.0.0.1").get("/launcher/update-readiness")
-
-    assert response.json() == {
-        "application": "openalma-launcher", "active_services": ["Atomic Mind Map"],
-    }
+    monkeypatch.setattr(app.setup_install, "INSTALL_LOCK", tmp_path / "install.lock")
+    handle = app.setup_install._acquire_install_lock("memu-server", tmp_path) if install_running else None
+    try:
+        response = TestClient(app.app, base_url="http://127.0.0.1").get("/launcher/update-readiness")
+        active = ["Atomic Mind Map"]
+        if install_running:
+            active.append("Installation in progress (wait for it to finish)")
+        assert response.json() == {"application": "openalma-launcher", "active_services": active}
+    finally:
+        if handle is not None:
+            app.setup_install._release_install_lock(handle)
 
 
 def test_launcher_log_uses_launcher_log_path(tmp_path, monkeypatch):

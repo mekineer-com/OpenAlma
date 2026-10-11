@@ -4,6 +4,7 @@ import subprocess
 import sys
 import threading
 from contextlib import closing
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -518,20 +519,29 @@ def test_thread_start_failure_clears_operation_and_releases_lock(tmp_path, monke
     assert released == ["lock"]
 
 
-def test_core_retry_reuses_recorded_release(tmp_path, monkeypatch):
+@pytest.mark.parametrize("partial_checkout", [False, True])
+def test_core_retry_reuses_recorded_release(tmp_path, monkeypatch, partial_checkout):
     operation = setup_install.InstallOperation(service_name="memu-server", root=tmp_path)
-    manifest = {"memu-server": [{"destination": "memu"}]}
+    entry = {"destination": "memu", "repository": "https://github.com/mekineer-com/memU.git", "ref": "v1.0.0"}
+    manifest = {"memu-server": [entry]}
     writes = []
+    cloned, checked_out = [], []
+    if partial_checkout:
+        (tmp_path / "memu").mkdir()
     monkeypatch.setattr(setup_install, "_OPERATION", operation)
     monkeypatch.setattr(setup_install, "install_log_path", lambda _name: tmp_path / "install.log")
     (tmp_path / ".openalma-release").write_text("v1.0.0\n", encoding="utf-8")
     monkeypatch.setattr(setup_install.settings, "read_paths", lambda: {
-        "apps_root": str(tmp_path), "openalma_release_tag": "v1.0.0", "other": True,
+        "apps_root": str(tmp_path), "other": True,
     })
     monkeypatch.setattr(setup_install.settings, "write_paths", lambda value: writes.append(value.copy()))
     monkeypatch.setattr(setup_install, "recorded_manifest", lambda _root: manifest)
+    monkeypatch.setattr(setup_install, "packaged_manifest", lambda _root: None)
     monkeypatch.setattr(setup_install, "discover_release", lambda _root: pytest.fail("retry rescanned newest"))
-    monkeypatch.setattr(setup_install, "_clone", lambda *_args: None)
+    monkeypatch.setattr(setup_install, "_clone", lambda item, *_args: cloned.append(item))
+    monkeypatch.setattr(setup_install, "_managed_checkout_state", lambda item, root: (root / item["destination"], "old-head"))
+    monkeypatch.setattr(setup_install, "_local_matching_checkout", lambda *_args: False)
+    monkeypatch.setattr(setup_install, "_checkout_release", lambda item, *_args: checked_out.append(item))
     monkeypatch.setattr(setup_install, "_run", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(setup_install, "_write_config", lambda _root: None)
     monkeypatch.setattr(setup_install, "core_issue", lambda _root: "")
@@ -542,6 +552,8 @@ def test_core_retry_reuses_recorded_release(tmp_path, monkeypatch):
         "apps_root": str(tmp_path), "other": True,
     }]
     assert operation.state == "ready"
+    assert cloned == ([] if partial_checkout else [entry])
+    assert checked_out == ([entry] if partial_checkout else [])
 
 
 def test_release_selection_belongs_to_each_apps_root(tmp_path):
@@ -562,14 +574,29 @@ def test_manual_launcher_setup_marks_its_apps_root(tmp_path):
     assert (tmp_path / setup_install.ROOT_MARKER_FILE).read_text(encoding="utf-8") == str(tmp_path) + "\n"
 
 
-def test_windows_package_shim_uses_comspec(monkeypatch):
-    monkeypatch.setattr(setup_install.shutil, "which", lambda _tool: r"C:\Tools\bun.cmd")
-    monkeypatch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")
-
-    command = setup_install._package_command("bun", "install", "--frozen-lockfile", windows=True)
-
-    assert command[:4] == [r"C:\Windows\System32\cmd.exe", "/d", "/s", "/c"]
-    assert "bun.cmd" in command[4]
+def test_windows_package_shim_uses_comspec(tmp_path, monkeypatch):
+    with monkeypatch.context() as patch:
+        patch.setattr(setup_install.shutil, "which", lambda _tool: r"C:\Program Files\nodejs\npm.cmd")
+        patch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")
+        command = setup_install._package_command("npm", "ci", windows=True)
+        assert command == r'C:\Windows\System32\cmd.exe /d /s /c ""C:\Program Files\nodejs\npm.cmd" ci"'
+        calls = []
+        patch.setattr(setup_install.subprocess, "run", lambda args, **_kwargs: calls.append(args))
+        setup_install._run(command, cwd=None, log=StringIO())
+        assert calls == [command]
+        patch.setattr(setup_install.shutil, "which", lambda _tool: "/usr/bin/npm")
+        direct = setup_install._package_command("npm", "ci", windows=False)
+        assert direct == ["/usr/bin/npm", "ci"]
+        setup_install._run(direct, cwd=None, log=StringIO())
+        assert calls[-1] is direct
+    if setup_install.os.name == "nt":
+        shim = tmp_path / "Node with spaces" / "npm.cmd"
+        shim.parent.mkdir()
+        shim.write_text("@echo off\necho fictional-install-ok\n", encoding="utf-8")
+        monkeypatch.setattr(setup_install.shutil, "which", lambda _tool: str(shim))
+        with (tmp_path / "install.log").open("w", encoding="utf-8") as log:
+            setup_install._run(setup_install._package_command("npm", "ci"), cwd=tmp_path, log=log)
+        assert "fictional-install-ok" in (tmp_path / "install.log").read_text(encoding="utf-8")
 
 
 def test_optional_status_stops_at_real_manual_prerequisite(tmp_path, monkeypatch):
@@ -644,10 +671,13 @@ def test_start_waits_for_same_service_install_operation(tmp_path, monkeypatch):
     assert setup_install.start_issue("sillytavern", tmp_path) == ""
 
 
-def test_optional_worker_uses_shared_clone_and_command_pipeline(tmp_path, monkeypatch):
+@pytest.mark.parametrize("dependency_failure", [False, True])
+def test_optional_worker_uses_shared_clone_and_command_pipeline(tmp_path, monkeypatch, dependency_failure):
     operation = setup_install.InstallOperation(service_name="sillytavern", root=tmp_path)
     cloned = []
     commands = []
+    updated = set()
+    offline = dependency_failure
     stock = {
         "repository": "https://github.com/SillyTavern/SillyTavern.git",
         "ref": "1.0.0",
@@ -658,19 +688,34 @@ def test_optional_worker_uses_shared_clone_and_command_pipeline(tmp_path, monkey
         "ref": "v1.0.0",
         "destination": "sillytavern/SillyTavern/plugins/memu-plugin",
     }
+    if dependency_failure:
+        (tmp_path / plugin["destination"]).mkdir(parents=True)
+    def run(command, **kwargs):
+        kwargs["log"].write("fictional command\n")
+        commands.append(command)
+        if offline:
+            raise RuntimeError("Dependencies unavailable")
     monkeypatch.setattr(setup_install, "_OPERATION", operation)
     monkeypatch.setattr(setup_install, "install_log_path", lambda _name: tmp_path / "install.log")
     monkeypatch.setattr(setup_install, "_optional_entries", lambda _name, _root: [plugin, stock])
     monkeypatch.setattr(setup_install, "_clone", lambda item, _root, _log: cloned.append(item))
+    monkeypatch.setattr(setup_install, "_managed_checkout_state", lambda item, root: (root / item["destination"], "old-head"))
+    monkeypatch.setattr(setup_install, "_local_matching_checkout", lambda path, *_args: path in updated)
+    monkeypatch.setattr(setup_install, "_checkout_release", lambda _item, path, _log: updated.add(path))
     monkeypatch.setattr(setup_install, "_optional_tool_issue", lambda _name: "")
     monkeypatch.setattr(setup_install, "_optional_commands", lambda _name, _root: [(["npm", "ci"], tmp_path)])
-    monkeypatch.setattr(setup_install, "_run", lambda command, **_kwargs: commands.append(command))
+    monkeypatch.setattr(setup_install, "_run", run)
     monkeypatch.setattr(setup_install, "optional_issue", lambda _name, _root: "")
 
     setup_install._install_optional(operation)
-
-    assert cloned == [stock, plugin]
+    assert cloned == ([] if dependency_failure else [stock, plugin])
     assert commands == [["npm", "ci"]]
+    if dependency_failure:
+        assert operation.state == "error" and operation.detail == "Dependencies unavailable"
+        assert updated == {tmp_path / entry["destination"] for entry in (stock, plugin)}
+        offline = False
+        setup_install._install_optional(operation)
+        assert commands == [["npm", "ci"], ["npm", "ci"]]
     assert operation.state == "ready"
 
 
