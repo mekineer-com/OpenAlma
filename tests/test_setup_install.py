@@ -238,7 +238,8 @@ def test_database_backup_copies_all_regular_databases_and_ignores_hidden(tmp_pat
     assert not stale_failed.exists()
 
 
-def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatch):
+@pytest.mark.parametrize("failure", ["migration", "verification"])
+def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatch, failure):
     operation = setup_install.InstallOperation("memu-server", tmp_path)
     entries = [
         {
@@ -267,20 +268,26 @@ def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatc
     monkeypatch.setattr(setup_install, "_checkout_release", lambda *_args: events.append("new-code"))
     monkeypatch.setattr(setup_install, "_refresh_core", lambda *_args: events.append("environment"))
     monkeypatch.setattr(setup_install, "_restore_databases", lambda *_args: events.append("databases"))
-    issues = iter(["core verification failed", ""])
+    issues = iter(["core verification failed", ""] if failure == "verification" else [""])
     monkeypatch.setattr(setup_install, "core_issue", lambda *_args, **_kwargs: next(issues))
 
     def run(command, **_kwargs):
-        assert "migrate_release.py" not in command
+        if "migrate_release.py" in command:
+            assert _kwargs["cwd"] == tmp_path / "mcp-memu-server"
+            events.append("migration")
+            if failure == "migration":
+                raise setup_install.SetupError("migration failed")
         if command[:3] == ["git", "checkout", "--detach"]:
             events.append("old-code")
 
     monkeypatch.setattr(setup_install, "_run", run)
 
-    with pytest.raises(setup_install.SetupError, match="core verification failed"):
+    with pytest.raises(setup_install.SetupError, match="migration failed" if failure == "migration" else "core verification failed"):
         setup_install._update_core(operation, "v2.0.0", {"memu-server": entries}, None)
 
     assert events.index("databases") < events.index("old-code")
+    assert events.index("environment") < events.index("migration") < events.index("databases")
+    assert (tmp_path / setup_install.RELEASE_TAG_FILE).read_text() == "v1.0.0\n"
     assert not (tmp_path / setup_install.RECOVERY_FILE).exists()
 
 
