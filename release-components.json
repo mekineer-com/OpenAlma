@@ -15,6 +15,15 @@
         }
       ]
     },
+    "iris-server": {
+      "repositories": [
+        {
+          "repository": "https://github.com/mekineer-com/iris.git",
+          "ref": "$OPENALMA_RELEASE_TAG",
+          "destination": "mentra-os/miniapps/openalma"
+        }
+      ]
+    },
     "channels-daemon": {
       "repositories": [
         {

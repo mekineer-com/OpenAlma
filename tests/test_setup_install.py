@@ -89,6 +89,7 @@ def test_repository_manifest_resolves_only_the_selected_release(tmp_path):
         if entry["repository"] != "https://github.com/SillyTavern/SillyTavern.git"
     ]
     assert coordinated == ["v9.8.7-buildfix"] * len(coordinated)
+    assert parsed["iris-server"][0]["ref"] == "v9.8.7-buildfix"
 
 
 def test_discover_release_rejects_prerelease(tmp_path, monkeypatch):
@@ -344,40 +345,34 @@ def test_recovery_status_exposes_only_recover(tmp_path, monkeypatch):
     assert status["startable"] is False
 
 
-def test_iris_uses_its_independent_stable_release(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        setup_install,
-        "_request_json",
-        lambda url: {"tag_name": "v2.0.0", "draft": False, "prerelease": False},
-    )
-
-    assert setup_install.iris_release_entry(tmp_path) == {
+def test_iris_uses_the_selected_release_manifest(tmp_path, monkeypatch):
+    entry = {
         "repository": "https://github.com/mekineer-com/iris.git",
-        "ref": "v2.0.0",
+        "ref": "v0.1.12",
         "destination": "mentra-os/miniapps/openalma",
     }
+    monkeypatch.setattr(setup_install, "packaged_manifest", lambda _root: {"iris-server": [entry]})
+    monkeypatch.setattr(setup_install, "_request_json", lambda *_: pytest.fail("must not discover an independent Iris release"))
+    (tmp_path / ".openalma-iris-release").write_text("v0.1.0\n")
+    assert setup_install._optional_entries("iris-server", tmp_path) == [entry]
+    entry["ref"] = "v0.1.13"
+    assert setup_install._optional_entries("iris-server", tmp_path)[0]["ref"] == "v0.1.13"
 
-    monkeypatch.setattr(setup_install.settings, "LAUNCHER_DIR", tmp_path / "launcher")
-    with pytest.raises(setup_install.SetupError, match="Unsafe destination"):
-        setup_install.iris_release_entry(tmp_path)
 
-
-def test_iris_retry_reuses_root_release_selection(tmp_path, monkeypatch):
-    requests = []
-
-    def release(url):
-        requests.append(url)
-        return {"tag_name": "v1.0.0", "draft": False, "prerelease": False}
-
-    monkeypatch.setattr(setup_install, "_request_json", release)
-
-    first = setup_install.iris_release_entry(tmp_path)
-    second = setup_install.iris_release_entry(tmp_path)
-
-    assert first == second
-    assert first["ref"] == "v1.0.0"
-    assert requests == [setup_install.IRIS_RELEASE_URL]
-    assert (tmp_path / ".openalma-iris-release").read_text(encoding="utf-8") == "v1.0.0\n"
+def test_iris_release_mismatch_uses_the_normal_client_update_check(tmp_path, monkeypatch):
+    manifest = setup_install.validate_manifest(_manifest(), tmp_path)
+    manifest["iris-server"] = [{"repository": "https://github.com/mekineer-com/iris.git",
+                                "ref": "v0.1.12", "destination": "mentra-os/miniapps/openalma"}]
+    for entries in manifest.values():
+        for entry in entries:
+            (tmp_path / entry["destination"]).mkdir(parents=True)
+    monkeypatch.setattr(setup_install, "packaged_manifest", lambda _root: manifest)
+    monkeypatch.setattr(setup_install, "read_packaged_release", lambda: "v1.0.0")
+    monkeypatch.setattr(setup_install, "_RELEASE_ISSUE_CACHE", {})
+    monkeypatch.setattr(setup_install, "_local_matching_checkout", lambda path, *_: path.name != "openalma")
+    assert setup_install.release_issue("iris-server", tmp_path) == "Update required: openalma"
+    monkeypatch.setattr(setup_install, "_local_matching_checkout", lambda *_: True)
+    assert setup_install.release_issue("iris-server", tmp_path, refresh=True) == ""
 
 
 def test_write_config_sets_shared_paths_once(tmp_path):

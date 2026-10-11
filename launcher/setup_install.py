@@ -28,13 +28,11 @@ from windows_install import release_version
 OPENALMA_RELEASE_URL = "https://api.github.com/repos/mekineer-com/OpenAlma/releases/latest"
 OPENALMA_RELEASES_URL = "https://api.github.com/repos/mekineer-com/OpenAlma/releases?per_page=20"
 OPENALMA_RAW_URL = "https://raw.githubusercontent.com/mekineer-com/OpenAlma/{tag}/release-components.json"
-IRIS_RELEASE_URL = "https://api.github.com/repos/mekineer-com/iris/releases/latest"
 RELEASE_TAG_FILE = ".openalma-release"
 ROOT_MARKER_FILE = ".openalma-root"
 PENDING_RELEASE_TAG_FILE = ".openalma-update-release"
 RECOVERY_FILE = ".openalma-update-recovery.json"
 UPDATE_BACKUP_DIR = ".openalma-update-backups"
-IRIS_RELEASE_TAG_FILE = ".openalma-iris-release"
 KNOWN_SERVICES = {"memu-server", "iris-server", "atomic", "channels-daemon", "sillytavern"}
 OPTIONAL_SERVICES = KNOWN_SERVICES - {"memu-server"}
 CORE_DESTINATIONS = {"mcp-memu-server", "memu"}
@@ -274,23 +272,6 @@ def _write_release(root: Path, filename: str, tag: str) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def iris_release_entry(root: Path) -> dict[str, str]:
-    _validated_destination(root, "mentra-os/miniapps/openalma", "iris-server")
-    tag = _read_release(root, IRIS_RELEASE_TAG_FILE)
-    if tag is None:
-        release = _request_json(IRIS_RELEASE_URL)
-        tag = release.get("tag_name")
-        if release.get("draft") or release.get("prerelease") or not isinstance(tag, str) or not tag.strip():
-            raise SetupError("No supported stable Iris release is available")
-        tag = tag.strip()
-        _write_release(root, IRIS_RELEASE_TAG_FILE, tag)
-    return {
-        "repository": "https://github.com/mekineer-com/iris.git",
-        "ref": tag,
-        "destination": "mentra-os/miniapps/openalma",
-    }
-
-
 def _run(command: list[str] | str, *, cwd: Path | None, log: Any) -> None:
     printable = command if isinstance(command, str) else " ".join(command)
     log.write(f"\n$ {printable}\n")
@@ -361,7 +342,7 @@ def packaged_manifest(root: Path) -> dict[str, list[dict[str, str]]] | None:
 
 def release_issue(service_name: str, root: Path, *, refresh: bool = False) -> str:
     manifest = packaged_manifest(root)
-    if manifest is None or service_name == "iris-server" or service_name not in manifest:
+    if manifest is None or service_name not in manifest:
         return ""
     packaged = read_packaged_release() or ""
     cache_key = (service_name, str(root.resolve()), packaged)
@@ -920,8 +901,6 @@ def start_issue(service_name: str, root: Path) -> str:
 
 
 def _optional_entries(service_name: str, root: Path) -> list[dict[str, str]]:
-    if service_name == "iris-server":
-        return [iris_release_entry(root)]
     manifest = packaged_manifest(root) or recorded_manifest(root)
     try:
         return manifest[service_name]
