@@ -210,16 +210,36 @@ def test_iris_address_save_refuses_invalid_config_without_rewriting_it(tmp_path,
     path = tmp_path / "mcp-memu-server/config.json"
     path.parent.mkdir()
     monkeypatch.setattr(launcher_app.settings, "apps_root", lambda: tmp_path)
-    monkeypatch.setattr(services, "all_services", lambda: [])
+    monkeypatch.setattr(services, "_resolve_apps_root", lambda: tmp_path)
+    monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState())
+    monkeypatch.setattr(launcher_app, "_setup_aware_status", lambda _spec, root, **_kwargs: {
+        "setup": services.mentra_readiness(root),
+    })
+    def unexpected_probe(*_args, **_kwargs):
+        pytest.fail("Invalid config must not trigger readiness probes")
+    monkeypatch.setattr(services, "_mentra_http_status", unexpected_probe)
     client = TestClient(launcher_app.app, base_url="http://127.0.0.1", raise_server_exceptions=False)
-    for value in ("[]", "null"):
-        path.write_text(value)
+    for value, detail in ((b"[]", "JSON object"), (b"null", "JSON object"), (b"\xff", "decode")):
+        path.write_bytes(value)
+        services._MENTRA_READINESS_CACHE.clear()
+        with monkeypatch.context() as readiness_patch:
+            readiness_patch.setattr(services, "_runtime_state", unexpected_probe)
+            readiness_patch.setattr(services, "all_services", unexpected_probe)
+            readiness = services._mentra_readiness_uncached(tmp_path)
+        assert readiness == {
+            "enabled": True, "ready": False, "step": "config", "rows": [],
+            "reason": "Cannot read mcp config.json" if value == b"\xff" else "mcp config.json must be a JSON object",
+        }
+        assert services.all_services()[0].adopt_pid_path == path.parent / ".memu-server.pid"
         response = client.post("/iris/address", data={"public_base_url": "http://10.77.0.1"})
         assert response.status_code == 400
-        assert "JSON object" in response.json()["detail"]
-        assert path.read_text() == value
-        assert not Path(str(path) + ".orig").exists()
-        assert client.get("/iris").status_code == 200
+        assert detail in response.json()["detail"]
+        assert path.read_bytes() == value
+        assert list(path.parent.iterdir()) == [path]
+        assert not services._IRIS_INSTALL_LOCK.locked()
+        page = client.get("/iris")
+        assert page.status_code == 200
+        assert readiness["reason"] in page.text
 
 
 def test_iris_install_rechecks_readiness_before_reserving_or_starting(tmp_path, monkeypatch):

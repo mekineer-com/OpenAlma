@@ -116,7 +116,7 @@ def _resolve_memu_server_pid_path(root: Path) -> Path:
     config_path = root / "mcp-memu-server" / "config.json"
     try:
         raw = json.loads(config_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, ValueError):
         return root / "mcp-memu-server" / ".memu-server.pid"
     pid_file = raw.get("pid_file") if isinstance(raw, dict) else None
     if not isinstance(pid_file, str) or not pid_file.strip():
@@ -908,7 +908,7 @@ def _mentra_readiness_uncached(root: Path) -> dict:
     config_path = root / "mcp-memu-server" / "config.json"
     try:
         config = json.loads(config_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, ValueError):
         return {"enabled": True, "ready": False, "reason": "Cannot read mcp config.json", "step": "config", "rows": []}
     if not isinstance(config, dict):
         return {"enabled": True, "ready": False, "reason": "mcp config.json must be a JSON object", "step": "config", "rows": []}
