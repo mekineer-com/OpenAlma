@@ -191,11 +191,14 @@ class MentraStatusTest(TestCase):
             "busy": True,
         }
         with (
-            patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
+            patch.object(services, "_runtime_state", return_value=services.RuntimeState(verified_pids=(41,), running=True)),
             patch.object(services, "_read_channels_config", return_value={}),
             patch.object(services, "_read_mentra_status", return_value=payload),
+            patch.object(services, "_request_memu_shutdown", side_effect=AssertionError("must not request shutdown")),
         ):
             result = services.status(spec)
+            with self.assertRaisesRegex(PermissionError, "Iris conversation"):
+                services.stop(spec)
 
         self.assertEqual(result["state"], "running")
         self.assertEqual(result["children"], [])

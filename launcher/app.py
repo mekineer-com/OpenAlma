@@ -41,12 +41,14 @@ app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 
 @app.middleware("http")
 async def browser_mutations(request: Request, call_next):
+    host = getattr(app.state, "launcher_host", "127.0.0.1").lower()
+    trusted = host in {"0.0.0.0", "::"} or request.url.hostname in {host, "127.0.0.1", "localhost", "::1"}
+    if not trusted:
+        return JSONResponse(status_code=403, content={"detail": "Use the OpenAlma launcher page for this action"})
     if request.method not in {"GET", "HEAD"}:
-        host = getattr(app.state, "launcher_host", "127.0.0.1").lower()
         origin = request.headers.get("origin")
         site = request.headers.get("sec-fetch-site")
-        trusted = host in {"0.0.0.0", "::"} or request.url.hostname in {host, "127.0.0.1", "localhost", "::1"}
-        if (not trusted or origin is not None and origin != f"{request.url.scheme}://{request.url.netloc}"
+        if (origin is not None and origin != f"{request.url.scheme}://{request.url.netloc}"
                 or site is not None and site not in {"same-origin", "none"}):
             return JSONResponse(status_code=403, content={"detail": "Use the OpenAlma launcher page for this action"})
     return await call_next(request)

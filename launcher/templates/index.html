@@ -82,12 +82,17 @@
             <a class="btn" href="/iris">Setup</a>
           {% elif s.install_running %}
             <span class="spinner" role="status" aria-label="Installing"></span>
+          {% elif s.state == "starting" %}
+            <span class="spinner" role="status" aria-label="Starting"></span>
+            {% if s.stoppable %}<button class="btn" onclick="svcAction('{{ s.name }}','stop',this)">Stop</button>{% endif %}
+            {% if s.force_stoppable %}<button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>{% endif %}
           {% elif s.state == "stopping" %}
             <span class="spinner" role="status" aria-label="Stopping"></span>
             {% if s.force_stoppable %}<button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>{% endif %}
           {% elif s.stop_blocked %}
             <button class="btn" disabled title="Stop the Iris conversation on the phone first">Stop</button>
           {% elif s.force_stoppable %}
+            {% if s.stoppable %}<button class="btn" onclick="svcAction('{{ s.name }}','stop',this)">Stop</button>{% endif %}
             <button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>
           {% elif s.action_kind == "settings" %}
           {% elif s.action_kind == "start" %}
@@ -109,7 +114,7 @@
           {% else %}
             <span class="muted">not startable</span>
           {% endif %}
-          {% if s.running and s.open_url %}<button class="btn" onclick="openService('{{ s.name }}')">Open</button>{% endif %}
+          {% if s.running and s.open_url and s.state != 'starting' %}<button class="btn" onclick="openService('{{ s.name }}')">Open</button>{% endif %}
           {% if s.name == 'channels-daemon' %}<a class="btn" href="/hermes{{ '?pair=1' if s.pairing_required else '' }}">Setup</a>{% endif %}
         </td>
         <td><a href="{{ '/install/' ~ s.name ~ '/logs' if s.install_setup else '/logs/' ~ s.name }}">view</a></td>
@@ -278,8 +283,13 @@ async function svcAction(name, action, btn) {
 function actionHtml(name, data) {
   if (name === 'iris-server') return irisParentActions(data);
   var setup = name === 'channels-daemon' ? ' <a class="btn" href="/hermes' + (data.pairing_required ? '?pair=1' : '') + '">Setup</a>' : '';
-  var open = data.running && data.open_url ? ' <button class="btn" onclick="openService(\'' + esc(name) + '\')">Open</button>' : '';
+  var open = data.running && data.open_url && data.state !== 'starting' ? ' <button class="btn" onclick="openService(\'' + esc(name) + '\')">Open</button>' : '';
   if (data.install_running) return '<span class="spinner" role="status" aria-label="Installing"></span>' + setup;
+  if (data.state === 'starting') {
+    return '<span class="spinner" role="status" aria-label="Starting"></span>' +
+      (data.stoppable ? ' <button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button>' : '') +
+      (data.force_stoppable ? ' <button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'force-stop\',this)">Force Stop</button>' : '') + setup;
+  }
   if (data.state === 'stopping') {
     return '<span class="spinner" role="status" aria-label="Stopping"></span>' +
       (data.force_stoppable ? ' <button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'force-stop\',this)">Force Stop</button>' : '') + setup;
@@ -288,7 +298,8 @@ function actionHtml(name, data) {
     return '<button class="btn" disabled title="Stop the Iris conversation on the phone first">Stop</button>' + open + setup;
   }
   if (data.force_stoppable) {
-    return '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'force-stop\',this)">Force Stop</button>' + open + setup;
+    var stop = data.stoppable ? '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button> ' : '';
+    return stop + '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'force-stop\',this)">Force Stop</button>' + open + setup;
   }
   if (data.action_kind === 'settings') return setup;
   if (data.action_kind === 'install') {

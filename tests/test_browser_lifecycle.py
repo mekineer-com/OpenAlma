@@ -63,7 +63,10 @@ def test_restarted_launcher_watches_existing_profile_owner(tmp_path, monkeypatch
     monkeypatch.setattr(run, "_wait_for_port", lambda *_args: True)
     monkeypatch.setattr(run.browser, "find_chromium", lambda: "chromium")
     monkeypatch.setattr(run.browser, "profile_process", lambda _profile: owner)
-    monkeypatch.setattr(run, "_activate_existing_browser", lambda _url: activated)
+    def activate(_url, *, reload=False):
+        assert reload is True
+        return activated
+    monkeypatch.setattr(run, "_activate_existing_browser", activate)
     def open_chromium(*_args):
         assert not activated
         events.append("forwarded")
@@ -166,11 +169,44 @@ def test_existing_launcher_reuses_profile_without_stopping_server(tmp_path, monk
     assert launched["waited"] is True
 
 
-def test_existing_launcher_activates_open_window_without_launching(tmp_path, monkeypatch):
+@pytest.mark.parametrize("restarted", [False, True])
+@pytest.mark.parametrize("page_path", ["/settings", "/launcher/quit"])
+def test_existing_launcher_activates_open_window_without_launching(tmp_path, monkeypatch, restarted, page_path):
     profile = tmp_path / "chromium-profile"
     profile.mkdir()
     (profile / "DevToolsActivePort").write_text("41234\n/devtools/browser/id\n", encoding="utf-8")
     requests = []
+    messages = []
+    owner = SimpleNamespace(wait=lambda: messages.append("owner exited"), is_running=lambda: True)
+    server = SimpleNamespace(should_exit=False)
+
+    class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def send(self, message):
+            messages.append(json.loads(message))
+
+        def recv(self, *, timeout):
+            assert timeout == 1
+            return '{"id":1,"result":{}}'
+
+    def connect(url, **kwargs):
+        assert restarted, "activating a running launcher must preserve unsaved forms"
+        assert url == "ws://127.0.0.1:41234/devtools/page/target%2Fid"
+        assert kwargs == {"open_timeout": 1, "close_timeout": 1}
+        return Client()
+
+    class Thread:
+        def __init__(self, *, target, args, daemon):
+            assert args == (owner, server)
+            self.target, self.args = target, args
+
+        def start(self):
+            self.target(*self.args)
 
     class Response:
         def __init__(self, body=b""):
@@ -192,24 +228,64 @@ def test_existing_launcher_activates_open_window_without_launching(tmp_path, mon
             return Response(json.dumps([{
                 "id": "target/id",
                 "type": "page",
-                "url": "http://127.0.0.1:8765/settings",
+                "url": "http://127.0.0.1:8765" + page_path,
             }]).encode())
         return Response()
 
     monkeypatch.setattr(run.browser, "find_chromium", lambda: "chromium")
     monkeypatch.setattr(run, "_browser_profile", lambda: profile)
     monkeypatch.setattr(run.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(run, "connect", connect)
+    monkeypatch.setattr(run, "_wait_for_port", lambda *_args: True)
+    monkeypatch.setattr(run.browser, "profile_process", lambda _profile: owner)
+    monkeypatch.setattr(run.threading, "Thread", Thread)
     monkeypatch.setattr(
         run,
         "_open_chromium",
         lambda *_args: pytest.fail("an activated launcher must not open another window"),
     )
 
-    run._open_existing_launcher("http://127.0.0.1:8765")
+    if restarted:
+        run._open_browser_when_ready("127.0.0.1", 8765, "http://127.0.0.1:8765", server)
+    else:
+        run._open_existing_launcher("http://127.0.0.1:8765")
 
     activation = requests[-1]
     assert activation.full_url == "http://127.0.0.1:41234/json/activate/target%2Fid"
     assert activation.method == "PUT"
+    command = {"id": 1, "method": "Page.reload"} if page_path == "/settings" else {
+        "id": 1, "method": "Page.navigate", "params": {"url": "http://127.0.0.1:8765/?openalma_app=1"},
+    }
+    assert messages == ([command, "owner exited"] if restarted else [])
+    assert server.should_exit is restarted
+
+
+@pytest.mark.parametrize("reply", [
+    '{"id":1,"error":{"message":"Reload failed"}}', 'invalid JSON', '[]',
+    TimeoutError("Reload timed out"), run.WebSocketException("Disconnected"),
+])
+def test_browser_reload_reports_failure(monkeypatch, reply):
+    monkeypatch.setattr(run, "_browser_target", lambda _url: (41234, "target", "http://127.0.0.1:8765/settings"))
+
+    class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def send(self, message):
+            assert json.loads(message) == {"id": 1, "method": "Page.reload"}
+
+        def recv(self, *, timeout):
+            if isinstance(reply, Exception):
+                raise reply
+            return reply
+
+    monkeypatch.setattr(run.urllib.request, "urlopen", lambda *_args, **_kwargs: Client())
+    monkeypatch.setattr(run, "connect", lambda *_args, **_kwargs: Client())
+
+    assert run._activate_existing_browser("http://127.0.0.1:8765", reload=True) is False
 
 
 def test_windows_wrapper_reports_uvicorn_system_exit():

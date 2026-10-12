@@ -91,12 +91,16 @@ def test_launcher_mutations_reject_foreign_browser_origins(monkeypatch):
     ]:
         assert client.post("/launcher/quit", headers=headers).status_code == 403
     assert not called
+    for method in ("get", "head"):
+        assert getattr(client, method)("/launcher/identity", headers={"host": "foreign.example"}).status_code == 403
+    assert client.get("/launcher/identity", headers={"origin": "https://foreign.example", "sec-fetch-site": "cross-site"}).status_code == 200
     assert client.post("/launcher/quit").status_code == 200
     assert client.post("/launcher/quit", headers={"origin": "http://127.0.0.1:8765",
                                                  "sec-fetch-site": "same-origin"}).status_code == 200
     monkeypatch.setattr(app.app.state, "launcher_host", "LAN.Example", raising=False)
     configured = TestClient(app.app, base_url="http://lan.example:8765")
     assert configured.post("/launcher/quit", headers={"origin": "http://lan.example:8765"}).status_code == 200
+    assert configured.get("/launcher/identity").status_code == 200
     assert len(called) == 3
 
 

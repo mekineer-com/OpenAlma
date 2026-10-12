@@ -13,6 +13,8 @@ from pathlib import Path
 
 import uvicorn
 import psutil
+from websockets.exceptions import WebSocketException
+from websockets.sync.client import connect
 
 import browser
 import settings
@@ -113,7 +115,7 @@ def _browser_profile() -> Path:
     return profile
 
 
-def _browser_target(url: str) -> tuple[int, str] | None:
+def _browser_target(url: str) -> tuple[int, str, str] | None:
     try:
         port = int((_browser_profile() / "DevToolsActivePort").read_text(encoding="utf-8").splitlines()[0])
         if not 0 < port < 65_536:
@@ -128,16 +130,16 @@ def _browser_target(url: str) -> tuple[int, str] | None:
             and urllib.parse.urlsplit(str(row.get("url") or ""))[:2] == origin[:2]
             and isinstance(row.get("id"), str)
         )
-        return port, target["id"]
+        return port, target["id"], target["url"]
     except (OSError, ValueError, json.JSONDecodeError, IndexError, StopIteration):
         return None
 
 
-def _activate_existing_browser(url: str) -> bool:
+def _activate_existing_browser(url: str, *, reload: bool = False) -> bool:
     target = _browser_target(url)
     if target is None:
         return False
-    port, target_id = target
+    port, target_id, page_url = target
     try:
         request = urllib.request.Request(
             f"http://127.0.0.1:{port}/json/activate/{urllib.parse.quote(target_id, safe='')}",
@@ -145,8 +147,21 @@ def _activate_existing_browser(url: str) -> bool:
             method="PUT",
         )
         with urllib.request.urlopen(request, timeout=1):
-            return True
-    except OSError:
+            pass
+        if reload:
+            with connect(
+                f"ws://127.0.0.1:{port}/devtools/page/{urllib.parse.quote(target_id, safe='')}",
+                open_timeout=1, close_timeout=1,
+            ) as client:
+                # Do not reload the form's POST response and submit Quit again.
+                command = {"id": 1, "method": "Page.reload"}
+                if urllib.parse.urlsplit(page_url).path == "/launcher/quit":
+                    command = {"id": 1, "method": "Page.navigate", "params": {"url": f"{url.rstrip('/')}/?openalma_app=1"}}
+                client.send(json.dumps(command))
+                reply = json.loads(client.recv(timeout=1))
+                return isinstance(reply, dict) and reply.get("id") == 1 and "result" in reply and "error" not in reply
+        return True
+    except (OSError, ValueError, WebSocketException):
         return False
 
 
@@ -189,7 +204,7 @@ def _open_browser_when_ready(host: str, port: int, url: str, server: uvicorn.Ser
         browser.open_app(url)
         return
     owner = browser.profile_process(_browser_profile())
-    chrome = owner if owner is not None and _activate_existing_browser(url) else _open_chromium(url, chromium)
+    chrome = owner if owner is not None and _activate_existing_browser(url, reload=True) else _open_chromium(url, chromium)
     chrome = owner if owner is not None and owner.is_running() else chrome
     if chrome is not None:
         threading.Thread(

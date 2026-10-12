@@ -597,6 +597,34 @@ const script = text.slice(text.indexOf('var pendingStarts = {}'), text.indexOf('
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });
 ''', str(template)], check=True, capture_output=True, text=True)
+    subprocess.run(["node", "-e", r'''
+const fs = require('fs'), vm = require('vm'), assert = require('assert');
+const text = fs.readFileSync(process.argv[1], 'utf8');
+const context = {esc: String};
+vm.createContext(context);
+vm.runInContext(text.slice(text.indexOf('function actionHtml('), text.indexOf('function pollStatus(')), context);
+const failed = context.actionHtml('memu-server', {state: 'running', running: true, stoppable: true, force_stoppable: true});
+assert(failed.includes("'stop'")); assert(failed.includes("'force-stop'"));
+const starting = context.actionHtml('memu-server', {state: 'starting', running: true, stoppable: true, open_url: 'http://fictional/'});
+assert(starting.includes('spinner')); assert(starting.includes("'stop'"));
+assert(!starting.includes('Force Stop')); assert(!starting.includes('openService'));
+const failedStarting = context.actionHtml('memu-server', {state: 'starting', stoppable: true, force_stoppable: true});
+assert(failedStarting.includes("'stop'")); assert(failedStarting.includes("'force-stop'"));
+const blocked = context.actionHtml('memu-server', {stop_blocked: true, force_stoppable: true});
+assert(blocked.includes('disabled')); assert(!blocked.includes('Force Stop'));
+''', str(template)], check=True, capture_output=True, text=True)
+    from jinja2 import Environment
+
+    actions = template.read_text().split('<td class="svc-actions">', 1)[1].split('</td>', 1)[0]
+    renderer = Environment(autoescape=True).from_string(actions)
+    for state in ("starting", "running"):
+        html = renderer.render(s={"name": "memu-server", "state": state, "running": True,
+                                 "stoppable": True, "force_stoppable": state == "running"})
+        assert "'stop'" in html
+        assert ("Force Stop" in html) == (state == "running")
+    failed_starting = renderer.render(s={"name": "memu-server", "state": "starting",
+                                       "stoppable": True, "force_stoppable": True})
+    assert "'stop'" in failed_starting and "'force-stop'" in failed_starting
 
 
 def test_memu_server_uses_configured_pidfile_for_adoption(tmp_path, monkeypatch):
@@ -634,6 +662,23 @@ def test_sillytavern_match_requires_expected_cwd(tmp_path, monkeypatch):
 
     monkeypatch.setattr(services, "_proc_cwd", lambda _pid: spec.cwd)
     assert services._matches_service_process(spec, 123) is True
+    for command in ("less server.js", "node other.js --note server.js", "cat start.sh"):
+        monkeypatch.setattr(services, "_proc_cmdline", lambda _pid: command)
+        assert services._matches_service_process(spec, 123) is False
+
+
+@pytest.mark.parametrize("command, expected", [
+    ("python3 run.py", True), ("python3 -m uvicorn app.main:app", True),
+    ("uvicorn app.main:app --port 8099", True),
+    ("less run.py", False), ("python3 other.py --note run.py", False),
+    ("python3 -c 'print(\"run.py\")'", False),
+    ("'C:\\Python312\\python.exe' run.py", True),
+])
+def test_memu_match_requires_actual_entry_point(tmp_path, monkeypatch, command, expected):
+    spec = services.ServiceSpec("memu-server", "memU", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(services, "_proc_cwd", lambda _pid: tmp_path)
+    monkeypatch.setattr(services, "_proc_cmdline", lambda _pid: command)
+    assert services._matches_service_process(spec, 123) is expected
 
 
 def test_atomic_match_requires_expected_cwd(tmp_path, monkeypatch):
@@ -668,7 +713,8 @@ def test_atomic_match_requires_expected_cwd(tmp_path, monkeypatch):
         assert services._matches_service_process(spec, 123) is False
 
 
-def test_status_reports_stuck_for_verified_process_without_port(tmp_path, monkeypatch):
+@pytest.mark.parametrize("age, expected", [(10, "starting"), (31, "stuck")])
+def test_status_reports_stuck_for_verified_process_without_port(tmp_path, monkeypatch, age, expected):
     spec = services.ServiceSpec(
         name="memu-server",
         label="memU Server",
@@ -679,17 +725,18 @@ def test_status_reports_stuck_for_verified_process_without_port(tmp_path, monkey
         port=8099,
     )
     spec.pid_path.write_text("123", encoding="utf-8")
-    old = time.time() - services.STARTUP_GRACE_SECONDS - 1
+    old = time.time() - age
     os.utime(spec.pid_path, (old, old))
-    monkeypatch.setattr(services, "is_running", lambda _spec: False)
     monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [123])
+    monkeypatch.setattr(services, "_matches_service_process", lambda *_args: True)
     monkeypatch.setattr(services, "_port_listener_pid", lambda _port: None)
+    monkeypatch.setattr(services, "_read_mentra_status", lambda *_args: {"busy": False})
 
     status = services.status(spec)
 
-    assert status["running"] is False
-    assert status["state"] == "stuck"
-    assert status["status_label"] == "▲ stuck"
+    assert status["running"] is (expected == "starting")
+    assert status["state"] == expected
+    assert status["status_label"] == ("◐ starting" if expected == "starting" else "▲ stuck")
     assert status["startable"] is False
     assert status["stoppable"] is True
 
@@ -1046,7 +1093,8 @@ def test_stop_refuses_fake_graceful_shutdown_on_windows(tmp_path, monkeypatch):
     assert services._stop_status(spec, {"running": True, "stuck": False})["force_stoppable"] is True
 
 
-def test_stop_requests_unlimited_memu_drain_without_signaling(tmp_path, monkeypatch):
+@pytest.mark.parametrize("first_request_fails", [False, True])
+def test_stop_requests_unlimited_memu_drain_without_signaling(tmp_path, monkeypatch, first_request_fails):
     spec = services.ServiceSpec(
         "memu-server", "memU Server", [], tmp_path, tmp_path / "log", tmp_path / "pid",
     )
@@ -1060,6 +1108,15 @@ def test_stop_requests_unlimited_memu_drain_without_signaling(tmp_path, monkeypa
     monkeypatch.setattr(services, "_request_memu_shutdown", lambda: True)
     monkeypatch.setattr(services, "_kill_process_tree", lambda *_args: pytest.fail("unexpected force"))
 
+    if first_request_fails:
+        monkeypatch.setattr(services, "_request_memu_shutdown", lambda: False)
+        with pytest.raises(RuntimeError, match="shutdown was not confirmed"):
+            services.stop(spec)
+        status = services._stop_status(spec, {"running": True, "stoppable": True})
+        assert status["stoppable"] is True
+        assert status["force_stoppable"] is True
+        assert "retry Stop" in status["detail"]
+        monkeypatch.setattr(services, "_request_memu_shutdown", lambda: True)
     services.stop(spec)
     with services._STOP_LOCK:
         thread = services._STOP_THREADS.get(spec.name)
@@ -1084,7 +1141,7 @@ def test_memu_shutdown_request_has_no_drain_deadline(monkeypatch):
             "reason": "launcher stop",
             "max_wait_sec": 0,
         },
-        "timeout": 2,
+        "timeout": 10,
     }
 
 

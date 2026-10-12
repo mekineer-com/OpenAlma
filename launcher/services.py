@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import ntpath
 import os
 import platform
 import re
@@ -43,7 +44,7 @@ MEMU_SERVER_PORT = 8099
 PROCESS_SCAN_CACHE_SECONDS = 10.0
 PORT_PID_CACHE_SECONDS = 5.0
 UNKNOWN_PORT_PID = -1
-STARTUP_GRACE_SECONDS = PORT_PID_CACHE_SECONDS + 1.0
+STARTUP_GRACE_SECONDS = 30.0
 FORCE_STOP_RECOVERY_SECONDS = 30.0
 _PROCESS_SCAN_CACHE: dict[tuple[str, str, str], tuple[float, list[int]]] = {}
 _PORT_PID_CACHE: dict[int, tuple[float, int | None]] = {}
@@ -282,29 +283,40 @@ def _is_alive(pid: int) -> bool:
 def _matches_service_process(spec: ServiceSpec, pid: int) -> bool:
     cmd = _proc_cmdline(pid).lower()
     cwd = _proc_cwd(pid)
-    cwd_matches = cwd is not None and cwd == spec.cwd
+    if cwd is None or cwd != spec.cwd:
+        return False
+    try:
+        args = shlex.split(cmd)
+    except ValueError:
+        return False
+    names = [ntpath.basename(arg).removesuffix(".exe") for arg in args]
+    program = names[0] if names else ""
+    script = names[1] if len(names) > 1 else ""
+    python = re.fullmatch(r"python(?:\d+(?:\.\d+)*)?w?", program) is not None
     if spec.name == "memu-server":
-        return cwd_matches and ("run.py" in cmd or ("uvicorn" in cmd and "app.main:app" in cmd))
+        return (python and script == "run.py") or (
+            (program == "uvicorn" or python and args[1:3] == ["-m", "uvicorn"])
+            and "app.main:app" in args
+        )
     if spec.name == "iris-server":
-        return cwd_matches and (
-            "release:private" in cmd or "mentra-miniapp release" in cmd
-            or "scripts/release-private.mjs" in cmd
+        return (
+            program in {"bun", "npm", "pnpm"} and args[1:3] == ["run", "release:private"]
+            or program in {"node", "bun"} and script == "release-private.mjs"
+            or program == "mentra-miniapp" and args[1:2] == ["release"]
         )
     if spec.name == "channels-daemon":
-        return cwd_matches and "gateway.daemon" in cmd
+        return python and args[1:3] == ["-m", "gateway.daemon"]
     if spec.name == "sillytavern":
-        return cwd_matches and ("server.js" in cmd or "start.sh" in cmd)
+        return (program in {"node", "bun"} and script == "server.js"
+                or program in {"sh", "bash"} and script == "start.sh"
+                or program == "start.sh")
     if spec.name == "atomic":
-        try:
-            args = shlex.split(cmd)
-        except ValueError:
-            return False
-        names = [Path(arg).name.removesuffix(".exe") for arg in args]
-        return cwd_matches and bool(args) and (
-            names[0] == "atomic-server"
-            or "dev-server.js" in names
-            or "dev:server" in args
-            or (bool({"vite", "vite.js"}.intersection(names)) and "build" not in args)
+        return (
+            program == "atomic-server"
+            or program in {"node", "bun"} and script == "dev-server.js"
+            or program in {"npm", "bun", "pnpm"} and args[1:3] == ["run", "dev:server"]
+            or program == "node" and script in {"npm", "npm-cli.js"} and args[2:4] == ["run", "dev:server"]
+            or (program in {"vite", "vite.js"} or program == "node" and script in {"vite", "vite.js"}) and "build" not in args
         )
     return False
 
@@ -1306,6 +1318,8 @@ def status(spec: ServiceSpec) -> dict:
         detail = f"port {spec.port} is held by PID {runtime.port_pid}"
     elif orphaned:
         detail = "service stopped; child process still running"
+    elif running and spec.port is not None and runtime.port_pid is None and _within_startup_grace(spec):
+        state, label, detail = "starting", "◐ starting", "Waiting for the service to listen"
 
     if spec.name == "channels-daemon" and running and _within_startup_grace(spec):
         state = "starting"
@@ -1400,7 +1414,7 @@ def _stop_status(spec: ServiceSpec, result: dict) -> dict:
             stoppable=True,
         )
     elif error and has_target:
-        result["detail"] = f"Graceful shutdown failed: {error}"
+        result["detail"] = f"Stop failed: {error}"
     result["force_stoppable"] = has_target and bool(
         error or elapsed or result.get("stuck") or result.get("orphaned")
     )
@@ -1498,7 +1512,7 @@ def _request_memu_shutdown() -> bool:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=2) as response:
+        with urllib.request.urlopen(request, timeout=10) as response:
             return response.status == 200
     except (OSError, urllib.error.URLError):
         return False
@@ -1558,7 +1572,7 @@ def stop(spec: ServiceSpec, *, confirm_unknown: bool = False) -> None:
     try:
         if spec.name == "memu-server":
             if not _request_memu_shutdown():
-                raise RuntimeError("memU Server did not accept the graceful shutdown request")
+                raise RuntimeError("memU Server shutdown was not confirmed; retry Stop, or use Force Stop if necessary")
         else:
             if os.name == "nt":
                 raise RuntimeError(f"{spec.label} has no graceful Windows shutdown; use Force Stop")
