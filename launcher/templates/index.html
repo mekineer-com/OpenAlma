@@ -1,5 +1,8 @@
 {% include "_index_head.html" %}
 {% include "_header.html" %}
+{% macro info(text, key) -%}
+<span class="context-info" data-info="{{ key }}"><button type="button" popovertarget="info:{{ key }}" aria-label="{{ text }}" onpointerenter="if (event.pointerType === 'mouse') this.nextElementSibling.showPopover()">i</button><span class="info-text" popover id="info:{{ key }}">{{ text }}</span></span>
+{%- endmacro %}
   <p class="muted">Start, stop, and configure the local stack.</p>
 
   {% if launcher_update %}
@@ -174,7 +177,9 @@
     {% elif meter.threshold is defined and meter.threshold is not none %}
       <div class="memorize-row">
       <div class="memorize-pressure">
-      {% if meter.summed_unmemorized_tokens is defined and meter.summed_unmemorized_tokens is not none %}
+      {% if meter.source_warning %}
+      <p role="alert">Memorize: error {{ info(meter.source_warning, 'source:' ~ meter.soul_id) }}</p>
+      {% elif meter.summed_unmemorized_tokens is defined and meter.summed_unmemorized_tokens is not none %}
       <p>
         Memorize: {{ "{:,}".format(meter.summed_unmemorized_tokens) }} / {{ "{:,}".format(meter.threshold) }} ({{ meter.pct }}%)
         {% if meter.summed_unmemorized_tokens >= meter.threshold %}
@@ -187,13 +192,11 @@
       {% endif %}
       </div>
       <div class="context-load">
-        <p>Context load <span class="context-info" tabindex="0" role="note" title="Conservative forecast when the Memorize meter reaches 100%, using current supporting memory. Supporting context varies, and waiting for a sleep gap can produce a larger actual batch. Actual prepared prompts are checked separately." aria-label="Conservative forecast when the Memorize meter reaches 100%, using current supporting memory. Supporting context varies, and waiting for a sleep gap can produce a larger actual batch. Actual prepared prompts are checked separately.">i</span></p>
-        <p>{% if meter.context_load_tokens is defined and meter.context_load_tokens is not none %}&asymp; {{ "{:,}".format(meter.context_load_tokens) }} tokens{% else %}unknown{% endif %}</p>
+        {% set context_help = 'Forecast at the Memorize threshold using current chat density and supporting memory. With no chat sample, only supporting memory and instructions are shown. Generated episode/background summaries and speaker details are excluded; supporting context varies, and waiting for a sleep gap can produce a larger actual batch. Actual prepared prompts are checked separately.' %}
+        <p>Context load {{ info(context_help, 'context:' ~ meter.soul_id) }}</p>
+        <p>{% if meter.context_load_tokens is defined and meter.context_load_tokens is not none %}&asymp; {{ "{:,}".format(meter.context_load_tokens) }} tokens{% if not meter.context_load_has_chat %} (memory only){% endif %}{% else %}unknown{% endif %}</p>
       </div>
       </div>
-      {% if meter.source_warning %}
-      <p class="consolidation-warning" role="alert">{{ meter.source_warning }}</p>
-      {% endif %}
       {% if meter.paused %}
         <p class="consolidation-warning" role="alert">
           Paused: {% if meter.retry_operation == 'import' %}{{ 'Import failed.' if meter.pause_reason == 'Import failed. Retry in Echo.' else 'waiting for import.' }}{% elif meter.pause_reason == 'Waiting for Memorize after import.' %}waiting for Memorize.{% else %}{{ 'Memorize' if meter.retry_operation == 'memorize' else 'Consolidation' }} failed.{% endif %}

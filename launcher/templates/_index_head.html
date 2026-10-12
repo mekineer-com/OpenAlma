@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ page_title|default("OpenAlma") }}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <style>
@@ -51,7 +52,7 @@
     form.inline { display: inline; margin: 0; }
     .config-link { padding: 0; border: 0; background: transparent; color: #7cb7ff;
                    font: inherit; text-decoration: underline; cursor: pointer; }
-    .config-link:focus-visible, .context-info:focus-visible { outline: 2px solid #7cb7ff; outline-offset: 2px; }
+    .config-link:focus-visible, .context-info button:focus-visible { outline: 2px solid #7cb7ff; outline-offset: 2px; }
     .svc-actions { white-space: nowrap; }
     .svc-actions + td { padding-left: 0.55rem; }
     select { font: inherit; padding: 0.15rem 0.25rem; background: #2a2a2a; color: #eee; border: 1px solid #444; }
@@ -76,9 +77,16 @@
     .meter-fill { height: 100%; background: #6aa9ff; }
     #memorize-meter p { margin: 0.35rem 0; }
     .memorize-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1rem; }
-    .context-info { display: inline-flex; align-items: center; justify-content: center;
-                    width: 1em; height: 1em; border: 1px solid currentColor; border-radius: 50%;
-                    font-size: 0.8em; cursor: help; }
+    .context-info { display: inline-block; }
+    .context-info button { display: inline-flex; align-items: center; justify-content: center;
+                          width: 1.8rem; height: 1.8rem; padding: 0; border: 1px solid currentColor;
+                          border-radius: 50%; font: inherit; font-size: 0.8em;
+                          background: transparent; color: inherit; cursor: help; }
+    .info-text { position: fixed; z-index: 10; inset: auto; bottom: 1rem; left: 50%; margin: 0;
+                 transform: translateX(-50%); width: min(28rem, 90vw); box-sizing: border-box;
+                 padding: 0.65rem; background: #222; color: #eee; border: 1px solid #777;
+                 border-radius: 3px; max-height: 70vh; overflow: auto;
+                 overflow-wrap: anywhere; font-size: 0.82rem; }
     @media (max-width: 40rem) { .memorize-row { grid-template-columns: 1fr; gap: 0.35rem; } }
     .badge { display: inline-block; margin-left: 0.4rem; padding: 0.1rem 0.45rem; border-radius: 3px;
              background: #3a2415; color: #f5c084; border: 1px solid #6b3a16; font-size: 0.78rem; }

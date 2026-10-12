@@ -25,6 +25,12 @@ function fmtSnapshot(value) {
   return Number.isNaN(date.getTime()) ? String(value || '') : date.toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'});
 }
 
+function infoHtml(text, key) {
+  return '<span class="context-info" data-info="' + esc(key) + '"><button type="button" popovertarget="info:' + esc(key) +
+    '" aria-label="' + esc(text) + '" onpointerenter="if (event.pointerType === \'mouse\') this.nextElementSibling.showPopover()">i</button>' +
+    '<span class="info-text" popover id="info:' + esc(key) + '">' + esc(text) + '</span></span>';
+}
+
 function memorizeHtml(data) {
   if (data && data.error) {
     return '<p class="error" role="alert">' + esc(data.error) + '</p>';
@@ -34,7 +40,9 @@ function memorizeHtml(data) {
   }
   var threshold = Number(data.threshold || 0);
   var html;
-  if (data.summed_unmemorized_tokens == null) {
+  if (data.source_warning) {
+    html = '<p role="alert">Memorize: error ' + infoHtml(data.source_warning, 'source:' + data.soul_id) + '</p>';
+  } else if (data.summed_unmemorized_tokens == null) {
     html = '<p>Memorize: unknown</p>';
   } else {
     var tokens = Number(data.summed_unmemorized_tokens);
@@ -46,13 +54,11 @@ function memorizeHtml(data) {
     html += '</p>';
     html += '<div class="meter"><div class="meter-fill" style="width: ' + Math.min(pct, 100) + '%"></div></div>';
   }
-  var contextHelp = 'Conservative forecast when the Memorize meter reaches 100%, using current supporting memory. Supporting context varies, and waiting for a sleep gap can produce a larger actual batch. Actual prepared prompts are checked separately.';
+  var contextHelp = 'Forecast at the Memorize threshold using current chat density and supporting memory. With no chat sample, only supporting memory and instructions are shown. Generated episode/background summaries and speaker details are excluded; supporting context varies, and waiting for a sleep gap can produce a larger actual batch. Actual prepared prompts are checked separately.';
   html = '<div class="memorize-row"><div class="memorize-pressure">' + html + '</div>' +
-    '<div class="context-load"><p>Context load <span class="context-info" tabindex="0" role="note" title="' + contextHelp + '" aria-label="' + contextHelp + '">i</span></p><p>' +
-    (data.context_load_tokens == null ? 'unknown' : '&asymp; ' + fmt(data.context_load_tokens) + ' tokens') + '</p></div></div>';
-  if (data.source_warning) {
-    html += '<p class="consolidation-warning" role="alert">' + esc(data.source_warning) + '</p>';
-  }
+    '<div class="context-load"><p>Context load ' + infoHtml(contextHelp, 'context:' + data.soul_id) + '</p><p>' +
+    (data.context_load_tokens == null ? 'unknown' : '&asymp; ' + fmt(data.context_load_tokens) + ' tokens' +
+      (data.context_load_has_chat ? '' : ' (memory only)')) + '</p></div></div>';
   if (data.paused) {
     var running = data.memorize_running || data.consolidation_running;
     html += '<p class="consolidation-warning" role="alert">Paused: ' +
@@ -79,10 +85,18 @@ function renderMemorize(data) {
   var box = document.getElementById('memorize-meter');
   if (!box) return;
   if (data.error) { box.innerHTML = '<p class="error" role="alert">' + esc(data.error) + '</p>'; return; }
+  var openKey = box.querySelector('.info-text:popover-open')?.parentElement.dataset.info;
+  var focusKey = document.activeElement?.closest('.context-info')?.dataset.info;
   var rows = data.souls || [];
   box.innerHTML = rows.map(function(row) {
     return (rows.length > 1 ? '<h3>' + esc(row.soul_id) + '</h3>' : '') + memorizeHtml(row);
   }).join('') || '<p class="muted">No Souls available</p>';
+  box.querySelectorAll('.context-info').forEach(function(info) {
+    if (info.dataset.info === openKey) {
+      info.querySelector('.info-text').showPopover();
+    }
+    if (info.dataset.info === focusKey) info.querySelector('button').focus();
+  });
 }
 
 function retryConsolidation(button) {

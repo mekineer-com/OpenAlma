@@ -51,6 +51,7 @@ def test_memorize_gauge_under_threshold():
         "sleep_gap_ready": False,
         "computed_at": "2026-06-11T10:00:00+00:00",
         "context_load_tokens": 43567,
+        "context_load_has_chat": True,
     })
     assert "Memorize: 2,000 / 8,000 (25%)" in html
     assert 'style="width: 25%"' in html
@@ -58,9 +59,17 @@ def test_memorize_gauge_under_threshold():
     assert 'title="Back to Services"' not in html
     assert 'class="memorize-row"' in html and 'class="context-load"' in html
     assert "&asymp; 43,567 tokens" in html
-    assert 'tabindex="0" role="note"' in html
+    assert 'popovertarget="info:context:Fictional Soul"' in html
+    assert 'class="info-text" popover' in html
     assert "Actual prepared prompts are checked separately." in html
     assert "@media (max-width: 40rem)" in html
+    assert '<meta name="viewport" content="width=device-width, initial-scale=1">' in html
+    assert "Conservative forecast" not in html
+    assert "memory only" not in html.split('class="context-load"', 1)[1].split("</div>", 1)[0]
+    empty = _render({"threshold": 8000, "summed_unmemorized_tokens": 0, "pct": 0,
+                     "context_load_tokens": 12000, "context_load_has_chat": False})
+    assert "Memorize: 0 / 8,000" in empty and "tokens (memory only)" in empty
+    assert "Memorize: error" not in empty
 
 
 def test_initial_and_polled_setup_actions_match():
@@ -240,15 +249,19 @@ def test_memorize_gauge_shows_failed_consolidation_retry():
     assert "RuntimeError: reflection failed" in html
     assert ">Retry</button>" in html
     unknown = {**state, "summed_unmemorized_tokens": None, "pct": None, "sleep_gap_ready": None,
-               "source_warning": 'Cannot read <snapshot> & "source"', "context_load_tokens": 12000}
+               "source_warning": 'Cannot read <snapshot> & "source"', "context_load_tokens": 12000,
+               "context_load_has_chat": False}
     html = _render(unknown)
-    assert "Memorize: unknown" in html
+    assert "Memorize: error" in html
     assert "Cannot read &lt;snapshot&gt; &amp; &#34;source&#34;" in html
+    assert 'popovertarget="info:source:Fictional Soul"' in html
+    assert 'aria-label="Cannot read &lt;snapshot&gt; &amp; &#34;source&#34;"' in html
     assert "<snapshot>" not in html
     assert "Memorize: 0" not in html and "Memorize: 2,000" not in html
     assert 'class="meter"' not in html and 'class="badge"' not in html
     assert "Paused: Consolidation failed" in html and ">Retry</button>" in html
     assert "&asymp; 12,000 tokens" in html
+    assert "tokens (memory only)" in html
     html = _render({**unknown, "memorize_running": True,
                     "progress": {"phase": "extracting", "current": 1, "total": 2}})
     assert "disabled>Retrying..." in html and "extracting: 1 / 2" in html
@@ -284,7 +297,7 @@ def test_memorize_poll_renderer_executes_all_consolidation_states():
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const text = fs.readFileSync(process.argv[1], 'utf8');
 const script = fs.readFileSync(require('path').join(require('path').dirname(process.argv[1]), '../static/launcher.js'), 'utf8');
-const box = {innerHTML: ''};
+const box = {innerHTML: '', querySelector: () => null, querySelectorAll: () => []};
 const fetches = []; let polls = 0;
 const context = {
   console, Date, Number, Math,
@@ -296,7 +309,7 @@ const context = {
 vm.createContext(context);
 vm.runInContext(script, context);
 (async () => {
-const base = {summed_unmemorized_tokens: 2000, pct: 25, sleep_gap_ready: false, context_load_tokens: 43567,
+const base = {summed_unmemorized_tokens: 2000, pct: 25, sleep_gap_ready: false, context_load_tokens: 43567, context_load_has_chat: true,
   threshold: 8000, pending_consolidation_segments: 2, computed_at: '2026-09-26T10:00:00Z'};
 context.renderMemorize({souls: [{...base, paused: true, retry_operation: 'consolidation', pause_reason: '<bad>', soul_id: 'First Soul'}]});
 assert.match(box.innerHTML, /Retry<\/button>/);
@@ -306,9 +319,10 @@ assert.match(box.innerHTML, /Memorize: 2,000 \/ 8,000 \(25%\)/);
 assert.match(box.innerHTML, /style="width: 25%"/);
 assert.match(box.innerHTML, /&asymp; 43,567 tokens/);
 assert.match(box.innerHTML, /class="memorize-row"/);
-assert.match(box.innerHTML, /tabindex="0" role="note"/);
-const tooltip = box.innerHTML.match(/class="context-info"[^>]*title="([^"]+)"/)[1];
-assert.ok(text.includes('title="' + tooltip + '"'));
+assert.match(box.innerHTML, /popovertarget="info:context:/);
+assert.match(box.innerHTML, /class="info-text" popover/);
+const tooltip = box.innerHTML.match(/class="info-text"[^>]*>([^<]+)</)[1];
+assert.ok(text.includes(tooltip));
 for (const missing of [{}, {context_load_tokens: null}]) {
   context.renderMemorize({souls: [{...base, context_load_tokens: undefined, ...missing}]});
   assert.match(box.innerHTML, /class="context-load"[\s\S]*<p>unknown<\/p>/);
@@ -325,15 +339,34 @@ assert.match(firstSoul, /&asymp; 12,000 tokens/);
 assert.doesNotMatch(firstSoul, /&asymp; 34,000 tokens/);
 assert.match(box.innerHTML.split('<h3>Other Soul</h3>')[1], /&asymp; 34,000 tokens/);
 const unknown = {...base, summed_unmemorized_tokens: null, pct: null, sleep_gap_ready: null,
-  source_warning: 'Cannot read <snapshot> & "source"', paused: true,
+  source_warning: 'Cannot read <snapshot> & "source"', context_load_has_chat: false, paused: true,
   retry_operation: 'consolidation', soul_id: 'First Soul'};
 context.renderMemorize({souls: [unknown]});
-assert.match(box.innerHTML, /Memorize: unknown/);
+assert.match(box.innerHTML, /Memorize: error/);
 assert.match(box.innerHTML, /Cannot read &lt;snapshot&gt; &amp; &quot;source&quot;/);
+assert.match(box.innerHTML, /popovertarget="info:source:First Soul"/);
+assert.match(box.innerHTML, /aria-label="Cannot read &lt;snapshot&gt; &amp; &quot;source&quot;"/);
+assert.match(box.innerHTML, /tokens \(memory only\)/);
 assert.doesNotMatch(box.innerHTML, /<snapshot>|Memorize: (0|2,000)|class="meter"|class="badge"/);
 assert.match(box.innerHTML, /Paused: Consolidation failed/);
 assert.match(box.innerHTML, /Retry<\/button>/);
 assert.match(box.innerHTML, /&asymp; 43,567 tokens/);
+context.renderMemorize({souls: [{...base, summed_unmemorized_tokens: 0, pct: 0, context_load_has_chat: false}]});
+assert.match(box.innerHTML, /Memorize: 0 \/ 8,000/);
+assert.match(box.innerHTML, /tokens \(memory only\)/);
+assert.doesNotMatch(box.innerHTML, /Memorize: error/);
+let shown = 0, focused = 0;
+const info = {dataset: {info: 'context:First Soul'}, querySelector: selector => selector === '.info-text'
+  ? {showPopover: () => { shown++; }} : {focus: () => { focused++; }}};
+box.querySelector = () => ({parentElement: info});
+box.querySelectorAll = () => [info];
+context.document.activeElement = {closest: () => info};
+context.renderMemorize({souls: [{...base, soul_id: 'First Soul'}]});
+assert.equal(shown, 1);
+assert.equal(focused, 1);
+box.querySelector = () => null;
+box.querySelectorAll = () => [];
+delete context.document.activeElement;
 context.renderMemorize({souls: [{...unknown, memorize_running: true,
   progress: {phase: 'extracting', current: 1, total: 2}}]});
 assert.match(box.innerHTML, / disabled>Retrying\.\.\./);
