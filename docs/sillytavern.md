@@ -17,6 +17,16 @@ How the soul behaves in SillyTavern — the controls, and letting her author her
 | **Narrative Suggestion** input | memU panel, under the Memorize Now button | Sends the soul a suggested revision of her `narrative_self`. See below. |
 | **Swipe / delete her last reply** | ST's normal swipe or message delete | Regenerating re-runs the turn — and the working state that reply wrote (her scratchpad and intentions at that moment) rolls back with it, one step. |
 
+## Persona And AI Settings
+
+Choose a persona on the saved character card before turning memU on. Each Soul has one fixed memU persona, including while memU is off. Existing Souls select their bound persona automatically. The light-blue memU switches on the card and in the panel control the same setting; the card's memU-logo button opens the panel.
+
+The panel's Model Mapping edits `mcp-memu-server/config.json` and reads it when ST starts. Choose your configured OpenAI-compatible providers through ST; unsupported provider formats are unavailable. **SillyTavern Replies (SRMM)** controls ST replies, APImw synthesis and Narrative Suggestion. Other app replies have their own choice, except Iris's voice model.
+
+Advanced Mapping chooses models for memory work. Hiding its controls does not disable those choices. **Use Claude Code** switches server work to Claude Code while SRMM remains an independent API choice. The Launcher explains context-window setup for Memorize.
+
+Turning memU off restores plain ST replies, without deleting the Soul or changing their memU persona binding. ST's native persona controls remain usable; no uninstall is needed.
+
 ## Memory bubble checkboxes
 
 | Toggle | Default | What |
