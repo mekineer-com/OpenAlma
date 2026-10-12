@@ -133,11 +133,8 @@ def settings_for_chat(chat_id: str, settings: dict[str, dict[str, bool | str]]) 
     memu.json rows may be keyed by whichever alias form was current when
     they were saved; the bridge chat list may surface the other form.
     """
-    if chat_id.endswith("@g.us"):
-        entries = [settings[chat_id]] if chat_id in settings else []
-    else:
-        aliases = _expand_wa_aliases(chat_id)
-        entries = [entry for key, entry in settings.items() if _normalize_wa_id(key) in aliases]
+    aliases = {_normalize_wa_id(chat_id)} if chat_id.endswith("@g.us") else _expand_wa_aliases(chat_id)
+    entries = [entry for key, entry in settings.items() if _normalize_wa_id(key) in aliases]
     if not entries:
         return {}
     row = dict(settings.get(chat_id) or entries[0])
@@ -394,12 +391,8 @@ def write_channel_settings(updates: dict[str, dict[str, bool | str]], *, default
         if p == "excluded":
             memorize = False
 
-        if chat_id.endswith("@g.us"):
-            aliases = {chat_id}
-            store_keys = [chat_id]
-        else:
-            aliases = _expand_wa_aliases(chat_id)
-            store_keys = [key for key in channels if _normalize_wa_id(key) in aliases] or [chat_id]
+        aliases = {_normalize_wa_id(chat_id)} if chat_id.endswith("@g.us") else _expand_wa_aliases(chat_id)
+        store_keys = [key for key in channels if _normalize_wa_id(key) in aliases] or [chat_id]
         for alias in aliases:
             if alias in choices and choices[alias] != (p, memorize):
                 raise ValueError("Conflicting settings for the same WhatsApp chat. Reload the Hermes page and choose one setting.")

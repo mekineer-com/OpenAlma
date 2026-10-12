@@ -177,6 +177,23 @@ def test_conflicting_open_form_returns_400_without_partial_default_save(alias_po
     assert policy.POLICY_PATH.read_text() == original
 
 
+@pytest.mark.parametrize("local", ["120363000000001", "19990000001-19990000002"])
+@pytest.mark.parametrize("key_form", ["bare", "full", "both"])
+def test_group_policy_keeps_existing_key_normalization(alias_policy, local, key_form):
+    group_id = f"{local}@g.us"
+    keys = [local, group_id] if key_form == "both" else [local if key_form == "bare" else group_id]
+    rows = {key: {"policy": "excluded", "memorize": False, "display_name": "Fictional Group", "stored_key": key} for key in keys}
+    if key_form == "both":
+        rows[group_id].update(policy="full", memorize=True)
+    policy.POLICY_PATH.write_text(json.dumps({"whatsapp": {"default_policy": "excluded", "channels": rows}}))
+    saved = policy.settings_for_chat(group_id, policy.read_channel_settings())
+    assert (saved["policy"], saved["memorize"]) == ("excluded", False)
+    policy.write_channel_settings({group_id: {"policy": "full", "memorize": False}})
+    assert json.loads(policy.POLICY_PATH.read_text())["whatsapp"]["channels"] == {
+        key: {**row, "policy": "full", "memorize": False} for key, row in rows.items()
+    }
+
+
 @pytest.mark.parametrize("mode,memorize", [("excluded", False), ("full", True)])
 def test_read_write_channel_settings_round_trip_preserves_metadata(tmp_path, monkeypatch, mode, memorize):
     policy_path = tmp_path / "memu.json"
