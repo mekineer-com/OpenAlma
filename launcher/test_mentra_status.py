@@ -223,6 +223,12 @@ class MentraStatusTest(TestCase):
             (services.RuntimeState(), {"state": "ready"}, "○ not installed", "start"),
             (
                 services.RuntimeState(),
+                {"state": "ready", "host": {"host_package": "com.mentra.mentra.openalma"}},
+                "Iris installation unverified",
+                None,
+            ),
+            (
+                services.RuntimeState(),
                 {**installed, "installed_version": "0.0.9"},
                 "▲ update available",
                 "start",
@@ -367,7 +373,8 @@ class MentraStatusTest(TestCase):
         self.assertNotIn("Only this app failed", idle["detail"])
         self.assertEqual(active["soul_id"], "Fictional Soul")
         self.assertIsNone(active["action_kind"])
-        self.assertEqual(idle["action_label"], "Install")
+        self.assertEqual(idle["state"], "unverified")
+        self.assertIsNone(idle["action_kind"])
         self.assertIsNone(idle["host_version"])
         self.assertTrue(idle["host_reporting"])
 

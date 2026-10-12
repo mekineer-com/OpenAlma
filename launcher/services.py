@@ -1165,6 +1165,11 @@ def _iris_product_status(
         or mentra.get("state") == "disabled"
     ):
         state, label, detail, action = "setup", "▲ setup needed", "Open Iris & Phone Setup", "settings"
+    elif automatic_host and not installed_package:
+        state, label, detail, action = (
+            "unverified", "Iris installation unverified",
+            "The phone has not reported its Iris installation.", None,
+        )
     elif not installed_package and (not available_package or not available_version):
         state, label, detail, action = "unavailable", "Iris bundle unavailable", "Check GitHub releases in Iris Setup", None
     elif not installed_package:
