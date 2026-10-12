@@ -82,15 +82,15 @@
             <a class="btn" href="/iris">Setup</a>
           {% elif s.install_running %}
             <span class="spinner" role="status" aria-label="Installing"></span>
-          {% elif s.state == "starting" %}
-            <span class="spinner" role="status" aria-label="Starting"></span>
-            {% if s.stoppable %}<button class="btn" onclick="svcAction('{{ s.name }}','stop',this)">Stop</button>{% endif %}
-            {% if s.force_stoppable %}<button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>{% endif %}
           {% elif s.state == "stopping" %}
             <span class="spinner" role="status" aria-label="Stopping"></span>
             {% if s.force_stoppable %}<button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>{% endif %}
           {% elif s.stop_blocked %}
             <button class="btn" disabled title="Stop the Iris conversation on the phone first">Stop</button>
+          {% elif s.state == "starting" %}
+            <span class="spinner" role="status" aria-label="Starting"></span>
+            {% if s.stoppable %}<button class="btn" onclick="svcAction('{{ s.name }}','stop',this)">Stop</button>{% endif %}
+            {% if s.force_stoppable %}<button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>{% endif %}
           {% elif s.force_stoppable %}
             {% if s.stoppable %}<button class="btn" onclick="svcAction('{{ s.name }}','stop',this)">Stop</button>{% endif %}
             <button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>
@@ -285,17 +285,17 @@ function actionHtml(name, data) {
   var setup = name === 'channels-daemon' ? ' <a class="btn" href="/hermes' + (data.pairing_required ? '?pair=1' : '') + '">Setup</a>' : '';
   var open = data.running && data.open_url && data.state !== 'starting' ? ' <button class="btn" onclick="openService(\'' + esc(name) + '\')">Open</button>' : '';
   if (data.install_running) return '<span class="spinner" role="status" aria-label="Installing"></span>' + setup;
-  if (data.state === 'starting') {
-    return '<span class="spinner" role="status" aria-label="Starting"></span>' +
-      (data.stoppable ? ' <button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button>' : '') +
-      (data.force_stoppable ? ' <button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'force-stop\',this)">Force Stop</button>' : '') + setup;
-  }
   if (data.state === 'stopping') {
     return '<span class="spinner" role="status" aria-label="Stopping"></span>' +
       (data.force_stoppable ? ' <button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'force-stop\',this)">Force Stop</button>' : '') + setup;
   }
   if (data.stop_blocked) {
     return '<button class="btn" disabled title="Stop the Iris conversation on the phone first">Stop</button>' + open + setup;
+  }
+  if (data.state === 'starting') {
+    return '<span class="spinner" role="status" aria-label="Starting"></span>' +
+      (data.stoppable ? ' <button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button>' : '') +
+      (data.force_stoppable ? ' <button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'force-stop\',this)">Force Stop</button>' : '') + setup;
   }
   if (data.force_stoppable) {
     var stop = data.stoppable ? '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'stop\',this)">Stop</button> ' : '';

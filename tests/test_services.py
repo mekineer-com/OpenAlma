@@ -610,8 +610,10 @@ assert(starting.includes('spinner')); assert(starting.includes("'stop'"));
 assert(!starting.includes('Force Stop')); assert(!starting.includes('openService'));
 const failedStarting = context.actionHtml('memu-server', {state: 'starting', stoppable: true, force_stoppable: true});
 assert(failedStarting.includes("'stop'")); assert(failedStarting.includes("'force-stop'"));
-const blocked = context.actionHtml('memu-server', {stop_blocked: true, force_stoppable: true});
-assert(blocked.includes('disabled')); assert(!blocked.includes('Force Stop'));
+for (const state of ['running', 'starting']) {
+  const blocked = context.actionHtml('memu-server', {state, stop_blocked: true, force_stoppable: true});
+  assert(blocked.includes('disabled')); assert(!blocked.includes('Force Stop'));
+}
 ''', str(template)], check=True, capture_output=True, text=True)
     from jinja2 import Environment
 
@@ -625,6 +627,9 @@ assert(blocked.includes('disabled')); assert(!blocked.includes('Force Stop'));
     failed_starting = renderer.render(s={"name": "memu-server", "state": "starting",
                                        "stoppable": True, "force_stoppable": True})
     assert "'stop'" in failed_starting and "'force-stop'" in failed_starting
+    blocked_starting = renderer.render(s={"name": "memu-server", "state": "starting",
+                                        "stop_blocked": True, "force_stoppable": True})
+    assert "disabled" in blocked_starting and "Force Stop" not in blocked_starting
 
 
 def test_memu_server_uses_configured_pidfile_for_adoption(tmp_path, monkeypatch):
