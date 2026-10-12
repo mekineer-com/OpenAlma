@@ -35,22 +35,18 @@ Entities themselves are managed in the [Atomic Mind Map](mind-map.md), where eac
 
 ## Letting the soul author her own self-model
 
-The companion has a `narrative_self` — her evolving sense of who she is. The weekly consolidation pass rewrites it as her experience accumulates. You can also feed her a suggestion directly via the **Narrative Suggestion** input.
+The companion has a `narrative_self`, her evolving sense of who she is. Consolidation can revise it as her experience accumulates. You can also ask her to reconsider it through **Narrative Suggestion**, or correct it in Atomic.
 
-**For any of this to actually shape her turn, the SillyTavern character card description must be empty.** Identity gets resolved each turn in this order:
+Her character Description follows that shared self-description until you edit Description, Personality, Scenario or Example Dialogue. After an edit, the Description stays fixed. Clear Description to restore following; the other fields are left alone and still affect ST replies.
 
-1. The ST character card description, if filled in → wins, every time
-2. Otherwise: her stored `narrative_self` from `narrative_history`
-3. Otherwise: a generic default ("You are {name}…")
-
-So if you write a character description in ST, that's who she is — her own self-model never reaches the prompt. Leave the description empty and she'll use what consolidation (and your suggestions) have built up.
+Your manual card affects her replies in ST only. Her memory work, autonomous activity and other apps still use her shared self-description. A handwritten card is not overwritten on first use.
 
 **Using Narrative Suggestion**
 
 1. Open the memU extension panel.
 2. Type your suggestion in the **Narrative Suggestion** input — a phrasing, a correction, a new way of seeing herself.
-3. Click **Send**. A green check ✓ means the suggestion was accepted and integrated; a red `!` means it failed — the mouseover explains the reason, which may be an error rather than a refusal.
-4. If she accepts, the new text is written to her `narrative_self` and pushed back into the ST character description (so the panel stays in sync). The previous version is preserved in her memory store with an `evolved_into` link, so she can still recall what she used to think.
-5. If you manually edit the ST character description yourself, **Send** disables with a warning — that's an "override" path; clear the manual edit to re-enable suggestions.
+3. Click **Send**. A green check means she considered the request, not necessarily that she accepted it. A red `!` means an error; mouseover explains it.
+4. If she accepts, her shared self-description changes and the previous version is preserved in memory. A following ST Description refreshes to match; a manual card stays untouched.
+5. Suggestions remain available with a manual card. Clearing Description restores syncing, not permission for her to consider a suggestion.
 
 10-minute cooldown between suggestions so the soul isn't churning her identity every minute. For editing her memory directly, see [Shaping her](shaping-her.md) and the [mind map](mind-map.md).
