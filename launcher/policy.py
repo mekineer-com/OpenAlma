@@ -133,20 +133,25 @@ def settings_for_chat(chat_id: str, settings: dict[str, dict[str, bool | str]]) 
     memu.json rows may be keyed by whichever alias form was current when
     they were saved; the bridge chat list may surface the other form.
     """
-    row = settings.get(str(chat_id or ""))
-    if row is not None:
-        return row
-    aliases = _expand_wa_aliases(chat_id)
-    if not aliases:
+    if chat_id.endswith("@g.us"):
+        entries = [settings[chat_id]] if chat_id in settings else []
+    else:
+        aliases = _expand_wa_aliases(chat_id)
+        entries = [entry for key, entry in settings.items() if _normalize_wa_id(key) in aliases]
+    if not entries:
         return {}
-    for key, entry in settings.items():
-        if _normalize_wa_id(key) in aliases:
-            return entry
-    return {}
+    row = dict(settings.get(chat_id) or entries[0])
+    # Match Channels/MCP: restrictive routing, explicit Mem before defaults.
+    row["policy"] = max((entry["policy"] for entry in entries), key=ALL_POLICIES.index)
+    flags = [entry["memorize"] for entry in entries if isinstance(entry.get("memorize"), bool)]
+    row["memorize"] = row["policy"] != "excluded" and (any(flags) if flags else True)
+    return row
 
 
 def _looks_like_raw_id(name: str) -> bool:
-    """Detect a directory `name` that is the raw chat id (a number string)."""
+    """Detect bare IDs and the Channels DM JID placeholders."""
+    if name.endswith(("@s.whatsapp.net", "@c.us", "@lid")):
+        name = _normalize_wa_id(name)
     bare = name.replace("-", "").replace("@", "")
     return bool(bare) and bare.isdigit()
 
@@ -291,7 +296,16 @@ def list_whatsapp_chats() -> list[dict]:
         return (0 if is_self else 1 if has_name else 2, name.lower())
 
     enriched.sort(key=_sort_key)
-    return enriched
+    unique = []
+    seen: set[str] = set()
+    for chat in enriched:
+        if chat.get("type") != "group":
+            aliases = _expand_wa_aliases(chat["id"])
+            if aliases & seen:
+                continue
+            seen.update(aliases)
+        unique.append(chat)
+    return unique
 
 
 def _default_memorize_for_policy(policy: Policy) -> bool:
@@ -334,6 +348,7 @@ def write_default_policy(value: str) -> None:
 
 
 def read_channel_settings() -> dict[str, dict[str, bool | str]]:
+    """Keep missing Mem values missing until aliases are combined."""
     data = _read_policy_data()
     whatsapp = data.get("whatsapp") if isinstance(data, dict) else None
     channels = whatsapp.get("channels") if isinstance(whatsapp, dict) else None
@@ -346,18 +361,15 @@ def read_channel_settings() -> dict[str, dict[str, bool | str]]:
             if p in ALL_POLICIES:
                 policy = p  # type: ignore[assignment]
                 raw_memorize = entry.get("memorize")
-                if isinstance(raw_memorize, bool):
-                    memorize = raw_memorize and policy != "excluded"
-                else:
-                    memorize = _default_memorize_for_policy(policy)
                 row = dict(entry)
                 row["policy"] = policy
-                row["memorize"] = memorize
+                if isinstance(raw_memorize, bool):
+                    row["memorize"] = raw_memorize and policy != "excluded"
                 out[str(chat_id)] = row
     return out
 
 
-def write_channel_settings(updates: dict[str, dict[str, bool | str]]) -> None:
+def write_channel_settings(updates: dict[str, dict[str, bool | str]], *, default_policy: Policy | None = None) -> None:
     """Apply per-chat policy + memorize settings to CHANNELS_HOME/memu.json."""
     data = _read_policy_data()
     whatsapp = data.setdefault("whatsapp", {})
@@ -368,7 +380,10 @@ def write_channel_settings(updates: dict[str, dict[str, bool | str]]) -> None:
     if not isinstance(channels, dict):
         channels = {}
         whatsapp["channels"] = channels
+    if default_policy in ALL_POLICIES:
+        whatsapp["default_policy"] = default_policy
 
+    choices: dict[str, tuple[Policy, bool]] = {}
     for chat_id, settings in updates.items():
         policy_raw = settings.get("policy")
         memorize_raw = settings.get("memorize")
@@ -379,32 +394,32 @@ def write_channel_settings(updates: dict[str, dict[str, bool | str]]) -> None:
         if p == "excluded":
             memorize = False
 
-        # If the setting already lives under an alias-form key (@lid row
-        # while the UI shows the phone JID, or vice versa), update that
-        # key instead of creating a conflicting duplicate.
-        store_key = chat_id
-        if chat_id not in channels:
+        if chat_id.endswith("@g.us"):
+            aliases = {chat_id}
+            store_keys = [chat_id]
+        else:
             aliases = _expand_wa_aliases(chat_id)
-            for existing_key in channels:
-                if _normalize_wa_id(existing_key) in aliases:
-                    store_key = existing_key
-                    break
+            store_keys = [key for key in channels if _normalize_wa_id(key) in aliases] or [chat_id]
+        for alias in aliases:
+            if alias in choices and choices[alias] != (p, memorize):
+                raise ValueError("Conflicting settings for the same WhatsApp chat. Reload the Hermes page and choose one setting.")
+            choices[alias] = (p, memorize)
+        for store_key in store_keys:
+            existing = channels.get(store_key)
+            row = dict(existing) if isinstance(existing, dict) else {}
+            metadata = {
+                key: value
+                for key, value in row.items()
+                if key not in {"policy", "memorize"} and value not in (None, "", [], {})
+            }
 
-        existing = channels.get(store_key)
-        row = dict(existing) if isinstance(existing, dict) else {}
-        metadata = {
-            key: value
-            for key, value in row.items()
-            if key not in {"policy", "memorize"} and value not in (None, "", [], {})
-        }
-
-        if whatsapp.get("default_policy") not in ALL_POLICIES and p == "full" and memorize and not metadata:
-            # Default behavior: no row needed.
-            channels.pop(store_key, None)
-            continue
-        row["policy"] = p
-        row["memorize"] = memorize
-        channels[store_key] = row
+            if whatsapp.get("default_policy") not in ALL_POLICIES and p == "full" and memorize and not metadata:
+                # Default behavior: no row needed.
+                channels.pop(store_key, None)
+                continue
+            row["policy"] = p
+            row["memorize"] = memorize
+            channels[store_key] = row
 
     _write_policy_data(data)
 
@@ -432,27 +447,3 @@ def ensure_channel_settings(chats: list[dict]) -> tuple[dict[str, dict[str, bool
         write_channel_settings(missing)
         current = read_channel_settings()
     return current, default
-
-
-def read_policies() -> dict[str, Policy]:
-    """Backward-compatible policy-only view used by older launcher code."""
-    settings = read_channel_settings()
-    out: dict[str, Policy] = {}
-    for chat_id, row in settings.items():
-        policy_raw = row.get("policy")
-        if policy_raw in ALL_POLICIES:
-            out[chat_id] = policy_raw  # type: ignore[assignment]
-    return out
-
-
-def write_policies(updates: dict[str, Policy]) -> None:
-    """Backward-compatible writer for policy-only updates."""
-    mapped: dict[str, dict[str, bool | str]] = {}
-    for chat_id, p in updates.items():
-        if p not in ALL_POLICIES:
-            continue
-        mapped[chat_id] = {
-            "policy": p,
-            "memorize": _default_memorize_for_policy(p),
-        }
-    write_channel_settings(mapped)

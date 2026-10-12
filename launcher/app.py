@@ -995,8 +995,8 @@ def whatsapp_pair_status() -> dict:
 async def policy_save(request: Request) -> RedirectResponse:
     form = await request.form()
     default_policy = form.get("default_policy")
-    if isinstance(default_policy, str) and default_policy in policy.ALL_POLICIES:
-        policy.write_default_policy(default_policy)
+    if not isinstance(default_policy, str) or default_policy not in policy.ALL_POLICIES:
+        default_policy = None
     updates: dict[str, dict[str, bool | str]] = {}
     for key, val in form.items():
         if isinstance(key, str) and key.startswith("policy[") and key.endswith("]"):
@@ -1007,8 +1007,11 @@ async def policy_save(request: Request) -> RedirectResponse:
                     "policy": val,
                     "memorize": memorize,
                 }
-    if updates:
-        policy.write_channel_settings(updates)
+    if updates or default_policy is not None:
+        try:
+            policy.write_channel_settings(updates, default_policy=default_policy)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RedirectResponse("/hermes", status_code=303)
 
 

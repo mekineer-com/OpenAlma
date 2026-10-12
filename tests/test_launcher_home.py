@@ -257,10 +257,10 @@ def test_iris_address_save_preserves_config_and_backs_up(tmp_path, monkeypatch, 
 
 def test_policy_save_returns_to_hermes(monkeypatch):
     saved = []
-    monkeypatch.setattr(app.policy, "write_default_policy", lambda value: saved.append(value))
+    monkeypatch.setattr(app.policy, "write_channel_settings", lambda updates, *, default_policy: saved.append((updates, default_policy)))
     response = TestClient(app.app, base_url="http://127.0.0.1").post("/policy", data={"default_policy": "excluded"}, follow_redirects=False)
     assert response.status_code == 303 and response.headers["location"] == "/hermes"
-    assert saved == ["excluded"]
+    assert saved == [({}, "excluded")]
 
 
 def test_launcher_saves_window_position(tmp_path, monkeypatch):
