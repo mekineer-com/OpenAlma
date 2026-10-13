@@ -24,8 +24,12 @@ cd openalma/launcher
 python3.12 run.py
 ```
 
-Later launches reuse that environment without reinstalling packages. If setup
-fails, fix the reported problem and run the same command again.
+On Debian/Ubuntu, install `python3.12-venv` alongside Python 3.12 so environment
+creation includes pip.
+
+Later launches reuse that environment. When an update changes `requirements.txt`,
+the launcher installs the updated dependencies before starting. If setup fails,
+fix the reported problem and run the same command again.
 
 ## Run
 

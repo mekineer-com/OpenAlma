@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import socket
@@ -20,17 +21,20 @@ def _bootstrap() -> None:
     environment = Path(__file__).resolve().parent / ".venv"
     python = environment / "bin" / "python"
     ready = environment / ".openalma-ready"
-    if not ready.exists():
+    requirements = environment.parent / "requirements.txt"
+    fingerprint = hashlib.sha256(requirements.read_bytes()).hexdigest()
+    if not ready.exists() or ready.read_text() != fingerprint:
         import venv
 
         print("Preparing OpenAlma's Python environment...", flush=True)
         if not python.exists():
             venv.EnvBuilder(with_pip=True).create(environment)
+        subprocess.run([str(python), "-m", "ensurepip", "--upgrade"], check=True)
         subprocess.run(
-            [str(python), "-m", "pip", "install", "-r", str(environment.parent / "requirements.txt")],
+            [str(python), "-m", "pip", "install", "-r", str(requirements)],
             check=True,
         )
-        ready.touch()
+        ready.write_text(fingerprint)
     if Path(sys.prefix) != environment:
         os.execv(str(python), [str(python), str(Path(__file__).resolve()), *sys.argv[1:]])
 
