@@ -17,11 +17,15 @@ For a guided installation, start with [Getting started](https://openalma.org/get
 
 ## Setup
 
+On Linux, Python 3.12 creates the launcher's private environment on first run:
+
 ```sh
 cd openalma/launcher
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+python3.12 run.py
 ```
+
+Later launches reuse that environment without reinstalling packages. If setup
+fails, fix the reported problem and run the same command again.
 
 ## Run
 

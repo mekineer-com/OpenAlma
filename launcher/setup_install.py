@@ -755,7 +755,7 @@ def _install_core(operation: InstallOperation) -> None:
 
             _set_operation(operation, step="Creating Python environment")
             _run(
-                [sys.executable, "-m", "venv", "--system-site-packages", str(operation.root / "mcp-memu-server" / ".venv")],
+                [sys.executable, "-m", "venv", str(operation.root / "mcp-memu-server" / ".venv")],
                 cwd=None, log=log,
             )
             python = str(_venv_python(operation.root))
