@@ -6,6 +6,7 @@
     .pair-card { border: 1px solid #333; border-radius: 4px; padding: 0.8rem; background: #202020; }
     .pair-card h3 { margin: 0 0 0.4rem 0; color: #f0f0f0; }
     .pair-card canvas { width: 220px; height: 220px; background: #fff; border: 8px solid #fff; display: block; }</style>
+  <div id="channels-soul-selector">
   <h2>Hermes Channels soul selector</h2>
   <p class="muted">Choose an existing soul or enter a new name. Stored in hermes-channels/data/config.json</p>
   {% if channels_error %}
@@ -32,6 +33,7 @@
     </label>
   </form>
   {% endif %}
+  </div>
   {% if channels_configured %}
   <h2>WhatsApp channel policy</h2>
   <form method="post" action="/policy">
@@ -211,7 +213,25 @@ function syncMemorize(chatId, policy) {
     }
 
 {% if soul_error %}
-setInterval(function() { fetch('/souls', {cache:'no-store'}).then(function(r) { if(r.ok) location.reload(); }).catch(function() {}); },2000);
+const recoveryTimer = setInterval(async function() {
+  try {
+    const souls = await fetch('/souls', {cache:'no-store'});
+    if (!souls.ok) return;
+    const names = (await souls.json()).souls;
+    if (document.getElementById('channels-soul-form')) return;
+    const page = await fetch('/hermes', {cache:'no-store'});
+    if (!page.ok) return;
+    const recovered = new DOMParser().parseFromString(await page.text(), 'text/html')
+      .getElementById('channels-soul-selector');
+    const form = recovered && recovered.querySelector('#channels-soul-form');
+    if (!form || document.getElementById('channels-soul-form')) return;
+    document.getElementById('channels-soul-selector').replaceWith(recovered);
+    bindSoulCombobox(form, names{% if not channels_configured %}, function() { location.href = '/hermes'; }{% endif %});
+    clearInterval(recoveryTimer);
+  } catch (error) {
+    console.warn('Soul selector recovery failed:', error);
+  }
+}, 2000);
 {% endif %}
 </script>
 <script src="/static/window-position.js"></script>
