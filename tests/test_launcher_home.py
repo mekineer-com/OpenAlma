@@ -146,11 +146,13 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
         if page.startswith("/iris"):
             visible = response.text.split('<script src="/static/vendor/qrcode.min.js">', 1)[0]
             assert "OpenAlma Mentra" in visible
-            assert "open it and sign in" in visible
+            assert "and sign in" in visible
             assert "choose OpenAlma if Android offers sign-in apps" not in visible
             assert 'href="https://play.google.com/store/apps/details?id=com.mentra.mentra"' in visible
             assert "First connect your phone and server through WireGuard or another trusted private connection" in visible
-            assert 'href="https://openalma.org/mentra#connection"' in visible
+            assert "Connection help" not in visible
+            assert "Saving the address does not configure" not in visible
+            assert '>Iris installer</h3>' not in visible
             assert "only Mentra routes through your private proxy" not in visible
             assert "they do not check your phone" not in visible
             assert "For first installation, Iris receives this address automatically" not in visible
@@ -158,11 +160,12 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
             steps = visible.split('id="iris-address-busy"', 1)[1].split('<ol class="tight">', 1)[1].split('</ol>', 1)[0]
             assert steps.count('<li>') == 4
             assert steps.count('href="/">main page</a>') == 2
-            assert "phone app's Settings" in steps
-            assert "click Install beside that phone app in Services" in steps
-            assert "Keep OpenAlma Mentra in the foreground" in steps
+            assert 'Install OpenAlma Mentra on the <a href="/">main page</a>.' in steps
+            assert 'Install Iris on the <a href="/">main page</a>.' in steps
             stock = visible.split('<details id="iris-stock-installation"', 1)[1].split('</details>', 1)[0]
-            assert '<summary>Stock Mentra Installation</summary>' in stock
+            assert '<summary class="iris-section">Stock Mentra installation</summary>' in stock
+            app_heading = '>App status</h3>' if '?device_session_id=' in page else '>App installations</h3>'
+            assert visible.index(app_heading) < visible.index('<summary class="iris-section">Stock Mentra installation</summary>')
             assert 'href="https://play.google.com/store/apps/details?id=com.mentra.mentra"' in stock
             assert "Miniapp Developer Settings" in stock
             assert "Choose or create a Soul on the phone" in stock

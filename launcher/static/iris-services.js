@@ -1,5 +1,5 @@
 function irisParentActions(data) {
-  var links = ' <a class="btn" href="/mentra/apk" aria-label="OpenAlma Mentra APK download QR">QR</a> <a class="btn" href="/iris">Setup</a>';
+  var links = ' <button class="btn" type="button" popovertarget="mentra-apk-popup" onclick="mentraApkQr()" aria-label="OpenAlma Mentra APK download QR">QR</button> <a class="btn" href="/iris">Setup</a>';
   if (data.install_enabled === false) return links;
   if (data.install_running || data.state === 'stopping') {
     return '<span class="spinner" role="status" aria-label="Working"></span>' +
@@ -15,6 +15,25 @@ function irisParentActions(data) {
       esc(data.action_label || 'Install') + '</button></form>' + links;
   }
   return links;
+}
+
+async function mentraApkQr() {
+  var url = 'https://github.com/mekineer-com/MentraOS/releases';
+  var canvas = document.getElementById('mentra-apk-qr');
+  var message = document.getElementById('mentra-apk-message');
+  canvas.hidden = true;
+  message.textContent = 'Loading QR...';
+  try {
+    var response = await fetch('/mentra/apk');
+    if (response.ok) url = (await response.json()).url || url;
+  } catch (_error) {}
+  try {
+    await QRCode.toCanvas(canvas, url, {width: 220, margin: 1});
+    canvas.hidden = false;
+    message.textContent = '';
+  } catch (_error) {
+    message.textContent = 'Could not draw QR. Use apk on github.';
+  }
 }
 
 function renderIrisInstallations(data) {

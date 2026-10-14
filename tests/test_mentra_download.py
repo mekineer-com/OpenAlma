@@ -35,21 +35,16 @@ def test_mentra_apk_resolves_real_uploaded_fork_asset(monkeypatch):
         release.update(original)
 
 
-def test_mentra_apk_page_has_no_fake_qr_when_release_missing(monkeypatch):
+def test_mentra_qr_url_uses_releases_page_when_release_missing(monkeypatch):
     def missing(*_args, **_kwargs):
         raise urllib.error.HTTPError("https://api.github.com", 404, "Not Found", {}, None)
 
     monkeypatch.setattr(services.urllib.request, "urlopen", missing)
     client = TestClient(app.app, base_url="http://127.0.0.1")
-    page = client.get("/mentra/apk").text
-    assert "No OpenAlma Mentra APK published yet." in page
-    assert 'id="mentra-apk-qr"' not in page
+    assert client.get("/mentra/apk").json() == {"url": "https://github.com/mekineer-com/MentraOS/releases"}
     url = "https://github.com/mekineer-com/MentraOS/releases/download/v3.2.1/OpenAlma-Mentra-3.2.1-302010001.apk"
     monkeypatch.setattr(services, "mentra_apk_download", lambda: (url, ""))
-    page = client.get("/mentra/apk").text
-    assert f'href="{url}"' in page
-    assert 'id="mentra-apk-qr"' in page
-    assert "QRCode.toCanvas" in page
+    assert client.get("/mentra/apk").json() == {"url": url}
 
 
 def test_mentra_download_controls_survive_status_poll_and_pending_actions():
@@ -66,22 +61,39 @@ const source = fs.readFileSync(process.argv[1] + '/templates/index.html', 'utf8'
 vm.runInThisContext(source.slice(source.indexOf('function pollStatus'), source.indexOf("{% for s in services + iris_rows if")));
 (async () => {
   const results = [];
-  for (const pending of ['none', 'stop', 'start']) {
+  for (const pending of ['none', 'stop', 'start', 'error', 'installing']) {
     const status = {}, actions = {};
     const row = {dataset:{runtime:'true'}, querySelector: key => key === '.svc-status' ? status : actions};
     global.document = {querySelector: () => row};
-    global.fetch = async () => ({json: async () => ({state:'ready'})});
+    global.fetch = async () => ({json: async () => ({state:pending === 'error' ? 'unavailable' : pending === 'installing' ? 'installing' : 'ready', status_label:pending === 'error' ? 'Status unavailable' : pending === 'installing' ? 'Installing Iris' : 'Host ready'})});
     pendingStops = pending === 'stop' ? {'iris-server':true} : {};
     pendingStarts = pending === 'start' ? {'iris-server':Date.now()+10000} : {};
     pollStatus('iris-server');
     await new Promise(resolve => setImmediate(resolve));
     results.push([status.innerHTML, actions.innerHTML]);
   }
+  const urls = [], canvas = {}, message = {};
+  document.getElementById = id => id === 'mentra-apk-qr' ? canvas : message;
+  global.QRCode = {toCanvas: async (_canvas, url) => urls.push(url)};
+  for (const url of ['https://github.com/mekineer-com/MentraOS/releases', 'https://github.com/mekineer-com/MentraOS/releases/download/v3.2.1/fixture.apk']) {
+    global.fetch = async () => ({ok:true,json:async () => ({url})});
+    await mentraApkQr();
+    if (canvas.hidden || message.textContent) throw new Error('QR not visible');
+  }
+  results.push(urls);
   console.log(JSON.stringify(results));
 })();
 """
     rows = json.loads(subprocess.check_output(["node", "-e", script, str(root)], text=True))
-    for status, actions in rows:
-        assert 'href="https://openalma.org/mentra"' in status
-        assert 'href="/mentra/apk"' in actions
+    for status, actions in rows[:5]:
+        assert 'href="https://openalma.org/mentra"' not in status
+        assert 'href="https://github.com/mekineer-com/MentraOS/releases"' in status
+        assert '>apk on github</a>' in status
+        assert 'Host ready' not in status
+        assert actions.index('>QR</button>') < actions.index('>Setup</a>')
+        assert 'popovertarget="mentra-apk-popup"' in actions
         assert 'href="/iris"' in actions
+    assert 'Status unavailable' in rows[3][0]
+    assert 'Installing Iris' in rows[4][0]
+    assert rows[5] == ['https://github.com/mekineer-com/MentraOS/releases',
+                       'https://github.com/mekineer-com/MentraOS/releases/download/v3.2.1/fixture.apk']

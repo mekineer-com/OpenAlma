@@ -61,6 +61,11 @@ def test_memorize_gauge_under_threshold():
     assert "&asymp; 43,567 tokens" in html
     assert 'popovertarget="info:context:Fictional Soul"' in html
     assert 'class="info-text" popover' in html
+    assert 'onpointerleave="if (event.pointerType === \'mouse\') this.nextElementSibling.hidePopover()"' in html
+    assert 'width: 1.375em; height: 1.375em' in html
+    assert 'Context load<span class="info-icon">i</span></button>' in html
+    pressure = html.split('<div class="memorize-pressure">', 1)[1].split('<div class="context-load">', 1)[0]
+    assert 'Memorize-eligible at' in pressure
     assert "Actual prepared prompts are checked separately." in html
     assert "@media (max-width: 40rem)" in html
     assert '<meta name="viewport" content="width=device-width, initial-scale=1">' in html
@@ -68,7 +73,10 @@ def test_memorize_gauge_under_threshold():
     assert "memory only" not in html.split('class="context-load"', 1)[1].split("</div>", 1)[0]
     empty = _render({"threshold": 8000, "summed_unmemorized_tokens": 0, "pct": 0,
                      "context_load_tokens": 12000, "context_load_has_chat": False})
-    assert "Memorize: 0 / 8,000" in empty and "tokens (memory only)" in empty
+    assert "Memorize: 0 / 8,000" in empty and "tokens<br>(memory only)" in empty
+    assert 'Snapshot' not in empty
+    settings = html.split('<summary>Context window settings</summary>', 1)[1].split('</details>', 1)[0]
+    assert 'llm.context_window_tokens' in settings and 'claude_code_context_window_tokens' in settings
     assert "Memorize: error" not in empty
 
 
@@ -265,7 +273,7 @@ def test_memorize_gauge_shows_failed_consolidation_retry():
     assert 'class="meter"' not in html and 'class="badge"' not in html
     assert "Paused: Consolidation failed" in html and ">Retry</button>" in html
     assert "&asymp; 12,000 tokens" in html
-    assert "tokens (memory only)" in html
+    assert "tokens<br>(memory only)" in html
     html = _render({**unknown, "memorize_running": True,
                     "progress": {"phase": "extracting", "current": 1, "total": 2}})
     assert "disabled>Retrying..." in html and "extracting: 1 / 2" in html
@@ -350,14 +358,15 @@ assert.match(box.innerHTML, /Memorize: error/);
 assert.match(box.innerHTML, /Cannot read &lt;snapshot&gt; &amp; &quot;source&quot;/);
 assert.match(box.innerHTML, /popovertarget="info:source:First Soul"/);
 assert.match(box.innerHTML, /aria-label="Cannot read &lt;snapshot&gt; &amp; &quot;source&quot;"/);
-assert.match(box.innerHTML, /tokens \(memory only\)/);
+assert.match(box.innerHTML, /tokens<br>\(memory only\)/);
 assert.doesNotMatch(box.innerHTML, /<snapshot>|Memorize: (0|2,000)|class="meter"|class="badge"/);
 assert.match(box.innerHTML, /Paused: Consolidation failed/);
 assert.match(box.innerHTML, /Retry<\/button>/);
 assert.match(box.innerHTML, /&asymp; 43,567 tokens/);
 context.renderMemorize({souls: [{...base, summed_unmemorized_tokens: 0, pct: 0, context_load_has_chat: false}]});
 assert.match(box.innerHTML, /Memorize: 0 \/ 8,000/);
-assert.match(box.innerHTML, /tokens \(memory only\)/);
+assert.match(box.innerHTML, /tokens<br>\(memory only\)/);
+assert.doesNotMatch(box.innerHTML, /Snapshot/);
 assert.doesNotMatch(box.innerHTML, /Memorize: error/);
 let shown = 0, focused = 0;
 const info = {dataset: {info: 'context:First Soul'}, querySelector: selector => selector === '.info-text'

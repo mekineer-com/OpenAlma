@@ -16,7 +16,7 @@ to your OpenAlma Soul. No glasses or Mentra Store are required.
 5. Open Iris, allow microphone access, choose or create a Soul, then tap **Start**.
 
 For [stock Mentra](https://play.google.com/store/apps/details?id=com.mentra.mentra),
-use **Setup → Stock Mentra Installation** in the launcher instead.
+use **Setup → Stock Mentra installation** in the launcher instead.
 
 ## Connection
 

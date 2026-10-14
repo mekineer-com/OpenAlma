@@ -20,14 +20,9 @@ function fmt(n) {
   return Number(n || 0).toLocaleString();
 }
 
-function fmtSnapshot(value) {
-  var date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value || '') : date.toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'});
-}
-
-function infoHtml(text, key) {
+function infoHtml(text, key, label) {
   return '<span class="context-info" data-info="' + esc(key) + '"><button type="button" popovertarget="info:' + esc(key) +
-    '" aria-label="' + esc(text) + '" onpointerenter="if (event.pointerType === \'mouse\') this.nextElementSibling.showPopover()">i</button>' +
+    '" aria-label="' + esc(text) + '" onpointerenter="if (event.pointerType === \'mouse\') this.nextElementSibling.showPopover()" onpointerleave="if (event.pointerType === \'mouse\') this.nextElementSibling.hidePopover()">' + esc(label) + '<span class="info-icon">i</span></button>' +
     '<span class="info-text" popover id="info:' + esc(key) + '">' + esc(text) + '</span></span>';
 }
 
@@ -55,10 +50,11 @@ function memorizeHtml(data) {
     html += '<div class="meter"><div class="meter-fill" style="width: ' + Math.min(pct, 100) + '%"></div></div>';
   }
   var contextHelp = 'Forecast at the Memorize threshold using current chat density and supporting memory. With no chat sample, only supporting memory and instructions are shown. Generated episode/background summaries and speaker details are excluded; supporting context varies, and waiting for a sleep gap can produce a larger actual batch. Actual prepared prompts are checked separately.';
+  html += '<p class="muted">Memorize-eligible at ' + fmt(threshold) + ' tokens; a sleep-gap releases it.</p>';
   html = '<div class="memorize-row"><div class="memorize-pressure">' + html + '</div>' +
-    '<div class="context-load"><p>Context load ' + infoHtml(contextHelp, 'context:' + data.soul_id) + '</p><p>' +
+    '<div class="context-load"><p>' + infoHtml(contextHelp, 'context:' + data.soul_id, 'Context load') + '</p><p>' +
     (data.context_load_tokens == null ? 'unknown' : '&asymp; ' + fmt(data.context_load_tokens) + ' tokens' +
-      (data.context_load_has_chat ? '' : ' (memory only)')) + '</p></div></div>';
+      (data.context_load_has_chat ? '' : '<br>(memory only)')) + '</p></div></div>';
   if (data.paused) {
     var running = data.memorize_running || data.consolidation_running;
     html += '<p class="consolidation-warning" role="alert">Paused: ' +
@@ -74,7 +70,6 @@ function memorizeHtml(data) {
   } else if (data.consolidation_state === 'running') {
     html += '<p class="muted" role="status">Memory consolidation is running.</p>';
   }
-  html += '<p class="muted">Memorize-eligible at ' + fmt(threshold) + ' tokens; a sleep-gap releases it. Snapshot ' + esc(fmtSnapshot(data.computed_at)) + '.</p>';
   if (data.memorize_running && data.progress) {
     html += '<p class="muted" role="status">' + esc(data.progress.phase || 'Running') + (data.progress.total ? ': ' + fmt(data.progress.current) + ' / ' + fmt(data.progress.total) : '') + '</p>';
   }

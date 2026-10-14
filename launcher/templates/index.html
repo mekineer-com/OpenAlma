@@ -1,7 +1,7 @@
 {% include "_index_head.html" %}
 {% include "_header.html" %}
-{% macro info(text, key) -%}
-<span class="context-info" data-info="{{ key }}"><button type="button" popovertarget="info:{{ key }}" aria-label="{{ text }}" onpointerenter="if (event.pointerType === 'mouse') this.nextElementSibling.showPopover()">i</button><span class="info-text" popover id="info:{{ key }}">{{ text }}</span></span>
+{% macro info(text, key, label='') -%}
+<span class="context-info" data-info="{{ key }}"><button type="button" popovertarget="info:{{ key }}" aria-label="{{ text }}" onpointerenter="if (event.pointerType === 'mouse') this.nextElementSibling.showPopover()" onpointerleave="if (event.pointerType === 'mouse') this.nextElementSibling.hidePopover()">{{ label }}<span class="info-icon">i</span></button><span class="info-text" popover id="info:{{ key }}">{{ text }}</span></span>
 {%- endmacro %}
   <p class="muted">Start, stop, and configure the local stack.</p>
 
@@ -61,8 +61,10 @@
       <tr data-service="{{ s.name }}" data-runtime="{{ 'false' if s.install_setup else 'true' }}">
         <td>{{ s.label }}</td>
         <td class="svc-status">
-          {% if s.name == 'iris-server' %}<div class="svc-detail"><a href="https://openalma.org/mentra">https://openalma.org/mentra</a></div>{% endif %}
+          {% if s.name == 'iris-server' %}<a class="mentra-apk-link" href="https://github.com/mekineer-com/MentraOS/releases">apk on github</a>{% endif %}
+          {% if s.name != 'iris-server' or s.state != 'ready' %}
           <span class="{{ s.state }}">{{ s.status_label }}</span>
+          {% endif %}
           {% if s.detail %}<div class="svc-detail">{{ s.detail }}</div>{% endif %}
           {% if s.children %}
             <div class="svc-children">
@@ -83,7 +85,7 @@
             {% elif s.action_kind == 'install' %}
             <form class="inline" method="post" action="/install/iris-server"><button class="btn" type="submit">{{ s.action_label or 'Install' }}</button></form>
             {% endif %}
-            <a class="btn" href="/mentra/apk" aria-label="OpenAlma Mentra APK download QR">QR</a>
+            <button class="btn" type="button" popovertarget="mentra-apk-popup" onclick="mentraApkQr()" aria-label="OpenAlma Mentra APK download QR">QR</button>
             <a class="btn" href="/iris">Setup</a>
           {% elif s.install_running %}
             <span class="spinner" role="status" aria-label="Installing"></span>
@@ -159,6 +161,8 @@
   {% endif %}
 
   <h2>Memorize</h2>
+  <details>
+  <summary>Context window settings</summary>
   <p>Configure your AI model’s published context-window size. The estimated <strong>context load</strong> of the conversation and supporting memory must fit within the context-window. Reduce min_chunk_tokens in config.json if the context load is too high.</p>
   <div>API:
     <form class="inline" method="post" action="/edit/memu-server-config">
@@ -170,6 +174,7 @@
       <button class="config-link" type="submit" title="Open config.json on the launcher machine"><code>claude_code_context_window_tokens</code></button>
     </form>
   </div>
+  </details>
   <div id="memorize-meter">
     {% for meter in memorize %}
     <div data-soul="{{ meter.soul_id }}">
@@ -192,11 +197,12 @@
       {% else %}
       <p>Memorize: unknown</p>
       {% endif %}
+      <p class="muted">Memorize-eligible at {{ "{:,}".format(meter.threshold) }} tokens; a sleep-gap releases it.</p>
       </div>
       <div class="context-load">
         {% set context_help = 'Forecast at the Memorize threshold using current chat density and supporting memory. With no chat sample, only supporting memory and instructions are shown. Generated episode/background summaries and speaker details are excluded; supporting context varies, and waiting for a sleep gap can produce a larger actual batch. Actual prepared prompts are checked separately.' %}
-        <p>Context load {{ info(context_help, 'context:' ~ meter.soul_id) }}</p>
-        <p>{% if meter.context_load_tokens is defined and meter.context_load_tokens is not none %}&asymp; {{ "{:,}".format(meter.context_load_tokens) }} tokens{% if not meter.context_load_has_chat %} (memory only){% endif %}{% else %}unknown{% endif %}</p>
+        <p>{{ info(context_help, 'context:' ~ meter.soul_id, 'Context load') }}</p>
+        <p>{% if meter.context_load_tokens is defined and meter.context_load_tokens is not none %}&asymp; {{ "{:,}".format(meter.context_load_tokens) }} tokens{% if not meter.context_load_has_chat %}<br>(memory only){% endif %}{% else %}unknown{% endif %}</p>
       </div>
       </div>
       {% if meter.paused %}
@@ -213,7 +219,6 @@
         <p class="muted" role="status">Memory consolidation is running.</p>
       {% endif %}
       {% if meter.memorize_running %}<p class="muted" role="status">{{ meter.progress.phase }}{% if meter.progress.total %}: {{ meter.progress.current }} / {{ meter.progress.total }}{% endif %}</p>{% endif %}
-      <p class="muted">Memorize-eligible at {{ "{:,}".format(meter.threshold) }} tokens; a sleep-gap releases it. Snapshot <span class="snapshot-time" data-timestamp="{{ meter.computed_at }}">{{ meter.computed_at }}</span>.</p>
     {% else %}
       <p class="muted">No pending-memorize data — is mcp-memu-server running?</p>
     {% endif %}
@@ -222,7 +227,14 @@
     {% endfor %}
   </div>
 
-  <script src="/static/iris-services.js"></script>
+  <div id="mentra-apk-popup" popover>
+    <p>OpenAlma Mentra</p>
+    <canvas id="mentra-apk-qr" aria-label="OpenAlma Mentra download QR"></canvas>
+    <p id="mentra-apk-message" role="status"></p>
+    <button class="btn" popovertarget="mentra-apk-popup" popovertargetaction="hide">Close</button>
+  </div>
+  <script src="/static/vendor/qrcode.min.js"></script>
+  <script src="/static/iris-services.js?v=apk-qr"></script>
   <script>
 var pendingStarts = {};
 var pendingStops = {};
@@ -352,7 +364,7 @@ function pollStatus(name) {
       var actionsCell = row.querySelector('.svc-actions');
       var state = data.state || (data.running ? 'running' : 'stopped');
       var label = data.status_label || (data.running ? '● running' : '○ stopped');
-      var html = '<span class="' + esc(state) + '">' + esc(label) + '</span>';
+      var html = name === 'iris-server' && state === 'ready' ? '' : '<span class="' + esc(state) + '">' + esc(label) + '</span>';
       if (data.detail) {
         html += '<div class="svc-detail">' + esc(data.detail) + '</div>';
       }
@@ -365,11 +377,11 @@ function pollStatus(name) {
         }).join('; ');
         html += '</div>';
       }
-      var mentraLink = name === 'iris-server' ? '<div class="svc-detail"><a href="https://openalma.org/mentra">https://openalma.org/mentra</a></div>' : '';
-      statusCell.innerHTML = mentraLink + html;
+      var apkLink = name === 'iris-server' ? '<a class="mentra-apk-link" href="https://github.com/mekineer-com/MentraOS/releases">apk on github</a>' : '';
+      statusCell.innerHTML = apkLink + html;
       var starting = pendingStarts[name] > Date.now() && !data.stoppable && data.startable !== false;
       if (pendingStops[name]) {
-        statusCell.innerHTML = mentraLink + '<span class="starting">◐ waiting for graceful shutdown</span>';
+        statusCell.innerHTML = apkLink + '<span class="starting">◐ waiting for graceful shutdown</span>';
         actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Stopping"></span>' + (name === 'iris-server' ? irisParentActions({install_enabled: false}) : '');
       } else if (starting) {
         actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Starting"></span>' + (name === 'iris-server' ? irisParentActions({install_enabled: false}) : '');
@@ -385,10 +397,6 @@ function pollStatus(name) {
 renderIrisInstallations({{ s|tojson }});
 document.querySelector('tr[data-service="iris-server"] .svc-actions').innerHTML = irisParentActions({{ s|tojson }});
 {% endfor %}
-
-document.querySelectorAll('.snapshot-time').forEach(function(element) {
-  element.textContent = fmtSnapshot(element.dataset.timestamp);
-});
 
 function pollMemorize() {
   fetch('/memorize/status', { cache: 'no-store' })
