@@ -704,10 +704,9 @@ def list_souls() -> list[str]:
     return souls
 
 
-def resolve_soul(soul_id: str, use_existing: bool, user_name: str | None = None) -> str:
+def resolve_soul(soul_id: str, use_existing: bool) -> str:
     soul_id = soul_id.strip()
-    data = _soul_request(soul_id=soul_id, use_existing=use_existing,
-                         **({"user_name": user_name.strip()} if not use_existing and user_name is not None else {}))
+    data = _soul_request(soul_id=soul_id, use_existing=use_existing)
     if data.get("soul_id") != soul_id:
         raise SoulServiceUnavailable("Soul service returned a different soul")
     return data["soul_id"]

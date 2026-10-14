@@ -54,13 +54,14 @@ def test_fresh_channels_config_is_created_by_soul_selection(tmp_path, monkeypatc
     monkeypatch.setattr(app.policy, "read_default_policy", lambda: "excluded")
     monkeypatch.setattr(app.policy, "ensure_channel_settings", lambda _: ({}, "excluded"))
     monkeypatch.setattr(app.services, "list_souls", lambda: soul_ids)
-    monkeypatch.setattr(app.services, "resolve_soul", lambda name, _existing, _human: name)
+    monkeypatch.setattr(app.services, "resolve_soul", lambda name, _existing: name)
     monkeypatch.setattr(app.services, "status", lambda _: {"state": "stopped"})
     monkeypatch.setattr(app, "_find_service", lambda _: None)
     assert soul.read_active_soul_id() == "" and not config.exists()
     client = TestClient(app.app, base_url="http://127.0.0.1")
     fresh = client.get("/hermes").text
     assert "Hermes Channels soul selector" in fresh and 'id="channels-soul-form"' in fresh
+    assert 'name="user_name"' not in fresh
     assert "WhatsApp channel policy" not in fresh
     response = client.post("/soul", data={"soul_id": "TestSoul", "use_existing": "true"}, follow_redirects=False)
     assert response.status_code == 303 and response.headers["location"] == "/hermes"
@@ -82,7 +83,7 @@ eval(process.argv[2]); assert.equal(callback,undefined);
 
 
 @pytest.mark.parametrize("route", ["/owner", "/first-soul", "/soul", "/echo/soul"])
-def test_creation_routes_forward_explicit_human_name(monkeypatch, route):
+def test_creation_routes_need_only_owner_and_soul_names(monkeypatch, route):
     from fastapi.testclient import TestClient
     import app
 
@@ -99,12 +100,26 @@ def test_creation_routes_forward_explicit_human_name(monkeypatch, route):
 
     monkeypatch.setattr(app.services, "_soul_request", request)
     response = TestClient(app.app, base_url="http://127.0.0.1").post(route, data={
-        "soul_id": "Fable", "user_name": " Rowan ", "user_id": "AccountKey", "confirmed": "true",
+        "soul_id": "Fable", "user_id": "AccountKey", "confirmed": "true",
     }, follow_redirects=False)
     assert response.status_code == (200 if route == "/echo/soul" else 303)
-    assert calls == [{"soul_id": "Fable", "use_existing": False, "user_name": "Rowan"}]
+    assert calls == [{"soul_id": "Fable", "use_existing": False}]
     assert owners == (["AccountKey"] if route == "/owner" else [])
     assert selected == (["Fable"] if route == "/soul" else [])
+
+
+@pytest.mark.parametrize("owner_id", [None, "TestOwner"])
+def test_first_entry_has_no_separate_human_name(owner_id):
+    from jinja2 import Environment, FileSystemLoader
+
+    templates = Path(__file__).resolve().parents[1] / "launcher/templates"
+    html = Environment(loader=FileSystemLoader(templates), autoescape=True).get_template("index.html").render(
+        owner_id=owner_id, owner_error="", soul_ids=[], soul_error="",
+        services=[], not_installed_services=[], memorize=[], host_prerequisites={"rows": []},
+    )
+    assert 'name="soul_id"' in html
+    assert ('name="user_id"' in html) == (owner_id is None)
+    assert 'name="user_name"' not in html
 
 
 @pytest.mark.parametrize("route", ["/soul", "/echo/soul"])
@@ -121,14 +136,14 @@ def test_selection_omits_replacement_name_and_creation_refusal_does_not_select(m
     def request(**payload):
         calls.append(payload)
         if not payload["use_existing"]:
-            raise ValueError("Enter what this Soul should call you")
+            raise ValueError("Soul name must differ from the owner name")
         return {"soul_id": payload["soul_id"], "created": False}
 
     monkeypatch.setattr(app.services, "_soul_request", request)
     client = TestClient(app.app, base_url="http://127.0.0.1")
     response = client.post(route, data={"soul_id": "Fable"}, follow_redirects=False)
     assert response.status_code == 400
-    assert response.json() == {"detail": "Enter what this Soul should call you"}
+    assert response.json() == {"detail": "Soul name must differ from the owner name"}
     assert selected == []
     response = client.post(route, data={"soul_id": "Fable", "use_existing": "true", "user_name": "DoNotReplace"}, follow_redirects=False)
     assert response.status_code == (200 if route == "/echo/soul" else 303)

@@ -58,16 +58,8 @@ function bindSoulCombobox(soulForm, names, onSaved, onChanged) {
       const soulReady = soulForm.querySelector(".soul-ready");
       const soulNew = soulForm.querySelector(".soul-new");
       const soulUseExisting = soulForm.querySelector("[name=use_existing]");
-      const humanName = soulForm.querySelector("[name=user_name]");
-      const humanNameLabel = soulForm.querySelector(".soul-human-name");
       const knownSouls = new Set(names);
       let pendingNewSoul = "";
-
-      function updateHumanName() {
-        const creating = Boolean(soulInput.value.trim()) && !knownSouls.has(soulInput.value.trim());
-        humanName.disabled = !creating;
-        humanNameLabel.hidden = !creating;
-      }
 
       function closeSoulMenu() {
         soulMenu.hidden = true;
@@ -92,8 +84,6 @@ function bindSoulCombobox(soulForm, names, onSaved, onChanged) {
           soulUseExisting.value = "true";
           soulReady.hidden = true;
           soulNew.hidden = true;
-          humanName.value = "";
-          updateHumanName();
           closeSoulMenu();
           if (onChanged) onChanged();
         });
@@ -110,14 +100,11 @@ function bindSoulCombobox(soulForm, names, onSaved, onChanged) {
           pendingNewSoul = "";
           soulNew.hidden = true;
           soulReady.hidden = false;
-          humanName.value = "";
-          updateHumanName();
           closeSoulMenu();
           if (onSaved && !wasReady) onSaved(name);
         });
       }
       knownSouls.forEach(addSoulOption);
-      updateHumanName();
       soulInput.addEventListener("focus", openSoulMenu);
       soulInput.addEventListener("click", openSoulMenu);
       soulInput.addEventListener("blur", closeSoulMenu);
@@ -126,8 +113,6 @@ function bindSoulCombobox(soulForm, names, onSaved, onChanged) {
         soulUseExisting.value = "false";
         soulReady.hidden = true;
         soulNew.hidden = true;
-        humanName.value = "";
-        updateHumanName();
         openSoulMenu();
         if (onChanged) onChanged();
       });
@@ -141,11 +126,6 @@ function bindSoulCombobox(soulForm, names, onSaved, onChanged) {
           return;
         }
         soulUseExisting.value = "false";
-        humanName.value = humanName.value.trim();
-        if (!humanName.value.trim()) {
-          humanName.reportValidity();
-          return;
-        }
         if (pendingNewSoul !== name) {
           pendingNewSoul = name;
           soulNew.hidden = false;

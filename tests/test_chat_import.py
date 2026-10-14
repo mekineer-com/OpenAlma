@@ -213,7 +213,7 @@ def test_echo_http_upload_reuses_source_and_never_starts_processing(tmp_path, mo
     monkeypatch.setattr(app.services, "list_souls", lambda: ["TestSoul"])
     created = []
     monkeypatch.setattr(app.services, "resolve_soul",
-        lambda name, existing, human: (created.append((name, existing, human)) or name))
+        lambda name, existing: (created.append((name, existing)) or name))
     calls, refuse, register_fail = [], [False], [False]
     pending_day = ["2025-01-03"]
     competing = [[]]
@@ -238,8 +238,8 @@ def test_echo_http_upload_reuses_source_and_never_starts_processing(tmp_path, mo
     monkeypatch.setattr(app.services, "_mcp_request", mcp)
     monkeypatch.setattr(app, "_ECHO_CONFIRM_LOCKS", {})
     client = TestClient(app.app, base_url="http://127.0.0.1")
-    assert client.post("/echo/soul", data={"soul_id": "TestNewSoul", "user_name": "Rowan"}).json() == {"soul_id": "TestNewSoul"}
-    assert created == [("TestNewSoul", False, "Rowan")]
+    assert client.post("/echo/soul", data={"soul_id": "TestNewSoul"}).json() == {"soul_id": "TestNewSoul"}
+    assert created == [("TestNewSoul", False)]
     assert not chat_import.source_path(tmp_path).exists()
     raw = [{"id": str(i), "meta": {"nature": nature, "timestamp": day}, "content": {"text": "fictional"}}
            for i, (nature, day) in enumerate((("Customer", "2025-01-01"), ("Robot", "2025-01-03")))]

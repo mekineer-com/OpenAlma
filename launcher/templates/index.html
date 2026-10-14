@@ -23,7 +23,6 @@
   <form method="post" action="/first-soul" class="banner">
     <p>Your identity is saved. What will your first Soul be called?</p>
     <input name="soul_id" required placeholder="Soul name">
-    <label>What should this Soul call you? <input name="user_name" required autocomplete="off"></label>
     <label><input type="checkbox" name="confirmed" required> I confirm these names. They cannot be changed yet.</label>
     <button class="btn" type="submit">Continue</button>
   </form>
@@ -36,7 +35,6 @@
     <input name="user_id" required autocomplete="name" placeholder="Your name">
     {% if not soul_ids and not soul_error %}
     <input name="soul_id" required placeholder="Your Soul's name">
-    <label>What should this Soul call you? <input name="user_name" required autocomplete="off"></label>
     {% endif %}
     <label><input type="checkbox" name="confirmed" required> I confirm {% if not soul_ids and not soul_error %}these spellings. They{% else %}this spelling. It{% endif %} cannot be changed yet.</label>
     <button class="btn" type="submit">Continue</button>

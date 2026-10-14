@@ -852,7 +852,7 @@ class MentraStatusTest(TestCase):
                     saved = client.post("/soul", data={"soul_id": "Codexia", "use_existing": "true"}, follow_redirects=False)
                     self.assertEqual(saved.status_code, 303)
                     self.assertEqual(saved.headers["location"], "/hermes")
-                resolve.assert_called_once_with("Codexia", True, None)
+                resolve.assert_called_once_with("Codexia", True)
                 with (
                     patch.object(services, "status", return_value={"state": "healthy", "running": True}),
                     patch.object(services, "resolve_soul") as blocked_resolve,
@@ -900,15 +900,16 @@ class MentraStatusTest(TestCase):
                 page = client.get("/").text
                 self.assertIn('name="user_id"', page)
                 self.assertIn('name="soul_id"', page)
+                self.assertNotIn('name="user_name"', page)
                 self.assertEqual(client.post("/owner", data={"user_id": "Fictional User"}).status_code, 400)
                 response = client.post(
                     "/owner",
-                    data={"user_id": "Fictional User", "soul_id": "Codexia", "user_name": "Rowan", "confirmed": "true"},
+                    data={"user_id": "Fictional User", "soul_id": "Codexia", "confirmed": "true"},
                     follow_redirects=False,
                 )
                 self.assertEqual(response.status_code, 503)
                 create_owner.assert_called_once_with("Fictional User")
-                resolve_soul.assert_called_once_with("Codexia", False, "Rowan")
+                resolve_soul.assert_called_once_with("Codexia", False)
             recovery_page = client.get("/").text
             self.assertIn("Your identity is saved", recovery_page)
             self.assertIn('action="/first-soul"', recovery_page)
@@ -923,7 +924,7 @@ class MentraStatusTest(TestCase):
                 )
                 self.assertEqual(response.status_code, 303)
                 create_owner.assert_not_called()
-                resolve_soul.assert_called_once_with("Codexia", False, None)
+                resolve_soul.assert_called_once_with("Codexia", False)
             with patch.object(services, "list_souls", return_value=["Codexia"]):
                 self.assertNotIn("Your identity is saved", client.get("/").text)
             self.assertEqual(client.get("/memorize/status").json(), {"souls": []})
