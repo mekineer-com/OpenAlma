@@ -152,8 +152,7 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
             assert "only Mentra routes through your private proxy" in visible
             assert "Choose a Soul on the phone" in visible
             assert 'href="https://github.com/mekineer-com/MentraOS/releases"' in visible
-            installer_heading = 'OpenAlma Mentra installer' if page.endswith('=fork-test') else 'Stock Mentra installer'
-            assert visible.index('>Phone steps</h3>') < visible.index(f'>{installer_heading}</h3>')
+            assert visible.index('>Phone steps</h3>') < visible.index('>Iris installer</h3>')
             assert "they do not check your phone" in visible
             assert "For first installation, Iris receives this address automatically" in visible
             selected = next((row for row in installations if page.endswith("=" + row["device_session_id"])), None)
@@ -175,8 +174,6 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
                 assert 'disabled' in forget
             else:
                 assert '>Stock Install</button>' in visible
-                assert 'return to the main page and click the Install button in the Services section' in visible
-                assert 'The QR installs Iris inside Stock Mentra; it does not install Mentra itself.' in visible
                 for row in installations:
                     assert f'href="/iris?device_session_id={row["device_session_id"]}"' in visible
             assert ('id="iris-install-qr"' in visible) == (selected is not installations[1])

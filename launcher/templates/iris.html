@@ -38,19 +38,18 @@
       <li>Install Mentra: <a href="https://github.com/mekineer-com/MentraOS/releases">OpenAlma Mentra</a> (recommended for Iris automation) or <a href="https://play.google.com/store/apps/details?id=com.mentra.mentra">Stock Mentra</a>.</li>
       <li>Signing in to OpenAlma Mentra: choose OpenAlma if Android offers sign-in apps, or use email sign-in.</li>
       <li>For OpenAlma Mentra, enter the OpenAlma address in its Settings if the default does not connect.</li>
-      <li>Install or update Iris using Stock Install below, or Install in Services for OpenAlma Mentra, then open it once.</li>
+      <li>Install or update Iris using the installer below, then open it once.</li>
       <li>Allow Mentra microphone access. Android/Mentra asks for camera or photo access when needed.</li>
       <li>Choose a Soul on the phone, then tap Start to talk; listen for the beep.</li>
     </ol>
 
-    <h3 class="iris-section">{{ 'OpenAlma Mentra installer' if selected_installation and selected_installation.host_package == 'com.mentra.mentra.openalma' else 'Stock Mentra installer' }}</h3>
+    <h3 class="iris-section">Iris installer</h3>
     <p id="iris-installer-status" class="failure" role="alert">{% if iris.blocked %}{{ iris.detail or 'Iris installer port 6789 is occupied. Free the port before installing.' }}{% elif iris.ready is sameas false %}{{ iris.status_label }}: {{ iris.detail }}{% elif iris.installations is not defined %}Iris app status is unavailable.{% endif %}</p>
     {% if not selected_installation %}
     <form method="post" action="/iris/install" id="iris-install-form">
       <p><button class="btn" type="submit" {% if install_disabled or not iris.available_package or not iris.available_version %}disabled{% endif %}>Stock Install</button></p>
     </form>
-    <p class="hint">Click Stock Install then scan the Mentra QR below. For OpenAlma Mentra, return to the main page and click the Install button in the Services section.</p>
-    <p class="hint">The QR installs Iris inside Stock Mentra; it does not install Mentra itself.</p>
+    <p class="hint">For Stock Mentra, click Stock Install and scan the Iris QR below. For OpenAlma Mentra, use Install beside its app in Services.</p>
     {% endif %}
     {% if iris.github_status == "unavailable" %}
       <p class="muted">GitHub releases unavailable.</p>
