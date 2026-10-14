@@ -64,7 +64,7 @@ update-desktop-database ~/.local/share/applications/ 2>/dev/null || true
 
 ## Windows
 
-Download the [OpenAlma v0.1.14 Beta installer](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.14)
+Download the [OpenAlma v0.1.15 Beta installer](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.15)
 to open OpenAlma from the Start menu without a terminal window. Beta is available
 on the Stable channel. Launcher startup/tests are verified; full Windows component
 installation remains separately qualified.
@@ -72,10 +72,12 @@ installation remains separately qualified.
 The launcher follows Edge's replacement process when it hands off startup, so
 that handoff no longer stops the server while the app window remains open.
 
-The [v0.1.12 release](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.12)
-includes Atomic's compatible prebuilt Windows server ZIP. Its `INSTALL.txt`
-covers extraction and the Node 24 dependency-install workaround; no Rust build
-is needed. Automatic Atomic binary installation is not part of this beta.
+The launcher downloads the matching Atomic Windows server during **Install**
+and prepares its web dependencies without Rust or
+Visual Studio. Working manual/debug binaries stay selected. Source-changing
+updates of unproven manual builds are refused rather than overwriting them.
+The compatible server package remains on Atomic's v0.1.12 release; the component
+manifest is unchanged.
 
 ## Notes
 

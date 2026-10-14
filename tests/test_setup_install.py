@@ -1,10 +1,12 @@
+import hashlib
 import json
 import sqlite3
 import subprocess
 import sys
 import threading
+import zipfile
 from contextlib import closing
-from io import StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 
 import pytest
@@ -613,19 +615,21 @@ def test_windows_package_shim_uses_comspec(tmp_path, monkeypatch):
         assert "fictional-install-ok" in (tmp_path / "install.log").read_text(encoding="utf-8")
 
 
-def test_optional_status_stops_at_real_manual_prerequisite(tmp_path, monkeypatch):
+@pytest.mark.parametrize("target_platform", ["linux", "win32"])
+def test_optional_status_stops_at_real_manual_prerequisite(tmp_path, monkeypatch, target_platform):
     atomic = tmp_path / "atomic"
     (atomic / "node_modules/vite").mkdir(parents=True)
     (atomic / "node_modules/vite/package.json").write_text("{}", encoding="utf-8")
     (atomic / "package.json").write_text(json.dumps({"devDependencies": {"vite": "1"}}), encoding="utf-8")
     monkeypatch.setattr(setup_install, "_OPERATION", None)
     monkeypatch.setattr(setup_install.shutil, "which", lambda _tool: "/usr/bin/npm")
+    monkeypatch.setattr(setup_install.sys, "platform", target_platform)
 
     status = setup_install.optional_setup_status("atomic", tmp_path)
 
     assert status["status_label"] == "Installation incomplete"
-    assert status["action_kind"] is None
-    assert "compile guidance" in status["detail"]
+    assert status["action_kind"] == ("install" if target_platform == "win32" else None)
+    assert ("run Install again" if target_platform == "win32" else "compile guidance") in status["detail"]
 
 
 def test_optional_status_accepts_atomic_debug_binary(tmp_path, monkeypatch):
@@ -641,6 +645,222 @@ def test_optional_status_accepts_atomic_debug_binary(tmp_path, monkeypatch):
     monkeypatch.setattr(setup_install.shutil, "which", lambda _tool: "/usr/bin/npm")
 
     assert setup_install.optional_setup_status("atomic", tmp_path)["ready"] is True
+
+
+@pytest.fixture
+def atomic_windows_package(tmp_path, monkeypatch):
+    entry = {"repository": "https://github.com/mekineer-com/atomic.git", "ref": "v0.1.12", "destination": "atomic"}
+    directory = tmp_path / "atomic"
+    directory.mkdir()
+    (directory / "package.json").write_text("{}", encoding="utf-8")
+    (directory / "node_modules").mkdir()
+    binary = directory / "target/server/atomic-server.exe"
+    head = {"value": "a" * 40}
+    source = f"\ufeffv0.1.12\r\n{head['value']}\r\nx86_64-pc-windows-msvc\r\n"
+    zipped = BytesIO()
+    with zipfile.ZipFile(zipped, "w") as package:
+        package.writestr("SOURCE.txt", source)
+        package.writestr("target/server/atomic-server.exe", b"fictional executable")
+        package.writestr("../outside.txt", b"must not be extracted")
+    payload = {"value": zipped.getvalue()}
+    asset = {"name": "Atomic-v0.1.12-Windows-x64.zip", "state": "uploaded",
+             "browser_download_url": "https://github.com/mekineer-com/atomic/releases/download/v0.1.12/Atomic-v0.1.12-Windows-x64.zip",
+             "digest": "sha256:" + hashlib.sha256(payload["value"]).hexdigest()}
+    release = {"tag_name": "v0.1.12", "draft": False, "prerelease": False, "assets": [asset]}
+    requests, commands = [], []
+    monkeypatch.setattr(setup_install.sys, "platform", "win32")
+    monkeypatch.setattr(setup_install, "_git_output", lambda *_args: head["value"])
+    monkeypatch.setattr(setup_install, "_remote_commit", lambda *_args: "a" * 40)
+    monkeypatch.setattr(setup_install, "_request_json", lambda url: requests.append(url) or release)
+    monkeypatch.setattr(setup_install.urllib.request, "urlopen", lambda *_args, **_kwargs: BytesIO(payload["value"]))
+    monkeypatch.setattr(setup_install, "_run", lambda command, **kwargs: commands.append((command, kwargs)))
+    monkeypatch.setattr(setup_install.settings, "atomic_server_binary", lambda _root: (
+        binary if binary.exists() or not (directory / "target/debug/atomic-server.exe").exists()
+        else directory / "target/debug/atomic-server.exe"
+    ))
+    monkeypatch.setattr(setup_install, "release_issue", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(setup_install.shutil, "which", lambda _tool: "npm")
+    return {"root": tmp_path, "directory": directory, "entry": entry, "binary": binary,
+            "head": head, "release": release, "payload": payload, "commands": commands, "requests": requests}
+
+
+def test_atomic_windows_download_checks_digest_and_retries(atomic_windows_package, monkeypatch):
+    case = atomic_windows_package
+    binary = case["binary"]
+    binary.parent.mkdir(parents=True)
+    binary.write_bytes(b"previous executable")
+    stamp = case["directory"] / "SOURCE.txt"
+    old_source = "v0.1.11\n" + "b" * 40 + "\nx86_64-pc-windows-msvc\n"
+    stamp.write_text(old_source, encoding="utf-8")
+    digest = case["release"]["assets"][0]["digest"]
+    case["release"]["assets"][0]["digest"] = "sha256:" + "0" * 64
+    with pytest.raises(setup_install.SetupError, match="SHA256 mismatch"):
+        setup_install._install_atomic_windows(case["entry"], case["root"], StringIO())
+    assert binary.read_bytes() == b"previous executable"
+    assert stamp.read_text(encoding="utf-8") == old_source
+    monkeypatch.setattr(setup_install, "_OPERATION", None)
+    status = setup_install.optional_setup_status("atomic", case["root"])
+    assert not status["ready"] and status["action_kind"] == "install"
+    case["release"]["assets"][0]["digest"] = digest
+    setup_install._install_atomic_windows(case["entry"], case["root"], StringIO())
+    assert binary.read_bytes() == b"fictional executable"
+    assert setup_install._atomic_source_matches(case["directory"], case["head"]["value"])
+    assert setup_install.optional_setup_status("atomic", case["root"])["ready"]
+    assert not (case["root"] / "outside.txt").exists()
+    assert case["commands"][-1][1]["timeout"] == 10
+    assert "/releases/tags/v0.1.12" in case["requests"][-1]
+    assert not list(binary.parent.glob(".atomic-install-*"))
+
+
+@pytest.mark.parametrize("field", [0, 1, 2])
+def test_atomic_windows_rejects_wrong_source(atomic_windows_package, field):
+    case = atomic_windows_package
+    source = ["v0.1.12", case["head"]["value"], "x86_64-pc-windows-msvc"]
+    source[field] = "incorrect"
+    zipped = BytesIO()
+    with zipfile.ZipFile(zipped, "w") as package:
+        package.writestr("SOURCE.txt", "\n".join(source))
+        package.writestr("target/server/atomic-server.exe", b"wrong executable")
+    case["payload"]["value"] = zipped.getvalue()
+    case["release"]["assets"][0]["digest"] = "sha256:" + hashlib.sha256(zipped.getvalue()).hexdigest()
+    with pytest.raises(setup_install.SetupError, match="source does not match"):
+        setup_install._install_atomic_windows(case["entry"], case["root"], StringIO())
+    assert not case["binary"].exists()
+
+
+def test_atomic_windows_preserves_selected_debug(atomic_windows_package):
+    case = atomic_windows_package
+    debug = case["directory"] / "target/debug/atomic-server.exe"
+    debug.parent.mkdir(parents=True)
+    debug.write_bytes(b"manual debug executable")
+    (case["directory"] / "SOURCE.txt").write_text("unrelated stamp", encoding="utf-8")
+    setup_install._install_atomic_windows(case["entry"], case["root"], StringIO())
+    assert debug.read_bytes() == b"manual debug executable"
+    assert not case["binary"].exists() and not case["requests"]
+    assert setup_install.optional_issue("atomic", case["root"]) == ""
+
+
+def test_atomic_windows_worker_retries_after_checkout_and_download_failure(atomic_windows_package, monkeypatch):
+    case = atomic_windows_package
+    case["head"]["value"] = "b" * 40
+    case["binary"].parent.mkdir(parents=True)
+    case["binary"].write_bytes(b"previous executable")
+    stamp = case["directory"] / "SOURCE.txt"
+    stamp.write_text("v0.1.11\n" + "b" * 40 + "\nx86_64-pc-windows-msvc\n", encoding="utf-8")
+    operation = setup_install.InstallOperation(service_name="atomic", root=case["root"])
+    monkeypatch.setattr(setup_install, "_OPERATION", operation)
+    monkeypatch.setattr(setup_install, "install_log_path", lambda _name: case["root"] / "install.log")
+    monkeypatch.setattr(setup_install, "_optional_entries", lambda *_args: [case["entry"]])
+    monkeypatch.setattr(setup_install, "_managed_checkout_state", lambda *_args: (case["directory"], case["head"]["value"]))
+    monkeypatch.setattr(setup_install, "_local_matching_checkout", lambda *_args: case["head"]["value"] == "a" * 40)
+    updates = []
+
+    def checkout(*_args):
+        updates.append(True)
+        case["head"]["value"] = "a" * 40
+
+    offline = True
+
+    def download(*_args, **_kwargs):
+        if offline:
+            raise OSError("Fictional download failure")
+        return BytesIO(case["payload"]["value"])
+
+    monkeypatch.setattr(setup_install, "_checkout_release", checkout)
+    monkeypatch.setattr(setup_install.urllib.request, "urlopen", download)
+    setup_install._install_optional(operation)
+    assert operation.state == "error" and "download failure" in operation.detail
+    assert case["binary"].read_bytes() == b"previous executable"
+    monkeypatch.setattr(setup_install, "_OPERATION", None)
+    assert not setup_install.optional_setup_status("atomic", case["root"])["ready"]
+    offline = False
+    monkeypatch.setattr(setup_install, "_OPERATION", operation)
+    setup_install._install_optional(operation)
+    assert operation.state == "ready" and updates == [True]
+    assert case["binary"].read_bytes() == b"fictional executable"
+    assert setup_install.optional_setup_status("atomic", case["root"])["ready"]
+
+
+@pytest.mark.parametrize("kind", ["debug", "server"])
+def test_atomic_manual_source_change_is_refused_before_checkout(atomic_windows_package, monkeypatch, kind):
+    case = atomic_windows_package
+    case["head"]["value"] = "b" * 40
+    manual = case["directory"] / f"target/{kind}/atomic-server.exe"
+    manual.parent.mkdir(parents=True)
+    manual.write_bytes(b"manual executable")
+    operation = setup_install.InstallOperation(service_name="atomic", root=case["root"])
+    monkeypatch.setattr(setup_install, "_OPERATION", operation)
+    monkeypatch.setattr(setup_install, "install_log_path", lambda _name: case["root"] / "install.log")
+    monkeypatch.setattr(setup_install, "_optional_entries", lambda *_args: [case["entry"]])
+    monkeypatch.setattr(setup_install, "_managed_checkout_state", lambda *_args: (case["directory"], "old-head"))
+    monkeypatch.setattr(setup_install, "_local_matching_checkout", lambda *_args: False)
+    monkeypatch.setattr(setup_install, "_checkout_release", lambda *_args: pytest.fail("Manual checkout must stay untouched"))
+    setup_install._install_optional(operation)
+    assert operation.state == "error" and "checkout was not changed" in operation.detail
+    assert manual.read_bytes() == b"manual executable"
+    assert not case["requests"] and not case["commands"]
+
+
+def test_atomic_manual_unchanged_head_with_missing_tag_is_preserved(atomic_windows_package, monkeypatch):
+    case = atomic_windows_package
+    debug = case["directory"] / "target/debug/atomic-server.exe"
+    debug.parent.mkdir(parents=True)
+    debug.write_bytes(b"manual executable")
+    operation = setup_install.InstallOperation(service_name="atomic", root=case["root"])
+    monkeypatch.setattr(setup_install, "_OPERATION", operation)
+    monkeypatch.setattr(setup_install, "install_log_path", lambda _name: case["root"] / "install.log")
+    monkeypatch.setattr(setup_install, "_optional_entries", lambda *_args: [case["entry"]])
+    monkeypatch.setattr(setup_install, "_managed_checkout_state", lambda *_args: (case["directory"], case["head"]["value"]))
+    monkeypatch.setattr(setup_install, "_local_matching_checkout", lambda *_args: False)
+    fetched = []
+    monkeypatch.setattr(setup_install, "_checkout_release", lambda *_args: fetched.append(True))
+    setup_install._install_optional(operation)
+    assert operation.state == "ready" and fetched == [True]
+    assert debug.read_bytes() == b"manual executable" and not case["binary"].exists()
+    assert not case["requests"]
+
+
+def test_atomic_malformed_tag_does_not_report_ready(atomic_windows_package, monkeypatch):
+    case = atomic_windows_package
+    case["binary"].parent.mkdir(parents=True)
+    case["binary"].write_bytes(b"previous executable")
+    (case["directory"] / "SOURCE.txt").write_text("invalid tag\n" + case["head"]["value"] + "\nx86_64-pc-windows-msvc\n", encoding="utf-8")
+    monkeypatch.setattr(setup_install, "_OPERATION", None)
+    assert not setup_install.optional_setup_status("atomic", case["root"])["ready"]
+    setup_install._install_atomic_windows(case["entry"], case["root"], StringIO())
+    assert setup_install.optional_setup_status("atomic", case["root"])["ready"]
+
+
+def test_atomic_windows_source_write_failure_stays_incomplete(atomic_windows_package, monkeypatch):
+    case = atomic_windows_package
+    stamp = case["directory"] / "SOURCE.txt"
+    stamp.write_text("malformed old source", encoding="utf-8")
+    replace = Path.replace
+
+    def fail_stamp(path, target):
+        if path.name == "SOURCE.txt":
+            raise OSError("Fictional source publication failure")
+        return replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", fail_stamp)
+    with pytest.raises(OSError, match="publication failure"):
+        setup_install._install_atomic_windows(case["entry"], case["root"], StringIO())
+    assert case["binary"].exists()
+    monkeypatch.setattr(setup_install, "_OPERATION", None)
+    status = setup_install.optional_setup_status("atomic", case["root"])
+    assert not status["ready"] and status["action_kind"] == "install"
+    monkeypatch.setattr(Path, "replace", replace)
+    setup_install._install_atomic_windows(case["entry"], case["root"], StringIO())
+    assert setup_install.optional_setup_status("atomic", case["root"])["ready"]
+
+
+@pytest.mark.parametrize("target_platform", ["linux", "win32"])
+def test_atomic_dependency_command_preserves_platform_behavior(tmp_path, monkeypatch, target_platform):
+    monkeypatch.setattr(setup_install.sys, "platform", target_platform)
+    monkeypatch.setattr(setup_install, "_npm_command", lambda *args: list(args))
+    command, directory = setup_install._optional_commands("atomic", tmp_path)[0]
+    assert directory == tmp_path / "atomic"
+    assert command == (["ci", "--ignore-scripts", "--include=dev", "--include=optional"] if target_platform == "win32" else ["ci"])
 
 
 def test_partial_node_modules_is_not_setup_complete(tmp_path):

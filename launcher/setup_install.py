@@ -1,9 +1,11 @@
 """Incremental repository setup owned by the launcher process."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import sqlite3
 import stat
@@ -15,6 +17,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -272,12 +275,12 @@ def _write_release(root: Path, filename: str, tag: str) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def _run(command: list[str] | str, *, cwd: Path | None, log: Any) -> None:
+def _run(command: list[str] | str, *, cwd: Path | None, log: Any, timeout: float | None = None) -> None:
     printable = command if isinstance(command, str) else " ".join(command)
     log.write(f"\n$ {printable}\n")
     log.flush()
     subprocess.run(
-        command, cwd=cwd, stdout=log, stderr=subprocess.STDOUT, text=True, check=True,
+        command, cwd=cwd, stdout=log, stderr=subprocess.STDOUT, text=True, check=True, timeout=timeout,
         **hidden_process_kwargs(),
     )
 
@@ -881,8 +884,78 @@ def optional_issue(service_name: str, root: Path) -> str:
     if service_name == "atomic":
         binary = settings.atomic_server_binary(root)
         if not binary.exists():
-            return "Missing Atomic server binary; follow the compile guidance"
+            return ("Missing Atomic Windows server package; run Install again" if sys.platform == "win32"
+                    else "Missing Atomic server binary; follow the compile guidance")
+        if sys.platform == "win32" and binary.parent == root / "atomic/target/server" and (root / "atomic/SOURCE.txt").exists():
+            try:
+                head = _git_output(["git", "rev-parse", "HEAD"], root / "atomic")
+            except SetupError as exc:
+                return str(exc)
+            if not _atomic_source_matches(root / "atomic", head):
+                return "Atomic server package does not match its checkout; run Install again"
     return ""
+
+
+def _atomic_source_matches(directory: Path, head: str) -> bool:
+    try:
+        source = (directory / "SOURCE.txt").read_text(encoding="utf-8-sig").splitlines()
+        if len(source) != 3:
+            return False
+        release_version(source[0])
+    except (OSError, ValueError):
+        return False
+    return source[1] == head and source[2] == "x86_64-pc-windows-msvc"
+
+
+def _install_atomic_windows(entry: dict[str, str], root: Path, log: Any) -> None:
+    directory = root / entry["destination"]
+    head = _git_output(["git", "rev-parse", "HEAD"], directory)
+    binary = directory / "target/server/atomic-server.exe"
+    selected = settings.atomic_server_binary(root)
+    if selected.exists() and (
+        selected != binary or not (directory / "SOURCE.txt").exists() or _atomic_source_matches(directory, head)
+    ):
+        log.write(f"Keeping existing Atomic server: {selected}\n")
+        return
+    repository = entry["repository"].rstrip("/").removesuffix(".git")
+    tag = urllib.parse.quote(entry["ref"], safe="")
+    name = f"Atomic-{entry['ref']}-Windows-x64.zip"
+    url = f"{repository}/releases/download/{tag}/{urllib.parse.quote(name, safe='')}"
+    try:
+        release = _request_json(f"https://api.github.com/repos/{urllib.parse.urlsplit(repository).path.strip('/')}/releases/tags/{tag}")
+    except SetupError as exc:
+        raise SetupError(f"Atomic {entry['ref']} Windows package lookup failed: {exc}") from exc
+    asset = next((item for item in release.get("assets") or [] if isinstance(item, dict) and item.get("name") == name), None)
+    if (release.get("tag_name") != entry["ref"] or release.get("draft") is not False
+            or release.get("prerelease") is not False or not asset or asset.get("state") != "uploaded"
+            or asset.get("browser_download_url") != url):
+        raise SetupError(f"No Windows server package published for Atomic {entry['ref']}")
+    digest = asset.get("digest", "")
+    if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+        raise SetupError("Atomic Windows package has no SHA256 digest")
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    log.write(f"Downloading {url}\n")
+    log.flush()
+    with tempfile.TemporaryDirectory(prefix=".atomic-install-", dir=binary.parent) as temporary:
+        archive = Path(temporary) / "server.zip"
+        with urllib.request.urlopen(urllib.request.Request(url, headers=_HEADERS), timeout=30) as response, archive.open("wb") as target:
+            shutil.copyfileobj(response, target)
+        with archive.open("rb") as downloaded:
+            if f"sha256:{hashlib.file_digest(downloaded, 'sha256').hexdigest()}" != digest:
+                raise SetupError("Atomic Windows package SHA256 mismatch")
+        prepared = Path(temporary) / "atomic-server.exe"
+        with zipfile.ZipFile(archive) as package:
+            source = package.read("SOURCE.txt").decode("utf-8-sig")
+            if source.splitlines() != [entry["ref"], head, "x86_64-pc-windows-msvc"]:
+                raise SetupError("Atomic Windows package source does not match its checkout")
+            with package.open("target/server/atomic-server.exe") as executable, prepared.open("wb") as target:
+                shutil.copyfileobj(executable, target)
+        _run([str(prepared), "--help"], cwd=directory, log=log, timeout=10)
+        stamp = Path(temporary) / "SOURCE.txt"
+        stamp.write_text(source, encoding="utf-8", newline="")
+        prepared.replace(binary)
+        # ponytail: first-install interruption here is a manual binary; a pending stamp can add recovery if needed.
+        stamp.replace(directory / "SOURCE.txt")
 
 
 def start_issue(service_name: str, root: Path) -> str:
@@ -920,7 +993,8 @@ def _optional_commands(service_name: str, root: Path) -> list[tuple[list[str] | 
     if service_name == "iris-server":
         return [(_bun_command("install", "--frozen-lockfile"), root / "mentra-os/miniapps/openalma")]
     if service_name == "atomic":
-        return [(_npm_command("ci"), root / "atomic")]
+        flags = ("--ignore-scripts", "--include=dev", "--include=optional") if sys.platform == "win32" else ()
+        return [(_npm_command("ci", *flags), root / "atomic")]
     if service_name == "sillytavern":
         return [
             (_npm_command("ci"), root / "sillytavern/SillyTavern"),
@@ -953,6 +1027,13 @@ def _install_optional(operation: InstallOperation) -> None:
                 destination = operation.root / entry["destination"]
                 if destination in existing_paths:
                     if not _local_matching_checkout(destination, entry["repository"], entry["ref"]):
+                        if operation.service_name == "atomic" and sys.platform == "win32":
+                            binary = settings.atomic_server_binary(operation.root)
+                            head = _git_output(["git", "rev-parse", "HEAD"], destination)
+                            changing = binary.exists() and head != _remote_commit(entry["repository"], entry["ref"])
+                            if changing and (binary.parent != destination / "target/server"
+                                             or not _atomic_source_matches(destination, head)):
+                                raise SetupError("Existing manual Atomic server cannot be updated automatically; its checkout was not changed")
                         _checkout_release(entry, destination, log)
                 else:
                     _clone(entry, operation.root, log)
@@ -964,8 +1045,11 @@ def _install_optional(operation: InstallOperation) -> None:
             for command, cwd in _optional_commands(operation.service_name, operation.root):
                 _set_operation(operation, step=f"Installing dependencies in {cwd.name}")
                 _run(command, cwd=cwd, log=log)
+            if operation.service_name == "atomic" and sys.platform == "win32":
+                _set_operation(operation, step="Installing Atomic Windows server")
+                _install_atomic_windows(entries[0], operation.root, log)
             issue = optional_issue(operation.service_name, operation.root)
-            if issue and operation.service_name != "atomic":
+            if issue and (operation.service_name != "atomic" or sys.platform == "win32"):
                 raise SetupError(issue)
         detail = optional_issue(operation.service_name, operation.root)
         _RELEASE_ISSUE_CACHE.clear()
@@ -1214,7 +1298,7 @@ def optional_setup_status(service_name: str, root: Path) -> dict[str, Any]:
     manual = _optional_tool_issue(service_name) or (
         _iris_workspace_issue(root) if service_name == "iris-server" else ""
     )
-    if service_name == "atomic" and present and _node_dependencies_ready(root / "atomic", include_dev=True):
+    if service_name == "atomic" and sys.platform != "win32" and present and _node_dependencies_ready(root / "atomic", include_dev=True):
         manual = issue
     detail = operation["detail"] if operation["state"] == "error" else (manual or issue)
     action = not present or not manual
