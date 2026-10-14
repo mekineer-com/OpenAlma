@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import platform
@@ -938,8 +939,12 @@ def _install_atomic_windows(entry: dict[str, str], root: Path, log: Any) -> None
     log.flush()
     with tempfile.TemporaryDirectory(prefix=".atomic-install-", dir=binary.parent) as temporary:
         archive = Path(temporary) / "server.zip"
-        with urllib.request.urlopen(urllib.request.Request(url, headers=_HEADERS), timeout=30) as response, archive.open("wb") as target:
-            shutil.copyfileobj(response, target)
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=_HEADERS), timeout=30) as response, archive.open("wb") as target:
+                shutil.copyfileobj(response, target)
+        except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.IncompleteRead) as exc:
+            log.write(f"Atomic package download failed: {exc}\n")
+            raise SetupError("Update failed. Reconnect and try again.") from exc
         with archive.open("rb") as downloaded:
             if f"sha256:{hashlib.file_digest(downloaded, 'sha256').hexdigest()}" != digest:
                 raise SetupError("Atomic Windows package SHA256 mismatch")

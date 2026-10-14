@@ -740,7 +740,13 @@ def test_atomic_windows_preserves_selected_debug(atomic_windows_package):
     assert setup_install.optional_issue("atomic", case["root"]) == ""
 
 
-def test_atomic_windows_worker_retries_after_checkout_and_download_failure(atomic_windows_package, monkeypatch):
+@pytest.mark.parametrize("failure", [
+    setup_install.urllib.error.URLError("Fictional download failure"),
+    TimeoutError("Fictional download timeout"),
+    ConnectionResetError("Fictional download reset"),
+    setup_install.http.client.IncompleteRead(b"partial download", 100),
+])
+def test_atomic_windows_worker_retries_after_checkout_and_download_failure(atomic_windows_package, monkeypatch, failure):
     case = atomic_windows_package
     case["head"]["value"] = "b" * 40
     case["binary"].parent.mkdir(parents=True)
@@ -763,13 +769,16 @@ def test_atomic_windows_worker_retries_after_checkout_and_download_failure(atomi
 
     def download(*_args, **_kwargs):
         if offline:
-            raise OSError("Fictional download failure")
+            raise failure
         return BytesIO(case["payload"]["value"])
 
     monkeypatch.setattr(setup_install, "_checkout_release", checkout)
     monkeypatch.setattr(setup_install.urllib.request, "urlopen", download)
     setup_install._install_optional(operation)
-    assert operation.state == "error" and "download failure" in operation.detail
+    assert operation.state == "error"
+    assert operation.detail == "Update failed. Reconnect and try again."
+    assert str(failure) in (case["root"] / "install.log").read_text(encoding="utf-8")
+    assert setup_install.optional_setup_status("atomic", case["root"])["detail"] == operation.detail
     assert case["binary"].read_bytes() == b"previous executable"
     monkeypatch.setattr(setup_install, "_OPERATION", None)
     assert not setup_install.optional_setup_status("atomic", case["root"])["ready"]
