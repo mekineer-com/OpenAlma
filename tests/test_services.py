@@ -764,7 +764,7 @@ for (const state of ['running', 'starting']) {
 ''', str(template)], check=True, capture_output=True, text=True)
     from jinja2 import Environment
 
-    actions = template.read_text().split('<td class="svc-actions">', 1)[1].split('</td>', 1)[0]
+    actions = template.read_text(encoding="utf-8").split('<td class="svc-actions">', 1)[1].split('</td>', 1)[0]
     renderer = Environment(autoescape=True).from_string(actions)
     for state in ("starting", "running"):
         html = renderer.render(s={"name": "memu-server", "state": state, "running": True,

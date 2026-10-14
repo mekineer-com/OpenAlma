@@ -16,7 +16,7 @@ class BootstrapTest(unittest.TestCase):
         function = next(node for node in ast.parse(source.read_text()).body
                         if isinstance(node, ast.FunctionDef) and node.name == "_bootstrap")
         with tempfile.TemporaryDirectory() as directory:
-            launcher = Path(directory)
+            launcher = Path(directory).resolve()
             environment = launcher / ".venv"
             requirements = launcher / "requirements.txt"
             requirements.write_text("first-package==1\n")

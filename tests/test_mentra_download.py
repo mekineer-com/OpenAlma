@@ -84,7 +84,7 @@ vm.runInThisContext(source.slice(source.indexOf('function pollStatus'), source.i
   console.log(JSON.stringify(results));
 })();
 """
-    rows = json.loads(subprocess.check_output(["node", "-e", script, str(root)], text=True))
+    rows = json.loads(subprocess.check_output(["node", "-e", script, str(root)], text=True, encoding="utf-8"))
     for status, actions in rows[:5]:
         assert 'href="https://openalma.org/mentra"' not in status
         assert 'href="https://github.com/mekineer-com/MentraOS/releases"' in status
