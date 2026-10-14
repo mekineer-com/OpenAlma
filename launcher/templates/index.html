@@ -61,6 +61,7 @@
       <tr data-service="{{ s.name }}" data-runtime="{{ 'false' if s.install_setup else 'true' }}">
         <td>{{ s.label }}</td>
         <td class="svc-status">
+          {% if s.name == 'iris-server' %}<div class="svc-detail"><a href="https://openalma.org/mentra">https://openalma.org/mentra</a></div>{% endif %}
           <span class="{{ s.state }}">{{ s.status_label }}</span>
           {% if s.detail %}<div class="svc-detail">{{ s.detail }}</div>{% endif %}
           {% if s.children %}
@@ -82,6 +83,7 @@
             {% elif s.action_kind == 'install' %}
             <form class="inline" method="post" action="/install/iris-server"><button class="btn" type="submit">{{ s.action_label or 'Install' }}</button></form>
             {% endif %}
+            <a class="btn" href="/mentra/apk" aria-label="OpenAlma Mentra APK download QR">QR</a>
             <a class="btn" href="/iris">Setup</a>
           {% elif s.install_running %}
             <span class="spinner" role="status" aria-label="Installing"></span>
@@ -363,13 +365,14 @@ function pollStatus(name) {
         }).join('; ');
         html += '</div>';
       }
-      statusCell.innerHTML = html;
+      var mentraLink = name === 'iris-server' ? '<div class="svc-detail"><a href="https://openalma.org/mentra">https://openalma.org/mentra</a></div>' : '';
+      statusCell.innerHTML = mentraLink + html;
       var starting = pendingStarts[name] > Date.now() && !data.stoppable && data.startable !== false;
       if (pendingStops[name]) {
-        statusCell.innerHTML = '<span class="starting">◐ waiting for graceful shutdown</span>';
-        actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Stopping"></span>';
+        statusCell.innerHTML = mentraLink + '<span class="starting">◐ waiting for graceful shutdown</span>';
+        actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Stopping"></span>' + (name === 'iris-server' ? irisParentActions({install_enabled: false}) : '');
       } else if (starting) {
-        actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Starting"></span>';
+        actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Starting"></span>' + (name === 'iris-server' ? irisParentActions({install_enabled: false}) : '');
       } else {
         delete pendingStarts[name];
         actionsCell.innerHTML = actionHtml(name, data);

@@ -100,7 +100,7 @@ console.log(JSON.stringify(JSON.parse(process.argv[2]).map(row=>actionHtml(row.n
         if row["name"] == "iris-server":
             assert "Stock Install" not in initial + dynamic
             assert 'action="/iris/install"' not in initial + dynamic
-    assert labels(polled[2]) == ["Setup"]
+    assert labels(polled[2]) == ["QR", "Setup"]
     assert 'href="/hermes?pair=1"' in polled[-1]
 
 
@@ -140,7 +140,11 @@ def test_iris_setup_names_open_existing_rename_and_live_fallback_is_readonly():
     assert 'action="/iris/installations/confirmed-app/rename"' in confirmed
     assert 'action="/iris/install"' in confirmed
     assert '<summary>Rename</summary>' not in html
-    assert '>Stock Install</button>' not in html
+    assert '>Install Iris in Stock Mentra</button>' not in html
+    stock = html.split('<details id="iris-stock-installation"', 1)[1].split('</details>', 1)[0]
+    assert 'open' not in stock.split('>', 1)[0]
+    assert 'data-device-session-id="confirmed-app"' not in stock
+    assert 'action="/iris/install"' not in stock
     assert 'data-device-session-id="forgotten-app"' not in html
     html = env.get_template("iris.html").render(**context, selected_installation=installations[1])
     live = html.split('data-device-session-id="forgotten-app"', 1)[1].split("</li>", 1)[0]

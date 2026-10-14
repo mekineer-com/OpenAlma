@@ -10,7 +10,6 @@
     <p class="muted">Disabled. Enable Mentra in <code>mcp-memu-server/config.json</code> to use Iris.</p>
   {% else %}
     <h3 class="iris-section">memU Server readiness</h3>
-    <p class="hint">These checks run on the OpenAlma server; they do not check your phone.</p>
     <ul class="checklist">
       {% for row in iris_setup.rows %}
         <li><span class="{{ row.state }}">{{ "✓" if row.state == "ready" else "!" }} {{ 'OpenAlma address' if row.label == 'Phone address' else row.label }}</span> — {{ row.detail }}</li>
@@ -26,31 +25,16 @@
       <button class="btn" type="submit" {% if installer_busy %}disabled{% endif %}>Save</button>
     </form>
     <p id="iris-address-busy" class="hint" {% if not installer_busy %}hidden{% endif %}>Finish or cancel the Iris installer before saving a new address; it uses the address captured when it starts.</p>
-    <p class="hint iris-address-hint">Use the server address assigned by your private network. Saving does not configure the VPN or server listener.</p>
-    <p class="hint">The phone address must expose only Mentra routes through your private proxy; keep memU Server on loopback.</p>
-    <p class="hint">For first installation, Iris receives this address automatically. If you change it later, also change it in Iris's Edit Connection and OpenAlma Mentra's Settings, where applicable.</p>
-    <p class="hint">Use a trusted private VPN or connection. Devices allowed to reach this endpoint can access the Soul's Iris data; trust the permitted devices and network access rules.</p>
-
-    <h3 class="iris-section">Phone steps</h3>
     <ol class="tight">
-      <li>Make the OpenAlma address above reachable through your trusted private connection.</li>
-      <li>Connect the phone to that private VPN or connection.</li>
-      <li>Install Mentra: <a href="https://github.com/mekineer-com/MentraOS/releases">OpenAlma Mentra</a> (recommended for Iris automation) or <a href="https://play.google.com/store/apps/details?id=com.mentra.mentra">Stock Mentra</a>.</li>
-      <li>Signing in to OpenAlma Mentra: choose OpenAlma if Android offers sign-in apps, or use email sign-in.</li>
-      <li>For OpenAlma Mentra, enter the OpenAlma address in its Settings if the default does not connect.</li>
-      <li>Install or update Iris using the installer below, then open it once.</li>
-      <li>Allow Mentra microphone access. Android/Mentra asks for camera or photo access when needed.</li>
-      <li>Choose a Soul on the phone, then tap Start to talk; listen for the beep.</li>
+      <li>First connect your phone and server through WireGuard or another trusted private connection.</li>
+      <li>If the default IP doesn't work, save the server address assigned by your private network above.</li>
+      <li>Install OpenAlma Mentra from the <a href="/">main page</a>, open it and sign in. If its address differs, enter the address above in the phone app's Settings.</li>
+      <li>Install Iris from the <a href="/">main page</a>: click Install beside that phone app in Services. Keep OpenAlma Mentra in the foreground, then open Iris.</li>
     </ol>
+    <p class="hint"><a href="https://openalma.org/mentra#connection">Connection help</a>. Saving the address does not configure the private connection or server listener.</p>
 
     <h3 class="iris-section">Iris installer</h3>
     <p id="iris-installer-status" class="failure" role="alert">{% if iris.blocked %}{{ iris.detail or 'Iris installer port 6789 is occupied. Free the port before installing.' }}{% elif iris.ready is sameas false %}{{ iris.status_label }}: {{ iris.detail }}{% elif iris.installations is not defined %}Iris app status is unavailable.{% endif %}</p>
-    {% if not selected_installation %}
-    <form method="post" action="/iris/install" id="iris-install-form">
-      <p><button class="btn" type="submit" {% if install_disabled or not iris.available_package or not iris.available_version %}disabled{% endif %}>Stock Install</button></p>
-    </form>
-    <p class="hint">For Stock Mentra, click Stock Install and scan the Iris QR below. For OpenAlma Mentra, use Install beside its app in Services.</p>
-    {% endif %}
     {% if iris.github_status == "unavailable" %}
       <p class="muted">GitHub releases unavailable.</p>
     {% elif iris.github_status == "none" %}
@@ -67,12 +51,36 @@
         <code>{{ iris.release_device_session_id }}</code>. Cancel this installer before installing on another app.</p>
       {% endif %}
     {% endif %}
-    {% if iris.running and iris.release_uri and iris.release_host_package == 'com.mentra.mentra' %}
+    {% if iris.running and iris.release_host_package == 'com.mentra.mentra.openalma' %}
+      <p class="ready">Bring the targeted OpenAlma Mentra app to the foreground to install automatically. No QR is needed.</p>
+    {% endif %}
+    {% if iris.force_stoppable %}<p><button class="btn" type="button" onclick="irisAction('force-stop', this)">Force Stop</button></p>
+    {% elif iris.stoppable %}<p><button class="btn" type="button" onclick="irisAction('stop', this)">Cancel</button></p>{% endif %}
+    {% elif installer_busy %}<p class="muted">Another Iris installation is in progress.</p>{% endif %}
+    <p id="iris-action-error" class="failure" role="alert"></p>
+
+    <details id="iris-stock-installation" {% if (show_installer and installer_busy and iris.release_host_package == 'com.mentra.mentra') or (selected_installation and selected_installation.host_package == 'com.mentra.mentra') %}open{% endif %}>
+      <summary>Stock Mentra Installation</summary>
+      <h4>1. Install Mentra on your phone</h4>
+      <p>Make the OpenAlma address above reachable through your trusted private connection and connect the phone to it.</p>
+      <p><a href="https://play.google.com/store/apps/details?id=com.mentra.mentra">Install Mentra</a> and sign in.</p>
+      <h4>2. Install Iris inside Mentra</h4>
+      {% if not selected_installation %}
+      <form method="post" action="/iris/install" id="iris-install-form">
+        <p><button class="btn" type="submit" {% if install_disabled or not iris.available_package or not iris.available_version %}disabled{% endif %}>Install Iris in Stock Mentra</button></p>
+      </form>
+      <p class="hint">Click Install Iris in Stock Mentra to generate the Iris installation QR. Scan it using Stock Mentra's Miniapp Developer Settings, following the instructions below.</p>
+      {% elif selected_installation.host_package == 'com.mentra.mentra' %}
+      <p class="hint">Use Install or Update in App status to generate the Iris installation QR. Scan it using Stock Mentra's Miniapp Developer Settings, following the instructions below.</p>
+      {% else %}
+      <p class="hint">Use <a href="/iris">General Iris setup</a> to install Iris in Stock Mentra.</p>
+      {% endif %}
+      {% if show_installer and iris.running and iris.release_uri and iris.release_host_package == 'com.mentra.mentra' %}
       <p>Scan this QR in Stock Mentra (one app installation only):</p>
       <canvas id="iris-install-qr" width="220" height="220"></canvas>
       <p><a href="{{ iris.release_uri }}">Open installation link</a></p>
       {% if iris.release_device_session_id %}<p>Phone ID: <code>{{ iris.release_device_session_id }}</code></p>{% endif %}
-      <p>Stock Mentra installation:</p>
+      {% endif %}
       <ol class="tight">
         <li>Open Mentra Settings.</li>
         <li>If Miniapp Developer Settings is missing, tap the release number ten times.</li>
@@ -80,15 +88,12 @@
         <li>Scan this QR, then open Iris.</li>
         <li>For an Update, dismiss Iris from Mentra's app switcher, then reopen it.</li>
         <li>Wait for OpenAlma to confirm installation; cleanup is automatic.</li>
-        <li>Choose the Soul in Iris on the phone.</li>
       </ol>
-    {% elif iris.running and iris.release_host_package == 'com.mentra.mentra.openalma' %}
-      <p class="ready">Bring the targeted OpenAlma Mentra app to the foreground to install automatically. No QR is needed.</p>
-    {% endif %}
-    {% if iris.force_stoppable %}<p><button class="btn" type="button" onclick="irisAction('force-stop', this)">Force Stop</button></p>
-    {% elif iris.stoppable %}<p><button class="btn" type="button" onclick="irisAction('stop', this)">Cancel</button></p>{% endif %}
-    {% elif installer_busy %}<p class="muted">Another Iris installation is in progress.</p>{% endif %}
-    <p id="iris-action-error" class="failure" role="alert"></p>
+      <h4>3. Open Iris and talk</h4>
+      <p>Open Iris inside Mentra on your phone.</p>
+      <p>Allow Mentra microphone access. Android/Mentra asks for camera or photo access when needed.</p>
+      <p>Choose or create a Soul on the phone, then tap Start to talk; listen for the beep.</p>
+    </details>
 
     {% if selected_installation %}
     <h3>App status</h3>
@@ -122,7 +127,7 @@
         </form>
         {% endif %}
       </li>
-      {% else %}<li class="muted">No app installations reported. Use Stock Install, or connect OpenAlma Mentra in its Settings.</li>{% endfor %}
+      {% else %}<li class="muted">No app installations reported. Connect OpenAlma Mentra in its Settings, or use Stock Mentra Installation above.</li>{% endfor %}
     </ul>
     <p class="hint">Forget removes only this launcher record, not phone storage, chats or memories. Close the app and wait 15 seconds first; opening it again restores its row. Update updates Iris, not the Mentra host app. Repair preserves the installation identity and is available only for idle OpenAlma Mentra.</p>
     <p><a href="/iris">General Iris setup</a></p>

@@ -146,15 +146,28 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
         if page.startswith("/iris"):
             visible = response.text.split('<script src="/static/vendor/qrcode.min.js">', 1)[0]
             assert "OpenAlma Mentra" in visible
-            assert "choose OpenAlma if Android offers sign-in apps, or use email sign-in" in visible
+            assert "open it and sign in" in visible
+            assert "choose OpenAlma if Android offers sign-in apps" not in visible
             assert 'href="https://play.google.com/store/apps/details?id=com.mentra.mentra"' in visible
-            assert "trusted private VPN or connection" in visible
-            assert "only Mentra routes through your private proxy" in visible
-            assert "Choose a Soul on the phone" in visible
-            assert 'href="https://github.com/mekineer-com/MentraOS/releases"' in visible
-            assert visible.index('>Phone steps</h3>') < visible.index('>Iris installer</h3>')
-            assert "they do not check your phone" in visible
-            assert "For first installation, Iris receives this address automatically" in visible
+            assert "First connect your phone and server through WireGuard or another trusted private connection" in visible
+            assert 'href="https://openalma.org/mentra#connection"' in visible
+            assert "only Mentra routes through your private proxy" not in visible
+            assert "they do not check your phone" not in visible
+            assert "For first installation, Iris receives this address automatically" not in visible
+            assert "Devices allowed to reach this endpoint" not in visible
+            steps = visible.split('id="iris-address-busy"', 1)[1].split('<ol class="tight">', 1)[1].split('</ol>', 1)[0]
+            assert steps.count('<li>') == 4
+            assert steps.count('href="/">main page</a>') == 2
+            assert "phone app's Settings" in steps
+            assert "click Install beside that phone app in Services" in steps
+            assert "Keep OpenAlma Mentra in the foreground" in steps
+            stock = visible.split('<details id="iris-stock-installation"', 1)[1].split('</details>', 1)[0]
+            assert '<summary>Stock Mentra Installation</summary>' in stock
+            assert 'href="https://play.google.com/store/apps/details?id=com.mentra.mentra"' in stock
+            assert "Miniapp Developer Settings" in stock
+            assert "Choose or create a Soul on the phone" in stock
+            assert 'id="iris-installer-status"' not in stock
+            assert 'id="iris-action-error"' not in stock
             selected = next((row for row in installations if page.endswith("=" + row["device_session_id"])), None)
             for row in installations:
                 if row is selected:
@@ -169,15 +182,17 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
                     assert row["soul_id"] not in visible
             if selected:
                 assert f'<h2>{selected["display_name"]} setup</h2>' in visible
-                assert '>Stock Install</button>' not in visible
+                assert '>Install Iris in Stock Mentra</button>' not in visible
                 forget = visible.split('data-forget>', 1)[1].split('</form>', 1)[0]
                 assert 'disabled' in forget
             else:
-                assert '>Stock Install</button>' in visible
+                assert '>Install Iris in Stock Mentra</button>' in stock
                 for row in installations:
                     assert f'href="/iris?device_session_id={row["device_session_id"]}"' in visible
             assert ('id="iris-install-qr"' in visible) == (selected is not installations[1])
             assert ("Stock installer active" in visible) == (selected is not installations[1])
+            assert ('id="iris-install-qr"' in stock) == (selected is not installations[1])
+            assert ('open' in stock.split('>', 1)[0]) == (selected is not installations[1])
     installations[1]["host_reporting"] = False
     visible = client.get("/iris?device_session_id=fork-test").text
     assert 'disabled' not in visible.split('data-forget>', 1)[1].split('</form>', 1)[0]
@@ -203,6 +218,28 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
     })
     visible = client.get("/iris").text
     assert 'disabled' not in visible.split('id="iris-install-form">', 1)[1].split('</form>', 1)[0]
+    assert 'open' not in visible.split('<details id="iris-stock-installation"', 1)[1].split('>', 1)[0]
+    for state in ("running", "starting", "stuck", "orphaned"):
+        monkeypatch.setattr(services, "status", lambda _spec, state=state: {
+            "installations": installations, state: True, "stoppable": True,
+            "release_device_session_id": "stock-test", "release_host_package": "com.mentra.mentra",
+        })
+        for page in ("/iris", "/iris?device_session_id=stock-test"):
+            visible = client.get(page).text
+            stock = visible.split('<details id="iris-stock-installation"', 1)[1].split('</details>', 1)[0]
+            assert 'open' in stock.split('>', 1)[0]
+            assert '>Cancel</button>' in visible and '>Cancel</button>' not in stock
+    monkeypatch.setattr(services, "status", lambda _spec: {
+        "installations": installations, "running": True, "force_stoppable": True,
+        "release_device_session_id": "fork-test", "release_host_package": "com.mentra.mentra.openalma",
+    })
+    for page in ("/iris", "/iris?device_session_id=fork-test"):
+        visible = client.get(page).text
+        stock = visible.split('<details id="iris-stock-installation"', 1)[1].split('</details>', 1)[0]
+        assert 'open' not in stock.split('>', 1)[0]
+        assert "Bring the targeted OpenAlma Mentra app to the foreground" in visible
+        assert "Bring the targeted OpenAlma Mentra app to the foreground" not in stock
+        assert '>Force Stop</button>' in visible and '>Force Stop</button>' not in stock
     with pytest.MonkeyPatch.context() as unavailable:
         unavailable.setattr(services, "status", lambda _spec: {"state": "unavailable"})
         assert client.get("/iris?device_session_id=stock-test").status_code == 503

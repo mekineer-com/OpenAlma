@@ -1,5 +1,5 @@
 function irisParentActions(data) {
-  var links = ' <a class="btn" href="/iris">Setup</a>';
+  var links = ' <a class="btn" href="/mentra/apk" aria-label="OpenAlma Mentra APK download QR">QR</a> <a class="btn" href="/iris">Setup</a>';
   if (data.install_enabled === false) return links;
   if (data.install_running || data.state === 'stopping') {
     return '<span class="spinner" role="status" aria-label="Working"></span>' +

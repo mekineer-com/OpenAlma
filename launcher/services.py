@@ -1009,6 +1009,41 @@ def _iris_semver(value: str) -> tuple[int, int, int] | None:
     return tuple(map(int, match.groups())) if match else None
 
 
+def mentra_apk_download() -> tuple[str | None, str]:
+    """Resolve the published fork APK using the phone updater's asset convention."""
+    try:
+        request = urllib.request.Request(
+            "https://api.github.com/repos/mekineer-com/MentraOS/releases/latest",
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "OpenAlma-launcher"},
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            release = json.load(response)
+        if not isinstance(release, dict) or release.get("draft") is not False or release.get("prerelease") is not False:
+            return None, "No supported OpenAlma Mentra APK in the latest release."
+        tag = str(release.get("tag_name") or "")
+        if _iris_semver(tag) is None:
+            return None, "No supported OpenAlma Mentra APK in the latest release."
+        version = tag.removeprefix("v")
+        candidates = []
+        for asset in release.get("assets") or []:
+            if not isinstance(asset, dict):
+                continue
+            name = str(asset.get("name") or "")
+            match = re.fullmatch(rf"OpenAlma-Mentra-{re.escape(version)}-([1-9]\d*)\.apk", name)
+            url = f"https://github.com/mekineer-com/MentraOS/releases/download/{urllib.parse.quote(tag, safe='')}/{urllib.parse.quote(name, safe='')}"
+            if (match and asset.get("state") == "uploaded"
+                    and isinstance(asset.get("size"), (int, float)) and asset["size"] > 0
+                    and asset.get("browser_download_url") == url):
+                candidates.append((int(match[1]), url))
+        return (max(candidates)[1], "") if candidates else (None, "No supported OpenAlma Mentra APK in the latest release.")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None, "No OpenAlma Mentra APK published yet."
+    except (OSError, ValueError, TypeError):
+        pass
+    return None, "Could not check GitHub releases. Try again or open the download page."
+
+
 def _github_iris_release() -> tuple[tuple[str, str, str] | None, str]:
     global _IRIS_RELEASE_CACHE
     now = time.monotonic()

@@ -543,6 +543,14 @@ def hermes_page(request: Request) -> HTMLResponse:
     })
 
 
+@app.get("/mentra/apk", response_class=HTMLResponse)
+def mentra_apk_page(request: Request) -> HTMLResponse:
+    download_url, error = services.mentra_apk_download()
+    return templates.TemplateResponse(request, "mentra_apk.html", {
+        "page_title": "Install OpenAlma Mentra", "download_url": download_url, "error": error,
+    })
+
+
 @app.get("/iris", response_class=HTMLResponse)
 def iris_page(request: Request, device_session_id: str = "") -> HTMLResponse:
     apps_root = settings.apps_root()
