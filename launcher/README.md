@@ -64,10 +64,13 @@ update-desktop-database ~/.local/share/applications/ 2>/dev/null || true
 
 ## Windows
 
-Download the [OpenAlma v0.1.13 Beta installer](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.13)
+Download the [OpenAlma v0.1.14 Beta installer](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.14)
 to open OpenAlma from the Start menu without a terminal window. Beta is available
 on the Stable channel. Launcher startup/tests are verified; full Windows component
 installation remains separately qualified.
+
+The launcher follows Edge's replacement process when it hands off startup, so
+that handoff no longer stops the server while the app window remains open.
 
 The [v0.1.12 release](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.12)
 includes Atomic's compatible prebuilt Windows server ZIP. Its `INSTALL.txt`

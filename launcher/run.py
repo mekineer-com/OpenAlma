@@ -134,10 +134,11 @@ def _watch_browser_and_stop(
     chrome: subprocess.Popen | psutil.Process,
     server: uvicorn.Server,
 ) -> None:
-    try:
+    while chrome is not None:
         chrome.wait()
-    finally:
-        server.should_exit = True
+        # Edge may replace its bootstrap process while the app window stays open.
+        chrome = browser.profile_process(_browser_profile())
+    server.should_exit = True
 
 
 def _browser_profile() -> Path:

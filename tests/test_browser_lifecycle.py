@@ -36,6 +36,7 @@ def test_chromium_profile_persists_after_browser_exit(tmp_path, monkeypatch):
 
     monkeypatch.setattr(run, "_wait_for_port", lambda *_args: True)
     monkeypatch.setattr(run.browser, "find_chromium", lambda: "chromium")
+    monkeypatch.setattr(run.browser, "profile_process", lambda _profile: None)
     monkeypatch.setattr(run.settings, "SETTINGS_PATH", settings_path)
     monkeypatch.setattr(run.browser, "open_app", open_app)
     monkeypatch.setattr(run.threading, "Thread", FakeThread)
@@ -62,7 +63,7 @@ def test_restarted_launcher_watches_existing_profile_owner(tmp_path, monkeypatch
     monkeypatch.setattr(run, "_browser_profile", lambda: tmp_path / "profile")
     monkeypatch.setattr(run, "_wait_for_port", lambda *_args: True)
     monkeypatch.setattr(run.browser, "find_chromium", lambda: "chromium")
-    monkeypatch.setattr(run.browser, "profile_process", lambda _profile: owner)
+    monkeypatch.setattr(run.browser, "profile_process", lambda _profile: owner if not any(event.endswith("exited") for event in events) else None)
     def activate(_url, *, reload=False):
         assert reload is True
         return activated
@@ -98,6 +99,42 @@ def test_profile_lookup_excludes_other_profiles_and_renderer_processes(tmp_path,
     ]
     monkeypatch.setattr(browser.psutil, "process_iter", lambda _attrs: processes)
     assert browser.profile_process(tmp_path) is owner
+
+
+def test_browser_watcher_follows_replacement_before_stopping(tmp_path, monkeypatch):
+    server = SimpleNamespace(should_exit=False)
+    events = []
+
+    def wait_for_owner():
+        assert not server.should_exit
+        events.append("window closed")
+
+    bootstrap = SimpleNamespace(wait=lambda: events.append("bootstrap exited"))
+    owner = SimpleNamespace(wait=wait_for_owner)
+    owners = iter([owner, None])
+    monkeypatch.setattr(run, "_browser_profile", lambda: tmp_path)
+    monkeypatch.setattr(run.browser, "profile_process", lambda _profile: next(owners))
+
+    run._watch_browser_and_stop(bootstrap, server)
+
+    assert events == ["bootstrap exited", "window closed"]
+    assert server.should_exit
+
+
+@pytest.mark.parametrize("failure", ["wait", "lookup"])
+def test_browser_observation_failure_does_not_stop_server(tmp_path, monkeypatch, failure):
+    server = SimpleNamespace(should_exit=False)
+
+    def unavailable():
+        raise OSError("Fictional observation failure")
+
+    chrome = SimpleNamespace(wait=unavailable if failure == "wait" else lambda: None)
+    monkeypatch.setattr(run, "_browser_profile", lambda: tmp_path)
+    monkeypatch.setattr(run.browser, "profile_process", lambda _profile: unavailable())
+
+    with pytest.raises(OSError, match="observation failure"):
+        run._watch_browser_and_stop(chrome, server)
+    assert not server.should_exit
 
 
 def test_browser_launch_includes_isolated_profile(tmp_path, monkeypatch):
@@ -237,7 +274,7 @@ def test_existing_launcher_activates_open_window_without_launching(tmp_path, mon
     monkeypatch.setattr(run.urllib.request, "urlopen", urlopen)
     monkeypatch.setattr(run, "connect", connect)
     monkeypatch.setattr(run, "_wait_for_port", lambda *_args: True)
-    monkeypatch.setattr(run.browser, "profile_process", lambda _profile: owner)
+    monkeypatch.setattr(run.browser, "profile_process", lambda _profile: owner if "owner exited" not in messages else None)
     monkeypatch.setattr(run.threading, "Thread", Thread)
     monkeypatch.setattr(
         run,
