@@ -956,7 +956,8 @@ def _mentra_readiness_uncached(root: Path) -> dict:
     rows.append({"label": "Iris private release runtime", "state": "ready", "detail": "Ready"})
 
     memu_spec = next((spec for spec in all_services() if spec.name == "memu-server"), None)
-    if memu_spec is None or not _runtime_state(memu_spec).running:
+    memu_runtime = _runtime_state(memu_spec) if memu_spec else RuntimeState()
+    if not memu_runtime.running or memu_runtime.port_pid is None:
         return fail("server", "memU Server", "Start memU Server")
     rows.append({"label": "memU Server", "state": "ready", "detail": "Ready"})
 

@@ -515,6 +515,20 @@ class MentraStatusTest(TestCase):
             with (
                 patch.object(services, "all_services", return_value=[memu]),
                 patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
+                patch.object(services, "_mentra_http_status") as http,
+            ):
+                waiting = services._mentra_readiness_uncached(root)
+                self.assertEqual(waiting["step"], "server")
+                row = services._iris_product_status(
+                    services.RuntimeState(), {"state": "unavailable", "detail": "Not listening yet"},
+                    services.IRIS_PACKAGE, "0.1.12", waiting,
+                )
+                self.assertEqual(row["status_label"], "○ waiting for memU Server")
+                self.assertIsNone(row["action_kind"])
+                http.assert_not_called()
+            with (
+                patch.object(services, "all_services", return_value=[memu]),
+                patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True, port_pid=41)),
                 patch.object(services, "_mentra_http_status", side_effect=[200, 404]) as http,
             ):
                 first = services.mentra_readiness(root)
@@ -527,7 +541,7 @@ class MentraStatusTest(TestCase):
 
             with (
                 patch.object(services, "all_services", return_value=[memu]),
-                patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
+                patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True, port_pid=41)),
                 patch.object(services, "_mentra_http_status", return_value=200) as http,
             ):
                 self.assertTrue(services._mentra_readiness_uncached(root)["ready"])
@@ -540,7 +554,7 @@ class MentraStatusTest(TestCase):
                 config.write_text(json.dumps(settings))
                 with (
                     patch.object(services, "all_services", return_value=[memu]),
-                    patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
+                    patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True, port_pid=41)),
                     patch.object(services, "_mentra_http_status", side_effect=[200, 404]),
                 ):
                     self.assertTrue(services._mentra_readiness_uncached(root)["ready"])
@@ -569,7 +583,7 @@ class MentraStatusTest(TestCase):
                 config.write_text(json.dumps(settings))
                 with (
                     patch.object(services, "all_services", return_value=[memu]),
-                    patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
+                    patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True, port_pid=41)),
                     patch.object(services, "_mentra_http_status", side_effect=AssertionError("invalid address must not be probed")),
                 ):
                     self.assertEqual(services._mentra_readiness_uncached(root)["step"], "route")
@@ -587,7 +601,7 @@ class MentraStatusTest(TestCase):
                 services._MENTRA_INGRESS_AUDIT_CACHE.clear()
                 with (
                     patch.object(services, "all_services", return_value=[memu]),
-                    patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
+                    patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True, port_pid=41)),
                     patch.object(services, "_mentra_http_status", side_effect=responses),
                 ):
                     self.assertIn(detail, services._mentra_readiness_uncached(root)["reason"])
@@ -600,7 +614,7 @@ class MentraStatusTest(TestCase):
                 services._MENTRA_READINESS_CACHE.clear()
                 with (
                     patch.object(services, "all_services", return_value=[memu]),
-                    patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
+                    patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True, port_pid=41)),
                     patch.object(services, "_mentra_http_status", side_effect=[200, 404]),
                 ):
                     self.assertTrue(services.mentra_readiness(root)["ready"])
