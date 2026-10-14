@@ -62,10 +62,12 @@ cp memu-stack.desktop ~/.local/share/applications/
 update-desktop-database ~/.local/share/applications/ 2>/dev/null || true
 ```
 
-## Windows (unreleased)
+## Windows
 
-The upcoming Windows installer will let you open OpenAlma from the Start menu
-without a terminal window. It is not published yet.
+Download the [OpenAlma v0.1.12 Beta installer](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.12)
+to open OpenAlma from the Start menu without a terminal window. Beta is available
+on the Stable channel. Launcher startup/tests are verified; full Windows component
+installation remains separately qualified.
 
 ## Notes
 

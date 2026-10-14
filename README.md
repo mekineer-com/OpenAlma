@@ -7,7 +7,7 @@
 
 # OpenAlma
 
-_Last updated: 2026-09-13 (v0.0.14-buildfix)_
+_Last updated: 2026-10-14 (v0.1.12 Beta)_
 
 **OpenAlma, by Team GhostMaker**
 
@@ -32,7 +32,7 @@ OpenAlma runs locally on your machine, watches your conversations, and quietly b
 - [How It Works at a Glance](#how-it-works-at-a-glance)
 - [Status](#status)
 - [Website and Docs](#website-and-docs)
-- [Running from Source](#running-from-source)
+- [Running from Source (Linux)](#running-from-source-linux)
 - [Future Development](#future-development)
 - [Acknowledgments](#acknowledgments)
 
@@ -61,11 +61,13 @@ Memory extraction happens during **sleep gaps** — when you close a conversatio
 
 ## Status
 
-**This is prerelease software.** It works, it's actively used, and it will break your database on upgrade.
+**OpenAlma v0.1.12 Beta** is a normal release on the launcher's **Stable** channel. Beta describes its maturity, not its update channel.
 
-Specifically: the SQLite schema changes between versions, and there's no migration tooling yet. When you move to a new release tag, expect a fresh start — don't build anything irreplaceable on top of an old version.
+Back up your data before upgrades. Launcher-managed core updates include database backups, supported migrations and recovery; compatibility with every historical database is not guaranteed. Start with a test companion before importing irreplaceable conversations.
 
-Prefer `main` for the latest. If you'd rather pin to a tag, match all repos to the same one (memu, mcp-memu-server, memu-sillytavern-plugin, memu-sillytavern-extension, OpenAlma, atomic, and channels if you're using them). The Iris MiniApp releases on its own version line — the launcher installs the newest one it finds rather than a matching tag.
+Use the launcher to install the matching repositories from the release manifest. Coordinated repositories use the plain `v0.1.12` tag; development branches differ across repositories. Iris's source checkout follows the manifest, while phone installation uses its newest supported ZIP release. The Mentra phone app keeps its separate 3.2.1 version line.
+
+Windows users can download the [v0.1.12 installer](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.12). Launcher tests and startup have been checked on Windows; full Windows component-install acceptance remains separate. Atomic is source-only in this release and needs a manually built Rust server binary before it can start.
 
 ### Release tags
 
@@ -81,6 +83,7 @@ Prefer `main` for the latest. If you'd rather pin to a tag, match all repos to t
 | `v0.0.12-buildfix` | Unified chat renderer across all AI-facing paths; force/rebuild split; autonomous activity recap path (soul logs her own actions); APImw cadence global across platforms; ST↔WhatsApp cross-chat awareness; WhatsApp staleness gate + replay dedup; life goals separated from active intentions |
 | `v0.0.13-buildfix` | Atomic Mind Map entity curation (merge, ignore, delete, free-text types); dossier membership you can attach and detach by hand; exact `[M#]` and memory-only search; dossier index replaces the generated holistic summary; two-pass consolidation (dossiers, then reflection); time-aware memory ordering; smartglasses groundwork |
 | `v0.0.14-buildfix` | Photos she can see and remember (smartglasses camera → memory you can ask about later); visual recall as its own lane; WhatsApp guide, mind map guide, smartglasses guide; exact-soul storage identity with launcher soul discovery and creation; smartglasses sittings that survive a dropped connection; manual record-and-review mode; Atomic curation guards; first public prerelease including Iris |
+| `v0.1.12` | OpenAlma Beta on Stable: Windows launcher installer, private Python environments with tested dependency pins, Iris installation/Repair controls, three-stage reflection, and memory/identity recovery fixes |
 
 ---
 
@@ -94,17 +97,17 @@ The same guides also live in [`docs/`](docs/) in this repo.
 
 ---
 
-## Running from Source
+## Running from Source (Linux)
 
 Clone this repo (the docs + launcher repo) and run the Stack Launcher:
 
 ```sh
 git clone https://github.com/mekineer-com/OpenAlma.git
 cd OpenAlma/launcher
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/python run.py
+python3.12 run.py
 ```
+
+Python 3.12 creates the launcher's private environment automatically. Debian/Ubuntu also needs `python3.12-venv`.
 
 Opens at `http://127.0.0.1:8765`. For everything else — the memory engine, the server, clients — see [Getting started](https://openalma.org/getting-started.html).
 
