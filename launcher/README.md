@@ -69,6 +69,10 @@ to open OpenAlma from the Start menu without a terminal window. Beta is availabl
 on the Stable channel. Launcher startup/tests are verified; full Windows component
 installation remains separately qualified.
 
+The same release includes Atomic's prebuilt Windows server ZIP. Its `INSTALL.txt`
+covers extraction and the Node 24 dependency-install workaround; no Rust build
+is needed. Automatic Atomic binary installation is not part of this beta.
+
 ## Notes
 
 - On first use, confirm your name and choose or create your companion's Soul.

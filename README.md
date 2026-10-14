@@ -67,7 +67,7 @@ Back up your data before upgrades. Launcher-managed core updates include databas
 
 Use the launcher to install the matching repositories from the release manifest. Coordinated repositories use the plain `v0.1.12` tag; development branches differ across repositories. Iris's source checkout follows the manifest, while phone installation uses its newest supported ZIP release. The Mentra phone app keeps its separate 3.2.1 version line.
 
-Windows users can download the [v0.1.12 installer](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.12). Launcher tests and startup have been checked on Windows; full Windows component-install acceptance remains separate. Atomic is source-only in this release and needs a manually built Rust server binary before it can start.
+Windows users can download the [v0.1.12 installer](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.12). Launcher tests and startup have been checked on Windows; full Windows component-install acceptance remains separate. That release also includes Atomic's prebuilt Windows server ZIP; follow its `INSTALL.txt` for the beta's Node 24 setup workaround. Other platforms still need a manually built Rust server binary.
 
 ### Release tags
 
