@@ -11,9 +11,9 @@ import urllib.parse
 import webbrowser
 from pathlib import Path
 from threading import Lock
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -550,7 +550,7 @@ def mentra_apk_url() -> dict[str, str]:
 
 
 @app.get("/iris", response_class=HTMLResponse)
-def iris_page(request: Request, device_session_id: str = "") -> HTMLResponse:
+def iris_page(request: Request, device_session_id: str = "", repair: bool = False) -> HTMLResponse:
     apps_root = settings.apps_root()
     iris_spec = next((spec for spec in services.all_services() if spec.name == "iris-server"), None)
     iris = _setup_aware_status(iris_spec, apps_root, verify_runtime=False) if iris_spec and apps_root else {}
@@ -562,6 +562,15 @@ def iris_page(request: Request, device_session_id: str = "") -> HTMLResponse:
                                       if row["device_session_id"] == device_session_id), None)
         if selected_installation is None:
             raise HTTPException(status_code=404, detail="App installation not found")
+    repair_versions = {}
+    repair = repair or bool(selected_installation and selected_installation.get("repair_available"))
+    if repair:
+        if not selected_installation or not selected_installation.get("automatic_host"):
+            raise HTTPException(status_code=400, detail="Choose an OpenAlma Mentra app to repair")
+        try:
+            repair_versions = services.iris_repair_releases()
+        except (OSError, ValueError, TypeError):
+            pass  # ZIP and source remain usable when GitHub is unavailable.
     iris_setup = iris.get("setup") or services.mentra_readiness(apps_root)
     iris_connection = {}
     if apps_root:
@@ -581,6 +590,8 @@ def iris_page(request: Request, device_session_id: str = "") -> HTMLResponse:
         "page_title": "Iris setup", "iris": iris, "iris_setup": iris_setup,
         "iris_connection": iris_connection,
         "selected_installation": selected_installation,
+        "repair_requested": repair, "repair_versions": repair_versions,
+        "iris_source_folder": str(iris_spec.cwd) if iris_spec else "",
     })
 
 
@@ -833,11 +844,21 @@ def open_url(url: str = Form()) -> dict[str, bool]:
 @app.post("/iris/install")
 def iris_install(
     device_session_id: str = Form(default=""), host_package: str = Form(default=""),
+    repair_source: Annotated[str, Form()] = "", github_version: Annotated[str, Form()] = "",
+    source_folder: Annotated[str, Form()] = "", bundle_file: Annotated[UploadFile | None, File()] = None,
+    repair: Annotated[bool, Form()] = False,
 ) -> RedirectResponse:
     spec = _find_service("iris-server")
     _require_startable_setup("iris-server")
     try:
-        _start_iris_install(spec, device_session_id, host_package)
+        if repair or repair_source or bundle_file is not None or github_version or source_folder:
+            if repair_source not in {"github", "zip", "source"}:
+                raise ValueError("Choose a source for Repair; it never defaults to latest Install")
+            _start_iris_install(spec, device_session_id, host_package,
+                                repair_options=(repair_source, github_version, source_folder),
+                                upload=bundle_file.file if bundle_file else None)
+        else:
+            _start_iris_install(spec, device_session_id, host_package)
     except services.ServiceStoppingError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except services.OwnerServiceUnavailable as exc:
@@ -850,7 +871,8 @@ def iris_install(
     return RedirectResponse(target_url, status_code=303)
 
 
-def _start_iris_install(spec: services.ServiceSpec, device_session_id: str, host_package: str) -> None:
+def _start_iris_install(spec: services.ServiceSpec, device_session_id: str, host_package: str,
+                        *, repair_options: tuple[str, str, str] | None = None, upload=None) -> None:
     if not services._IRIS_INSTALL_LOCK.acquire(blocking=False):
         raise services.ServiceStoppingError("Iris installer is starting; wait before installing another app")
     installation_ticket = ""
@@ -868,11 +890,20 @@ def _start_iris_install(spec: services.ServiceSpec, device_session_id: str, host
             target = {"device_session_id": "", "host_package": host_package}
         else:
             target = _iris_install_target(device_session_id, host_package)
+        bundle = None
+        if repair_options is not None:
+            if not device_session_id or host_package != "com.mentra.mentra.openalma":
+                raise ValueError("Choose an existing OpenAlma Mentra app to repair")
+            bundle = services.prepare_iris_repair(spec, *repair_options, upload)
+            _iris_install_target(device_session_id, host_package)
         if host_package == "com.mentra.mentra":
             reservation = services.iris_installation_request(device_session_id, reserve=True)
             installation_ticket = reservation["installation_ticket"]
             target = {**target, **reservation}
-        services.start(spec, install_target=target)
+        if bundle is None:
+            services.start(spec, install_target=target)
+        else:
+            services.start(spec, install_target=target, bundle_path=bundle)
     except Exception as exc:
         if installation_ticket:
             try:

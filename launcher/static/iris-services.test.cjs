@@ -91,15 +91,18 @@ test('Services preserves rows and Rename drafts through outages, then restores c
 test('Setup poll applies blocks and outages even with Rename open, without disabling installer cancellation', async () => {
   const stock = {}, install = {}, rename = {}, forget = {}, cancel = {disabled: false};
   const address = {disabled: false}, busyHint = {hidden: true}, installerStatus = {};
+  const progress = {hidden: false}, cancelControls = {hidden: false};
   const actionError = {textContent: 'Invalid address'};
   const elements = new Map([
     ['iris-action-error', actionError], ['iris-installer-status', installerStatus], ['iris-address-busy', busyHint],
+    ['iris-installer-progress', progress], ['iris-cancel-controls', cancelControls],
   ]);
   const selectors = new Map([
     ['form[action="/iris/install"] button', install], ['.iris-rename button', rename],
     ['form[data-forget] button', forget], ['[data-status]', {}],
   ]);
-  const item = {dataset: {deviceSessionId: installation.device_session_id}, querySelector: s => selectors.get(s)};
+  const item = {dataset: {deviceSessionId: installation.device_session_id}, querySelector: s => selectors.get(s),
+    querySelectorAll: s => s === 'form[action="/iris/install"] button' ? [install] : []};
   let poll, next = ready, responseOK = true, open = true, reloads = 0;
   const context = vm.createContext({
     document: {
@@ -111,7 +114,7 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
         assert.equal(s, '[data-device-session-id]');
         return [item];
       },
-      querySelector: s => s === '.iris-address button' ? address : open,
+      querySelector: s => s === '.iris-address button' ? address : s === '.iris-repair' ? null : open,
     },
     setInterval: callback => { poll = callback; },
     fetch: async () => {
@@ -134,6 +137,8 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
   assert.notEqual(context.statusSignature({...ready, blocked: true}), signature);
   assert.notEqual(context.statusSignature({...ready, available_package: 'changed'}), signature);
   await poll();
+  assert.equal(progress.hidden, true);
+  assert.equal(cancelControls.hidden, true);
   for (const button of [stock, install, rename, forget]) assert.equal(Boolean(button.disabled), false);
   for (const block of [{blocked: true, detail: 'Free installer port 6789'},
                        {setup: {enabled: true, ready: false, reason: 'Restart memU Server'}}]) {
@@ -146,10 +151,12 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
     assert.equal(reloads, 0);
   }
   for (const outage of [{detail: 'MCP unavailable'}, new Error('Offline')]) {
+    cancelControls.hidden = false;
     next = outage;
     await poll();
     for (const button of [stock, install, rename, forget]) assert.equal(button.disabled, true);
     assert.equal(cancel.disabled, false);
+    assert.equal(cancelControls.hidden, false);
   }
   next = ready;
   responseOK = false;

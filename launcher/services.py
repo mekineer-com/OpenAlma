@@ -1090,6 +1090,96 @@ def _iris_release_candidate(spec: ServiceSpec) -> tuple[str, str, str | None, st
     return (*github, github_status) if github else (IRIS_PACKAGE, "", None, github_status)
 
 
+def iris_repair_releases() -> dict[str, str]:
+    request = urllib.request.Request(IRIS_RELEASES_URL, headers={
+        "Accept": "application/vnd.github+json", "User-Agent": "OpenAlma-launcher",
+    })
+    with urllib.request.urlopen(request, timeout=2) as response:
+        releases = json.load(response)
+    if not isinstance(releases, list):
+        raise ValueError("Invalid GitHub releases response")
+    result = {}
+    for release in releases:
+        if not isinstance(release, dict) or release.get("draft") or release.get("prerelease"):
+            continue
+        version = str(release.get("tag_name") or "").removeprefix("v")
+        if _iris_semver(version) is None:
+            continue
+        asset = next((a for a in release.get("assets") or [] if isinstance(a, dict)
+                      and a.get("name") == f"{IRIS_PACKAGE}-{version}.zip"
+                      and a.get("browser_download_url")), None)
+        if asset:
+            result[version] = str(asset["browser_download_url"])
+    return dict(sorted(result.items(), key=lambda item: _iris_semver(item[0]), reverse=True))
+
+
+def _validate_iris_repair_bundle(path: Path, spec: ServiceSpec) -> dict:
+    try:
+        with zipfile.ZipFile(path) as bundle:
+            manifest = json.loads(bundle.read("miniapp.json"))
+            if (not isinstance(manifest, dict) or manifest.get("packageName") != IRIS_PACKAGE
+                    or _iris_semver(str(manifest.get("version") or "")) is None):
+                raise ValueError("Choose an Iris ZIP with a valid package and version")
+            entry = manifest.get("entry") or {}
+            if not isinstance(entry, dict):
+                raise ValueError("Iris ZIP has invalid entry files")
+            for kind in ("background", "ui"):
+                name = entry.get(kind)
+                if (not isinstance(name, str) or not name or name.startswith("/")
+                        or "\\" in name or ".." in name.split("/")
+                        or bundle.getinfo(name).is_dir() or bundle.getinfo(name).file_size == 0):
+                    raise ValueError(f"Iris ZIP is missing its {kind} entry")
+    except (KeyError, OSError, zipfile.BadZipFile, TypeError) as exc:
+        raise ValueError("Choose a complete Iris ZIP with miniapp.json and both entry files") from exc
+    validator = spec.cwd / "node_modules" / "@mentra" / "miniapp-cli" / "src" / "manifest.ts"
+    script = (f"import {{validateManifest}} from {json.dumps(validator.as_uri())}; "
+              "const result=validateManifest(JSON.parse(await Bun.stdin.text())); "
+              "if(!result.valid){console.error(result.errors.join('; '));process.exit(1)}")
+    result = subprocess.run([shutil.which("bun") or "bun", "-e", script], cwd=spec.cwd,
+                            input=json.dumps(manifest), text=True, capture_output=True)
+    if result.returncode:
+        raise ValueError(f"Invalid Iris manifest: {result.stderr.strip()}")
+    return manifest
+
+
+def prepare_iris_repair(spec: ServiceSpec, mode: str, version: str, source_folder: str, upload) -> Path:
+    destination = STATE_DIR / "iris-repair"
+    destination.mkdir(parents=True, exist_ok=True)
+    if mode == "zip":
+        if upload is None:
+            raise ValueError("Choose an Iris ZIP file")
+        bundle = destination / "uploaded.zip"
+        with bundle.open("wb") as output:
+            shutil.copyfileobj(upload, output)
+    elif mode == "github":
+        url = iris_repair_releases().get(version)
+        if not url:
+            raise ValueError("Choose an available GitHub Iris version")
+        bundle = _download_iris_release(url, IRIS_PACKAGE, version)
+    elif mode == "source":
+        folder = Path(source_folder).expanduser().resolve() if source_folder.strip() else spec.cwd
+        manifest = json.loads((folder / "miniapp.json").read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict):
+            raise ValueError("Choose an Iris source folder with a valid miniapp.json")
+        version = str(manifest.get("version") or "")
+        if manifest.get("packageName") != IRIS_PACKAGE or _iris_semver(version) is None:
+            raise ValueError("Choose an Iris source folder with a valid miniapp.json")
+        bundle = destination / f"{IRIS_PACKAGE}-{version}.zip"
+        bundle.unlink(missing_ok=True)
+        pack_module = spec.cwd / "node_modules" / "@mentra" / "miniapp-cli" / "src" / "pack.ts"
+        script = f"import {{pack}} from {json.dumps(pack_module.as_uri())}; await pack({{cwd:process.argv[1],build:true,outDir:process.argv[2]}})"
+        spec.log_path.parent.mkdir(parents=True, exist_ok=True)
+        with spec.log_path.open("ab") as log:
+            result = subprocess.run([shutil.which("bun") or "bun", "-e", script, str(folder), str(destination)],
+                                    cwd=spec.cwd, stdout=log, stderr=subprocess.STDOUT)
+        if result.returncode:
+            raise ValueError("Iris source build failed; check the Iris log and source dependencies")
+    else:
+        raise ValueError("Choose GitHub, ZIP or source for Repair")
+    _validate_iris_repair_bundle(bundle, spec)
+    return bundle
+
+
 def _download_iris_release(url: str, package: str, version: str) -> Path:
     destination = STATE_DIR / f"{package}-{version}.zip"
     temporary = destination.with_suffix(".tmp")
@@ -1159,7 +1249,7 @@ def _iris_product_status(
     automatic_host = host.get("host_package") == "com.mentra.mentra.openalma"
     installed_semver = _iris_semver(installed_version)
     available_semver = _iris_semver(available_version)
-    repair_available = bool(installed_package and automatic_host and available_semver)
+    repair_available = bool(installed_package and automatic_host)
     mismatch = bool(installed_package and available_package and available_semver) and (
         installed_package != available_package
         or installed_semver is None
@@ -1484,7 +1574,7 @@ def raise_if_iris_installer_busy(spec: ServiceSpec) -> None:
         raise ServiceStoppingError(f"Iris installer is busy for {name}; finish or stop it first")
 
 
-def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None) -> None:
+def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None, bundle_path: Path | None = None) -> None:
     _clear_port_cache(spec)
     with _STOP_LOCK:
         _raise_if_stopping_locked(spec)
@@ -1503,10 +1593,12 @@ def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None) ->
             target_path.parent.mkdir(parents=True, exist_ok=True)
             temporary.write_text(json.dumps(install_target))
             temporary.replace(target_path)
-            package, version, url, _ = _iris_release_candidate(spec)
-            if not url:
-                raise ValueError("Published Iris bundle unavailable; development builds must be run explicitly")
-            env["MENTRA_RELEASE_BUNDLE"] = str(_download_iris_release(url, package, version))
+            if bundle_path is None:
+                package, version, url, _ = _iris_release_candidate(spec)
+                if not url:
+                    raise ValueError("Published Iris bundle unavailable; use Repair for a local build")
+                bundle_path = _download_iris_release(url, package, version)
+            env["MENTRA_RELEASE_BUNDLE"] = str(bundle_path)
             if _IRIS_INSTALL_CANCELLED.is_set():
                 raise ServiceStoppingError("Iris installation cancelled")
             proc = _spawn_background(spec, env)

@@ -147,6 +147,138 @@ def test_iris_install_target_cleanup(tmp_path, monkeypatch, stage, host_package)
     assert target["device_session_id"] == "stock-test"
 
 
+def test_iris_repair_bundle_choices_do_not_require_latest_github(tmp_path, monkeypatch):
+    from zipfile import ZipFile
+    spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    manifest = {"packageName": services.IRIS_PACKAGE, "version": "0.1.12",
+                "name": "Test Iris", "hardwareRequirements": [],
+                "entry": {"background": "background/index.js", "ui": "ui/index.html"}}
+
+    def write_bundle(path, data=manifest):
+        with ZipFile(path, "w") as bundle:
+            bundle.writestr("miniapp.json", json.dumps(data))
+            bundle.writestr("background/index.js", "background")
+            bundle.writestr("ui/index.html", "ui")
+
+    monkeypatch.setattr(services, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(services.subprocess, "run", lambda command, **kwargs: subprocess.CompletedProcess(command, 0))
+    original = tmp_path / "original.zip"
+    write_bundle(original)
+    monkeypatch.setattr(services, "iris_repair_releases", lambda: pytest.fail("ZIP/source must bypass GitHub"))
+    uploaded = services.prepare_iris_repair(spec, "zip", "", "", BytesIO(original.read_bytes()))
+    assert services._validate_iris_repair_bundle(uploaded, spec) == manifest
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "miniapp.json").write_text(json.dumps(manifest))
+
+    def build(command, **kwargs):
+        if "validateManifest" in command[2]:
+            assert json.loads(kwargs["input"]) == manifest
+            return subprocess.CompletedProcess(command, 0)
+        assert command[-2:] == [str(source), str(tmp_path / "iris-repair")]
+        assert kwargs["cwd"] == spec.cwd
+        write_bundle(tmp_path / "iris-repair" / f"{services.IRIS_PACKAGE}-0.1.12.zip")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(services.subprocess, "run", build)
+    assert services.prepare_iris_repair(spec, "source", "", str(source), None).exists()
+    monkeypatch.setattr(services, "iris_repair_releases", lambda: {"0.1.12": "https://example.invalid/iris.zip"})
+    monkeypatch.setattr(services, "_download_iris_release", lambda url, package, version: original)
+    assert services.prepare_iris_repair(spec, "github", "0.1.12", "", None) == original
+    write_bundle(original, {**manifest, "packageName": "wrong-package"})
+    with pytest.raises(ValueError, match="valid package"):
+        services.prepare_iris_repair(spec, "zip", "", "", BytesIO(original.read_bytes()))
+
+
+def test_iris_repair_preserves_target_lock_and_rechecks_sitting(tmp_path, monkeypatch):
+    import app as launcher_app
+    spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    target = {"device_session_id": "test-phone", "host_package": "com.mentra.mentra.openalma"}
+    busy = False
+    calls = []
+    monkeypatch.setattr(services, "raise_if_stopping", lambda _spec: None)
+    monkeypatch.setattr(services, "raise_if_iris_installer_busy", lambda _spec: None)
+    monkeypatch.setattr(services, "mentra_readiness", lambda: {"ready": True})
+
+    def selected(device, host):
+        assert (device, host) == (target["device_session_id"], target["host_package"])
+        if busy:
+            raise launcher_app.HTTPException(409, "Stop Iris")
+        return target.copy()
+
+    def prepare(*_args):
+        assert services._IRIS_INSTALL_LOCK.locked()
+        return tmp_path / "local.zip"
+
+    monkeypatch.setattr(launcher_app, "_iris_install_target", selected)
+    monkeypatch.setattr(services, "prepare_iris_repair", prepare)
+    monkeypatch.setattr(services, "start", lambda _spec, **kwargs: calls.append(kwargs))
+    launcher_app._start_iris_install(spec, **target, repair_options=("zip", "", ""))
+    assert calls == [{"install_target": target, "bundle_path": tmp_path / "local.zip"}]
+    assert not services._IRIS_INSTALL_LOCK.locked()
+
+    def prepare_while_sitting_starts(*_args):
+        nonlocal busy
+        busy = True
+        return tmp_path / "local.zip"
+
+    monkeypatch.setattr(services, "prepare_iris_repair", prepare_while_sitting_starts)
+    with pytest.raises(launcher_app.HTTPException, match="Stop Iris"):
+        launcher_app._start_iris_install(spec, **target, repair_options=("source", "", ""))
+    assert len(calls) == 1 and not services._IRIS_INSTALL_LOCK.locked()
+
+
+def test_iris_repair_upload_and_source_are_explicit_posts(tmp_path, monkeypatch):
+    import app as launcher_app
+    from fastapi.testclient import TestClient
+    spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(launcher_app, "_find_service", lambda _name: spec)
+    monkeypatch.setattr(launcher_app, "_require_startable_setup", lambda _name: None)
+    calls = []
+
+    def start(_spec, device, host, **kwargs):
+        calls.append((device, host, kwargs["repair_options"], kwargs["upload"].read() if kwargs["upload"] else None))
+
+    monkeypatch.setattr(launcher_app, "_start_iris_install", start)
+    client = TestClient(launcher_app.app, base_url="http://127.0.0.1")
+    target = {"device_session_id": "test-phone", "host_package": "com.mentra.mentra.openalma"}
+    response = client.post("/iris/install", data={**target, "repair_source": "zip"},
+                           files={"bundle_file": ("development.zip", b"zip bytes")}, follow_redirects=False)
+    assert response.status_code == 303
+    assert calls[-1] == ("test-phone", target["host_package"], ("zip", "", ""), b"zip bytes")
+    response = client.post("/iris/install", data={**target, "repair_source": "source", "source_folder": str(tmp_path)},
+                           files={"bundle_file": ("", b"")}, follow_redirects=False)
+    assert response.status_code == 303
+    assert calls[-1][:3] == ("test-phone", target["host_package"], ("source", "", str(tmp_path)))
+    count = len(calls)
+    response = client.post("/iris/install", data={**target, "repair": "true"}, follow_redirects=False)
+    assert response.status_code == 400 and len(calls) == count
+    response = client.post("/iris/install", data=target,
+                           files={"bundle_file": ("development.zip", b"zip bytes")}, follow_redirects=False)
+    assert response.status_code == 400 and len(calls) == count
+
+
+def test_iris_repair_installer_uses_selected_bundle_not_github(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    bundle = tmp_path / "local.zip"
+    monkeypatch.setattr(services, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState())
+    monkeypatch.setattr(services, "raise_if_stopping", lambda _spec: None)
+    monkeypatch.setattr(services, "_iris_build_env", lambda *_args: {})
+    monkeypatch.setattr(services, "_iris_release_candidate", lambda _spec: pytest.fail("Local Repair must bypass latest release"))
+    monkeypatch.setattr(services, "_clear_port_cache", lambda _spec: None)
+    seen = []
+    monkeypatch.setattr(services, "_spawn_background", lambda _spec, env: (seen.append(env), SimpleNamespace(pid=4242))[1])
+    services.start(spec, install_target={"device_session_id": "test-phone"}, bundle_path=bundle)
+    assert seen[0]["MENTRA_RELEASE_BUNDLE"] == str(bundle)
+    row = services._iris_product_status(services.RuntimeState(), {
+        "installed_package": services.IRIS_PACKAGE, "installed_version": "0.1.12",
+        "host": {"host_package": "com.mentra.mentra.openalma"},
+    }, services.IRIS_PACKAGE, "", {"enabled": True, "ready": True})
+    assert row["repair_available"] and row["action_label"] == "Repair"
+
+
 def test_iris_address_save_refuses_busy_setup_and_uses_the_running_server_writer(tmp_path, monkeypatch):
     import app as launcher_app
     from fastapi.testclient import TestClient

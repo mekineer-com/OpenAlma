@@ -146,9 +146,7 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
         if page.startswith("/iris"):
             visible = response.text.split('<script src="/static/vendor/qrcode.min.js">', 1)[0]
             assert "OpenAlma Mentra" in visible
-            assert "and sign in" in visible
             assert "choose OpenAlma if Android offers sign-in apps" not in visible
-            assert 'href="https://play.google.com/store/apps/details?id=com.mentra.mentra"' in visible
             assert "First connect your phone and server through WireGuard or another trusted private connection" in visible
             assert "Connection help" not in visible
             assert "Saving the address does not configure" not in visible
@@ -158,17 +156,25 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
             assert "For first installation, Iris receives this address automatically" not in visible
             assert "Devices allowed to reach this endpoint" not in visible
             steps = visible.split('id="iris-address-busy"', 1)[1].split('<ol class="tight">', 1)[1].split('</ol>', 1)[0]
-            assert steps.count('<li>') == 4
-            assert steps.count('href="/">main page</a>') == 2
-            assert 'Install OpenAlma Mentra on the <a href="/">main page</a>.' in steps
+            assert steps.count('<li>') == 5
+            assert steps.count('href="/">main page</a>') == 1
+            assert 'Install OpenAlma Mentra: <button class="btn qr-inline"' in steps
+            assert 'Enter the server address into Mentra.' in steps
+            assert 'id="mentra-apk-popup"' in visible
             assert 'Install Iris on the <a href="/">main page</a>.' in steps
-            stock = visible.split('<details id="iris-stock-installation"', 1)[1].split('</details>', 1)[0]
-            assert '<summary class="iris-section">Stock Mentra installation</summary>' in stock
-            app_heading = '>App status</h3>' if '?device_session_id=' in page else '>App installations</h3>'
-            assert visible.index(app_heading) < visible.index('<summary class="iris-section">Stock Mentra installation</summary>')
-            assert 'href="https://play.google.com/store/apps/details?id=com.mentra.mentra"' in stock
-            assert "Miniapp Developer Settings" in stock
-            assert "Choose or create a Soul on the phone" in stock
+            stock = ""
+            if page.endswith('=fork-test'):
+                assert 'id="iris-stock-installation"' not in visible
+                assert 'href="https://play.google.com/store/apps/details?id=com.mentra.mentra"' not in visible
+            else:
+                stock = visible.split('<details id="iris-stock-installation"', 1)[1].split('</details>', 1)[0]
+                assert '<summary class="iris-section">Stock Mentra installation</summary>' in stock
+                app_heading = '>App status</h3>' if '?device_session_id=' in page else '>App installations</h3>'
+                assert visible.index(app_heading) < visible.index('<summary class="iris-section">Stock Mentra installation</summary>')
+                assert 'href="https://play.google.com/store/apps/details?id=com.mentra.mentra"' in stock
+                assert "and sign in" in stock
+                assert "Miniapp Developer Settings" in stock
+                assert "Choose or create a Soul on the phone" in stock
             assert 'id="iris-installer-status"' not in stock
             assert 'id="iris-action-error"' not in stock
             selected = next((row for row in installations if page.endswith("=" + row["device_session_id"])), None)
@@ -238,7 +244,7 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
     })
     for page in ("/iris", "/iris?device_session_id=fork-test"):
         visible = client.get(page).text
-        stock = visible.split('<details id="iris-stock-installation"', 1)[1].split('</details>', 1)[0]
+        stock = visible.split('<details id="iris-stock-installation"', 1)[1].split('</details>', 1)[0] if page == '/iris' else ''
         assert 'open' not in stock.split('>', 1)[0]
         assert "Bring the targeted OpenAlma Mentra app to the foreground" in visible
         assert "Bring the targeted OpenAlma Mentra app to the foreground" not in stock
@@ -487,10 +493,12 @@ def test_iris_page_and_poll_share_setup_status(tmp_path, monkeypatch, setup, run
     row = {"device_session_id": "fork-test", "display_name": "Test Phone",
            "host_package": "com.mentra.mentra.openalma", "action_kind": "start",
            "action_label": "Repair", "startable": True, "repair_available": True,
+           "automatic_host": True,
            "installed_version": "0.2.0"}
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
     monkeypatch.setattr(app.services, "all_services", lambda: [spec])
     monkeypatch.setattr(app.services, "is_installed", lambda _spec: True)
+    monkeypatch.setattr(app.services, "iris_repair_releases", lambda: {})
     monkeypatch.setattr(app.services, "status", lambda _spec: {
         "status_label": "Host ready", "installations": [row],
         "available_package": services.IRIS_PACKAGE, "available_version": "0.1.0",
@@ -499,7 +507,7 @@ def test_iris_page_and_poll_share_setup_status(tmp_path, monkeypatch, setup, run
     })
     monkeypatch.setattr(app.setup_install, "optional_setup_status", lambda *_args: setup)
     client = TestClient(app.app, base_url="http://127.0.0.1")
-    for url in ("/iris", "/iris?device_session_id=fork-test"):
+    for url in ("/iris", "/iris?device_session_id=fork-test&repair=1"):
         html = client.get(url).text
         initial = json.JSONDecoder().raw_decode(html.split("const initialStatus = ", 1)[1])[0]
         assert initial == client.get("/service/iris-server/status").json()
@@ -520,6 +528,27 @@ def test_iris_page_and_poll_share_setup_status(tmp_path, monkeypatch, setup, run
             assert runtime["detail"] in html.split('id="iris-installer-status"', 1)[1].split("</p>", 1)[0]
         if "device_session_id" in url:
             assert '>Repair</button>' in install
+            assert html.count('>Repair</button>') == 1
+            assert '>Repair</a>' not in html
+            repair_form = html.split('class="iris-repair"', 1)[1].split('</form>', 1)[0]
+            assert repair_form.index('>Repair</button>') < repair_form.index('name="repair_source"')
+            assert 'Repair from' not in html
+            assert html.index('>Forget</button>') < html.index('class="iris-repair"')
+
+
+def test_iris_repair_success_follows_status_redirect():
+    import subprocess
+    script = r"""
+const fs=require('fs'), vm=require('vm'), assert=require('assert');
+const source=fs.readFileSync(process.argv[1],'utf8');
+let submitting=false, statusAvailable=true, actionError={}, destination='';
+const location={assign:url=>destination=url,reload:()=>{throw new Error('Must leave the Repair chooser');}};
+const fetch=async()=>({ok:true,redirected:true,url:'/iris?device_session_id=test-phone'});
+eval(source.slice(source.indexOf('async function irisRequest'),source.indexOf('function irisAction')));
+(async()=>{await irisRequest('/iris/install',{},null);assert.equal(destination,'/iris?device_session_id=test-phone');})();
+"""
+    path = Path(__file__).resolve().parents[1] / "launcher/templates/iris.html"
+    subprocess.run(["node", "-e", script, str(path)], check=True, timeout=10)
 
 
 def test_iris_status_consumer_node_checks():

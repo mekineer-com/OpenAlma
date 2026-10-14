@@ -76,8 +76,9 @@ class MentraStatusTest(TestCase):
                     package, version,
                 )
                 self.assertFalse(status["update_available"])
-                self.assertFalse(status["startable"])
-                self.assertFalse(status["repair_available"])
+                self.assertTrue(status["startable"])
+                self.assertTrue(status["repair_available"])
+                self.assertEqual(status["action_label"], "Repair")
                 self.assertEqual(status["state"], "ready")
                 uninstalled = services._iris_product_status(
                     services.RuntimeState(), {"state": "ready"}, package, version,
@@ -302,6 +303,7 @@ class MentraStatusTest(TestCase):
             selected_installation={**openalma, "device_session_id": "test-phone", "display_name": "Phone", "host_package": "com.mentra.mentra.openalma", "soul_id": "Fictional Soul"},
             iris_connection={},
             host_prerequisites={"rows": []},
+            repair_requested=True, repair_versions={}, iris_source_folder="/fictional/iris",
         )
         self.assertIn(">Repair<", page)
         self.assertNotIn('name="soul_id"', page)

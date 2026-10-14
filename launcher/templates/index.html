@@ -227,12 +227,7 @@
     {% endfor %}
   </div>
 
-  <div id="mentra-apk-popup" popover>
-    <p>OpenAlma Mentra</p>
-    <canvas id="mentra-apk-qr" aria-label="OpenAlma Mentra download QR"></canvas>
-    <p id="mentra-apk-message" role="status"></p>
-    <button class="btn" popovertarget="mentra-apk-popup" popovertargetaction="hide">Close</button>
-  </div>
+  {% include "_mentra_apk_popup.html" %}
   <script src="/static/vendor/qrcode.min.js"></script>
   <script src="/static/iris-services.js?v=apk-qr"></script>
   <script>
