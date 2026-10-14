@@ -28,6 +28,7 @@ def main() -> None:
     settings.LAUNCHER_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with settings.LAUNCHER_LOG_PATH.open("a", encoding="utf-8", buffering=1) as log:
         sys.stdout = sys.stderr = log
+        run = None
         try:
             _refresh_path()
             os.chdir(settings.LAUNCHER_DIR)
@@ -48,7 +49,7 @@ def main() -> None:
             )
             if not {"--prepare-update", "--stop-existing"}.intersection(sys.argv):
                 ctypes.windll.user32.MessageBoxW(None, message, "OpenAlma", 0x10)
-            if "--prepare-update" in sys.argv and isinstance(exc, run.ActiveServicesError):
+            if "--prepare-update" in sys.argv and run is not None and isinstance(exc, run.ActiveServicesError):
                 raise SystemExit(11) from exc
             raise
 

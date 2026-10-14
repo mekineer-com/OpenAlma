@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 from fastapi.testclient import TestClient
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "launcher"))
 
@@ -98,6 +99,7 @@ assert settings.SETTINGS_PATH.read_text() == "{broken"
     subprocess.run([sys.executable, "-c", script, str(tmp_path)], cwd=Path(settings.__file__).parent, check=True)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows entry point reports startup errors")
 def test_linux_startup_opens_error_page_without_replacing_bad_settings(tmp_path):
     import subprocess
     config = tmp_path / ".config/openalma-launcher/paths.json"

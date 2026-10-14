@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import time
+import venv
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -494,13 +495,7 @@ def test_host_prerequisites_ignore_uninstalled_optional_clients(tmp_path, monkey
     ):
         (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / path).touch()
-    venv_python = tmp_path / (
-        "mcp-memu-server/.venv/Scripts/python.exe"
-        if services.os.name == "nt"
-        else "mcp-memu-server/.venv/bin/python3"
-    )
-    venv_python.parent.mkdir(parents=True)
-    venv_python.symlink_to(sys.executable)
+    venv.EnvBuilder(with_pip=False).create(tmp_path / "mcp-memu-server/.venv")
     monkeypatch.setattr(services.shutil, "which", lambda command: f"/usr/bin/{command}")
 
     result = services.host_prerequisites(tmp_path, tmp_path / "missing-os-release")

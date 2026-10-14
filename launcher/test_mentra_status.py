@@ -1,5 +1,6 @@
 from io import BytesIO
 import json
+import venv
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from threading import Thread
@@ -130,9 +131,7 @@ class MentraStatusTest(TestCase):
                 "mentra-os/miniapps/openalma/node_modules",
             ):
                 (root / path).mkdir()
-            python = root / "mcp-memu-server/.venv/bin/python3"
-            python.parent.mkdir(parents=True)
-            python.symlink_to(services.sys.executable)
+            venv.EnvBuilder(with_pip=False).create(root / "mcp-memu-server/.venv")
             os_release = root / "os-release"
             os_release.write_text('ID=alpine\nVERSION_ID="3.23.2"\n')
             checked = []
@@ -1169,8 +1168,9 @@ class MentraStatusTest(TestCase):
                 self.assertNotIn("BEARER=", env_path.read_text())
                 self.assertNotIn("SOUL_ID=", env_path.read_text())
                 self.assertIn("http://old.example", (root / ".env.local.orig").read_text())
-                self.assertEqual(env_path.stat().st_mode & 0o777, 0o600)
-                self.assertEqual((root / ".env.local.orig").stat().st_mode & 0o777, 0o600)
+                if services.os.name != "nt":
+                    self.assertEqual(env_path.stat().st_mode & 0o777, 0o600)
+                    self.assertEqual((root / ".env.local.orig").stat().st_mode & 0o777, 0o600)
                 original_env = env_path.read_text()
                 for address in ("http://127.0.0.1:8099", "http://[::1]:8099", "http://localhost:8099"):
                     (root / "mcp-memu-server" / "config.json").write_text(json.dumps({"mentra": {

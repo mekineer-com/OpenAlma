@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import re
 import subprocess
 
@@ -23,7 +24,7 @@ def test_hermes_recovery_preserves_policy_dom_and_binds_soul_once(configured):
     subprocess.run(["node", "-e", r'''
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const script = process.argv[1], readyHtml = process.argv[2], configured = process.argv[3] === 'True';
+const {script, readyHtml, configured} = JSON.parse(require('node:fs').readFileSync(0, 'utf8'));
 let tick, cleared = 0, reloads = 0, liveForm = null, replacements = 0, phase = 'offline', lateSouls, pageRequests = 0;
 const policy = {routing:'listen_only', memorize:false, defaultPolicy:'full'};
 const policyBefore = {...policy};
@@ -82,7 +83,8 @@ const poll = async()=>{await tick();await new Promise(setImmediate);};
  else {assert.equal(typeof bindings[0].saved,'function'); bindings[0].saved(); assert.equal(context.location.href,'/hermes');}
  assert.deepEqual(policy,policyBefore);
 })().catch(error=>{console.error(error);process.exitCode=1;});
-''', script, ready, str(configured)], check=True, timeout=15)
+'''], input=json.dumps({"script": script, "readyHtml": ready, "configured": configured}),
+        text=True, encoding="utf-8", check=True, timeout=15)
     for html in (offline, ready):
         section = html.split('<div id="channels-soul-selector">', 1)[1].split('</div>', 1)[0]
         assert 'action="/policy"' not in section and 'id="pair-whatsapp"' not in section

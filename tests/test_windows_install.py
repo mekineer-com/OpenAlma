@@ -1,4 +1,5 @@
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -10,6 +11,39 @@ import settings  # noqa: E402
 import setup_install  # noqa: E402
 import windows_install  # noqa: E402
 import windows_remove  # noqa: E402
+
+
+@pytest.mark.parametrize("argument", ["", "--prepare-update"])
+def test_windows_entry_point_preserves_import_failure(tmp_path, argument):
+    script = '''
+import ctypes, os, runpy, sys, types
+from pathlib import Path
+root = Path(sys.argv[1])
+argument = sys.argv[2]
+Path.home = classmethod(lambda cls: root)
+os.environ["LOCALAPPDATA"] = str(root)
+(root / "run.py").write_text("raise ValueError('fictional startup failure')")
+sys.path.insert(0, str(root))
+def unavailable(*args):
+    raise OSError("no registry in this test")
+sys.modules["winreg"] = types.SimpleNamespace(HKEY_LOCAL_MACHINE=0, HKEY_CURRENT_USER=1, OpenKey=unavailable)
+messages = []
+ctypes.windll = types.SimpleNamespace(user32=types.SimpleNamespace(MessageBoxW=lambda *args: messages.append(args)))
+import settings
+sys.argv = [str(settings.LAUNCHER_DIR / "windows_start.pyw"), *([argument] if argument else [])]
+try:
+    runpy.run_path(sys.argv[0], run_name="__main__")
+except ValueError as exc:
+    assert str(exc) == "fictional startup failure"
+else:
+    raise AssertionError("startup failure was swallowed")
+assert len(messages) == (0 if argument else 1)
+if not argument:
+    assert messages[0][1] == "fictional startup failure"
+assert "ValueError: fictional startup failure" in settings.LAUNCHER_LOG_PATH.read_text(encoding="utf-8")
+'''
+    subprocess.run([sys.executable, "-c", script, str(tmp_path), argument],
+                   cwd=Path(settings.__file__).parent, check=True, timeout=10)
 
 
 def test_windows_installer_uses_openalma_icon_everywhere():
