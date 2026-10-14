@@ -51,14 +51,13 @@
   {% endif %}
 
   <h2>Services</h2>
-  <table>
+  <table class="services-table">
     <thead>
       <tr><th>Service</th><th>Status</th><th>Actions</th><th>Logs</th></tr>
     </thead>
-    <tbody>
-      {% set iris_rows = not_installed_services|selectattr('name', 'equalto', 'iris-server')|list %}
-      {% for s in services + iris_rows %}
-      <tr data-service="{{ s.name }}" data-runtime="{{ 'false' if s.install_setup else 'true' }}">
+    <tbody id="visible-services">
+      {% for s in services + not_installed_services %}
+      <tr data-service="{{ s.name }}" data-installed="{{ 'true' if s in services else 'false' }}" data-runtime="{{ 'false' if s.install_setup else 'true' }}">
         <td>{{ s.label }}</td>
         <td class="svc-status">
           {% if s.name == 'iris-server' %}<a class="mentra-apk-link" href="https://github.com/mekineer-com/MentraOS/releases">apk on github</a>{% endif %}
@@ -87,6 +86,8 @@
             {% endif %}
             <button class="btn" type="button" popovertarget="mentra-apk-popup" onclick="mentraApkQr()" aria-label="OpenAlma Mentra APK download QR">QR</button>
             <a class="btn" href="/iris">Setup</a>
+          {% elif s.install_enabled is defined and not s.install_enabled %}
+            <button class="btn" disabled>Install</button>
           {% elif s.install_running %}
             <span class="spinner" role="status" aria-label="Installing"></span>
           {% elif s.state == "stopping" %}
@@ -127,34 +128,22 @@
         <td><a href="{{ '/install/' ~ s.name ~ '/logs' if s.install_setup else '/logs/' ~ s.name }}">view</a></td>
       </tr>
       {% endfor %}
-      <tr id="echo-row">
+      <tr id="echo-row" data-installed="{{ 'true' if echo_enabled else 'false' }}">
         <td>Echo Import</td>
         {% set imports = memorize|selectattr('import_running')|list %}
         <td id="echo-activity" class="muted">{% if imports %}Processing: {{ imports|map(attribute='soul_id')|join(', ') }}{% else %}Ready{% endif %}</td>
-        <td class="svc-actions"><a class="btn" href="/echo">Setup</a></td>
+        <td class="svc-actions">{% if not echo_enabled %}<form class="inline" method="post" action="/echo/enable"><button class="btn" type="submit">Install</button></form> {% endif %}<a class="btn" href="/echo">Setup</a></td>
         <td></td>
       </tr>
     </tbody>
   </table>
-  {% set other_not_installed = not_installed_services|rejectattr('name', 'equalto', 'iris-server')|list %}
-  {% if other_not_installed %}
-  <details class="not-installed">
-    <summary>Not installed ({{ other_not_installed|length }})</summary>
-    <ul>
-      {% for s in other_not_installed %}
-      <li class="muted">
-        {{ s.label }}
-        {% if s.install_running %}<span class="spinner" role="status" aria-label="Installing"></span>
-        {% elif s.action_kind == "install" %}<form class="inline" method="post" action="/install/{{ s.name }}"><button class="btn" type="submit">{{ s.action_label or "Install" }}</button></form>
-        {% elif s.action_kind == "start" %}<button class="btn" onclick="svcAction('{{ s.name }}','start',this)">{{ s.action_label }}</button>
-        {% else %}<button class="btn" disabled>Install</button>{% endif %}
-        {% if s.detail %}<span class="svc-detail">{{ s.detail }}</span>{% endif %}
-        {% if s.state == "setup" %}<a href="/install/{{ s.name }}/logs">log</a>{% endif %}
-      </li>
-      {% endfor %}
-    </ul>
+  <details id="hidden-services-section" class="not-installed" hidden ontoggle="if (!document.getElementById('hide-not-installed').checked) this.open = false">
+    <summary><label onclick="event.stopPropagation()">Hide not installed <input id="hide-not-installed" type="checkbox" onchange="setServiceVisibility(this.checked)"></label></summary>
+    <table class="services-table">
+      <thead><tr><th>Service</th><th>Status</th><th>Actions</th><th>Logs</th></tr></thead>
+      <tbody id="hidden-services"></tbody>
+    </table>
   </details>
-  {% endif %}
 
   {% if install_running %}
   <script>setTimeout(function () { location.reload(); }, 1500);</script>
@@ -294,6 +283,7 @@ async function svcAction(name, action, btn) {
 
 function actionHtml(name, data) {
   if (name === 'iris-server') return irisParentActions(data);
+  if (data.install_enabled === false) return '<button class="btn" disabled>Install</button>';
   var setup = name === 'channels-daemon' ? ' <a class="btn" href="/hermes' + (data.pairing_required ? '?pair=1' : '') + '">Setup</a>' : '';
   var open = data.running && data.open_url && data.state !== 'starting' ? ' <button class="btn" onclick="openService(\'' + esc(name) + '\')">Open</button>' : '';
   if (data.install_running) return '<span class="spinner" role="status" aria-label="Installing"></span>' + setup;
@@ -388,10 +378,11 @@ function pollStatus(name) {
     .catch(function() {});
 }
 
-{% for s in services + iris_rows if s.name == 'iris-server' %}
+{% for s in services + not_installed_services if s.name == 'iris-server' %}
 renderIrisInstallations({{ s|tojson }});
 document.querySelector('tr[data-service="iris-server"] .svc-actions').innerHTML = irisParentActions({{ s|tojson }});
 {% endfor %}
+initServiceVisibility();
 
 function pollMemorize() {
   fetch('/memorize/status', { cache: 'no-store' })

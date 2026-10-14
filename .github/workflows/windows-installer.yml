@@ -34,11 +34,11 @@ jobs:
           if ("${{ github.ref_type }}" -eq "tag") {
             $manifest = Get-Content release-components.json | ConvertFrom-Json
             $repositories = $manifest.services.psobject.Properties |
-              ForEach-Object { $_.Value.repositories } |
-              Where-Object { $_.ref -eq '$OPENALMA_RELEASE_TAG' }
+              ForEach-Object { $_.Value.repositories }
             foreach ($repository in $repositories) {
-              git ls-remote --exit-code --tags $repository.repository "refs/tags/$tag" | Out-Null
-              if ($LASTEXITCODE -ne 0) { throw "Missing $tag in $($repository.repository)" }
+              $ref = if ($repository.ref -eq '$OPENALMA_RELEASE_TAG') { $tag } else { $repository.ref }
+              git ls-remote --exit-code --tags $repository.repository "refs/tags/$ref" | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw "Missing $ref in $($repository.repository)" }
             }
           }
           $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe" | Sort-Object FullName -Descending | Select-Object -First 1

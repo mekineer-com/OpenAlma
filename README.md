@@ -7,7 +7,7 @@
 
 # OpenAlma
 
-_Last updated: 2026-10-14 (v0.1.12 Beta)_
+_Last updated: 2026-10-14 (v0.1.13 Beta)_
 
 **OpenAlma, by Team GhostMaker**
 
@@ -61,13 +61,13 @@ Memory extraction happens during **sleep gaps** — when you close a conversatio
 
 ## Status
 
-**OpenAlma v0.1.12 Beta** is a normal release on the launcher's **Stable** channel. Beta describes its maturity, not its update channel.
+**OpenAlma v0.1.13 Beta** is a normal release on the launcher's **Stable** channel. Beta describes its maturity, not its update channel.
 
 Back up your data before upgrades. Launcher-managed core updates include database backups, supported migrations and recovery; compatibility with every historical database is not guaranteed. Start with a test companion before importing irreplaceable conversations.
 
-Use the launcher to install the matching repositories from the release manifest. Coordinated repositories use the plain `v0.1.12` tag; development branches differ across repositories. Iris's source checkout follows the manifest, while phone installation uses its newest supported ZIP release. The Mentra phone app keeps its separate 3.2.1 version line.
+Use the launcher to install the matching repositories from the release manifest. This launcher-only patch keeps the compatible `v0.1.12` component tags; updating the launcher does not require updating matching services. Iris's source checkout follows the manifest, while phone installation uses its newest supported ZIP release. The Mentra phone app keeps its separate 3.2.1 version line.
 
-Windows users can download the [v0.1.12 installer](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.12). Launcher tests and startup have been checked on Windows; full Windows component-install acceptance remains separate. That release also includes Atomic's prebuilt Windows server ZIP; follow its `INSTALL.txt` for the beta's Node 24 setup workaround. Other platforms still need a manually built Rust server binary.
+Windows users can download the [v0.1.13 installer](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.13). Launcher tests and startup have been checked on Windows; full Windows component-install acceptance remains separate. Atomic's compatible prebuilt Windows server ZIP remains in the [v0.1.12 release](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.12); follow its `INSTALL.txt` for the beta's Node 24 setup workaround. Other platforms still need a manually built Rust server binary.
 
 ### Release tags
 
@@ -84,6 +84,7 @@ Windows users can download the [v0.1.12 installer](https://github.com/mekineer-c
 | `v0.0.13-buildfix` | Atomic Mind Map entity curation (merge, ignore, delete, free-text types); dossier membership you can attach and detach by hand; exact `[M#]` and memory-only search; dossier index replaces the generated holistic summary; two-pass consolidation (dossiers, then reflection); time-aware memory ordering; smartglasses groundwork |
 | `v0.0.14-buildfix` | Photos she can see and remember (smartglasses camera → memory you can ask about later); visual recall as its own lane; WhatsApp guide, mind map guide, smartglasses guide; exact-soul storage identity with launcher soul discovery and creation; smartglasses sittings that survive a dropped connection; manual record-and-review mode; Atomic curation guards; first public prerelease including Iris |
 | `v0.1.12` | OpenAlma Beta on Stable: Windows launcher installer, private Python environments with tested dependency pins, Iris installation/Repair controls, three-stage reflection, and memory/identity recovery fixes |
+| `v0.1.13` | Launcher-only patch: optional hiding of uninstalled service rows, one-time Echo activation, unchanged v0.1.12 component compatibility |
 
 ---
 

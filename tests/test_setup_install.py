@@ -75,7 +75,7 @@ def test_manifest_requires_safe_exact_core_entries(tmp_path):
         setup_install.validate_manifest(unexpected, tmp_path)
 
 
-def test_repository_manifest_resolves_only_the_selected_release(tmp_path):
+def test_launcher_patch_manifest_keeps_compatible_component_versions(tmp_path):
     manifest = json.loads(
         (Path(__file__).resolve().parents[1] / "release-components.json").read_text(encoding="utf-8")
     )
@@ -88,8 +88,8 @@ def test_repository_manifest_resolves_only_the_selected_release(tmp_path):
         for entry in service
         if entry["repository"] != "https://github.com/SillyTavern/SillyTavern.git"
     ]
-    assert coordinated == ["v9.8.7-buildfix"] * len(coordinated)
-    assert parsed["iris-server"][0]["ref"] == "v9.8.7-buildfix"
+    assert coordinated == ["v0.1.12"] * len(coordinated)
+    assert parsed["iris-server"][0]["ref"] == "v0.1.12"
 
 
 def test_discover_release_rejects_prerelease(tmp_path, monkeypatch):

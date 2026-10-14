@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -84,7 +85,18 @@ def configure(apps_root: Path, release_tag: str) -> None:
             > release_version(release.read_text(encoding="utf-8").strip())
         )
         if core_comparison:
-            pending.write_text(release_tag + "\n", encoding="utf-8")
+            from setup_install import _local_matching_checkout, validate_manifest
+
+            manifest = validate_manifest(
+                json.loads(settings.PACKAGED_MANIFEST_PATH.read_text(encoding="utf-8")),
+                apps_root, release_tag,
+            )
+            if all(_local_matching_checkout(apps_root / entry["destination"], entry["repository"], entry["ref"])
+                   for entry in manifest["memu-server"]):
+                release.write_text(release_tag + "\n", encoding="utf-8")
+                pending.unlink(missing_ok=True)
+            else:
+                pending.write_text(release_tag + "\n", encoding="utf-8")
         else:
             pending.unlink(missing_ok=True)
 

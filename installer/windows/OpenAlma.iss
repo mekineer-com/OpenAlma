@@ -31,8 +31,8 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 [Files]
 Source: "..\..\launcher\windows_stop.py"; Flags: dontcopy
 Source: "..\..\launcher\*"; DestDir: "{app}\launcher"; Excludes: ".venv\*,__pycache__\*,*.pyc"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\docs\favicon.svg"; DestDir: "{app}\docs"; Flags: ignoreversion; AfterInstall: PrepareLauncher
-Source: "..\..\release-components.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\docs\favicon.svg"; DestDir: "{app}\docs"; Flags: ignoreversion
+Source: "..\..\release-components.json"; DestDir: "{app}"; Flags: ignoreversion; AfterInstall: PrepareLauncher
 Source: "OpenAlma.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

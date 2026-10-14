@@ -174,11 +174,13 @@ def index(request: Request) -> HTMLResponse:
     )
     if apps_root is None:
         core = next((spec for spec in specs if spec.name == "memu-server"), None)
-        rows = [
+        rows = []
+        not_installed = [
             {"name": core.name, "label": core.label} | setup_install.setup_status(setup_root)
         ] if core is not None else []
-        not_installed = [
-            {"name": spec.name, "label": spec.label, "install_enabled": False}
+        not_installed += [
+            {"name": spec.name, "label": spec.label, "install_enabled": False,
+             "install_setup": True, "state": "setup", "status_label": "Not installed"}
             for spec in specs if spec.name != "memu-server"
         ]
     else:
@@ -189,7 +191,8 @@ def index(request: Request) -> HTMLResponse:
                 iris = {"name": spec.name, "label": spec.label} | _setup_aware_status(
                     spec, setup_root, verify_runtime=not install_in_progress,
                 )
-                rows.append(iris)
+                installed = bool(iris.get("installations"))
+                (rows if installed else not_installed).append(iris)
                 continue
             if services.is_installed(spec):
                 rows.append(
@@ -198,8 +201,9 @@ def index(request: Request) -> HTMLResponse:
                     )
                 )
                 continue
-            if not services.is_installed(spec) and spec.name != "memu-server":
-                setup = setup_install.optional_setup_status(spec.name, setup_root)
+            if not services.is_installed(spec):
+                setup = (setup_install.setup_status(setup_root) if spec.name == "memu-server"
+                         else setup_install.optional_setup_status(spec.name, setup_root))
                 not_installed.append({"name": spec.name, "label": spec.label} | setup)
     owner_id: str | None = None
     owner_error = ""
@@ -222,6 +226,7 @@ def index(request: Request) -> HTMLResponse:
         "index.html",
         {
             "services": rows,
+            "echo_enabled": settings.read_paths().get("echo_enabled", False),
             "not_installed_services": not_installed,
             "install_running": any(row.get("install_running") for row in rows + not_installed),
             "memorize": memorize,
@@ -236,6 +241,15 @@ def index(request: Request) -> HTMLResponse:
             "services_active": any(_runtime_active(row) for row in rows + not_installed),
         },
     )
+
+
+@app.post("/echo/enable")
+def echo_enable() -> RedirectResponse:
+    paths = settings.read_paths()
+    if not paths.get("echo_enabled"):
+        paths["echo_enabled"] = True
+        settings.write_paths(paths)
+    return RedirectResponse("/", status_code=303)
 
 
 @app.get("/memorize/status")

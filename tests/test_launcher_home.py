@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -69,6 +70,58 @@ def test_fresh_root_shows_core_install_without_runtime_status(tmp_path, monkeypa
     assert 'action="/install/memu-server"' in response.text
     assert "Hermes Channels" in response.text
     assert "disabled" in response.text
+    for spec in services.services_for_root(tmp_path):
+        assert f'data-service="{spec.name}" data-installed="false"' in response.text
+    assert 'data-service="atomic" data-installed="false" data-runtime="false"' in response.text
+
+
+def test_home_groups_iris_by_reported_phones_not_checkout(tmp_path, monkeypatch):
+    iris = services.ServiceSpec("iris-server", "Mentra Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "all_services", lambda: [iris])
+    monkeypatch.setattr(app.services, "read_owner", lambda: "Fictional Owner")
+    monkeypatch.setattr(app.services, "list_souls", lambda: [])
+    monkeypatch.setattr(app.setup_install, "optional_setup_status", lambda *_args: {"ready": True, "guidance": ""})
+    monkeypatch.setattr(app.services, "status", lambda _spec: {"installations": [], "state": "ready"})
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    assert 'data-service="iris-server" data-installed="false"' in client.get("/").text
+    monkeypatch.setattr(app.services, "status", lambda _spec: {
+        "installations": [{"device_session_id": "fictional-phone", "host_reporting": True}], "state": "ready",
+    })
+    assert 'data-service="iris-server" data-installed="true"' in client.get("/").text
+
+
+def test_echo_install_is_one_time_and_shared_between_browsers(tmp_path, monkeypatch):
+    path = tmp_path / "paths.json"
+    path.write_text(json.dumps({"release_channel": "stable", "window_position": {"x": 1, "y": 2}}), encoding="utf-8")
+    monkeypatch.setattr(app.settings, "SETTINGS_PATH", path)
+    monkeypatch.setattr(app.settings, "apps_root", lambda: None)
+    monkeypatch.setattr(app.settings, "setup_apps_root", lambda: None)
+    monkeypatch.setattr(app.services, "read_owner", lambda: "Fictional Owner")
+    monkeypatch.setattr(app.services, "list_souls", lambda: [])
+    monkeypatch.setattr(app.setup_install, "launcher_update", lambda: None)
+    written = []
+    write_paths = app.settings.write_paths
+
+    def record_write(paths):
+        written.append(paths.copy())
+        write_paths(paths)
+
+    monkeypatch.setattr(app.settings, "write_paths", record_write)
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    assert 'action="/echo/enable"' in client.get("/").text
+    response = client.post("/echo/enable", follow_redirects=False)
+    assert response.status_code == 303 and response.headers["location"] == "/"
+    assert app.settings.read_paths() == {
+        "release_channel": "stable", "window_position": {"x": 1, "y": 2}, "echo_enabled": True,
+    }
+    assert client.post("/echo/enable", follow_redirects=False).status_code == 303
+    assert len(written) == 1
+    home = TestClient(app.app, base_url="http://127.0.0.1").get("/").text
+    assert '<tr id="echo-row" data-installed="true">' in home
+    assert 'action="/echo/enable"' not in home
+    assert '>Installed</button>' not in home and '>Update</button>' not in home
+    assert 'href="/echo">Setup</a>' in home
 
 
 def test_launcher_quit_uses_server_callback(monkeypatch):
@@ -366,7 +419,7 @@ def test_active_core_enables_optional_install_actions(tmp_path, monkeypatch):
     specs = services.services_for_root(tmp_path)
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
     monkeypatch.setattr(app.services, "all_services", lambda: specs)
-    monkeypatch.setattr(app.setup_install, "core_issue", lambda _root: "")
+    monkeypatch.setattr(app.setup_install, "core_issue", lambda _root, **_kwargs: "")
     monkeypatch.setattr(app.setup_install, "optional_setup_status", lambda name, _root: {
         "ready": False, "state": "setup", "status_label": "Not installed",
         "detail": "Missing checkout", "startable": False,

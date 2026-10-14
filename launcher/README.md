@@ -64,12 +64,13 @@ update-desktop-database ~/.local/share/applications/ 2>/dev/null || true
 
 ## Windows
 
-Download the [OpenAlma v0.1.12 Beta installer](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.12)
+Download the [OpenAlma v0.1.13 Beta installer](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.13)
 to open OpenAlma from the Start menu without a terminal window. Beta is available
 on the Stable channel. Launcher startup/tests are verified; full Windows component
 installation remains separately qualified.
 
-The same release includes Atomic's prebuilt Windows server ZIP. Its `INSTALL.txt`
+The [v0.1.12 release](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.12)
+includes Atomic's compatible prebuilt Windows server ZIP. Its `INSTALL.txt`
 covers extraction and the Node 24 dependency-install workaround; no Rust build
 is needed. Automatic Atomic binary installation is not part of this beta.
 
@@ -77,6 +78,8 @@ is needed. Automatic Atomic binary installation is not part of this beta.
 
 - On first use, confirm your name and choose or create your companion's Soul.
 - Each Soul has its own memory progress and recovery controls.
+- **Hide not installed** moves uninstalled services into the existing collapsed section. It disappears when all services are installed.
+- Echo's **Install** enables the bundled importer once; only **Setup** remains afterward. Echo updates with the memory server.
 - Stop Hermes before switching its Soul, then start it again.
 - New WhatsApp chats are excluded until you choose to include them. Changing
   the default for new chats does not change the choices for existing chats.

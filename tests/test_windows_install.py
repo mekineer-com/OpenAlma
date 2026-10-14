@@ -13,6 +13,13 @@ import windows_install  # noqa: E402
 import windows_remove  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _packaged_manifest(tmp_path, monkeypatch):
+    manifest = tmp_path / "release-components.json"
+    manifest.write_bytes((Path(__file__).resolve().parents[1] / "release-components.json").read_bytes())
+    monkeypatch.setattr(settings, "PACKAGED_MANIFEST_PATH", manifest)
+
+
 @pytest.mark.parametrize("argument", ["", "--prepare-update"])
 def test_windows_entry_point_preserves_import_failure(tmp_path, argument):
     script = '''
@@ -64,6 +71,7 @@ def test_windows_installer_uses_openalma_icon_everywhere():
     assert "ServicesVerified := FileExists(Python) and FileExists(Script)" in script
     assert "Remove Everything will be unavailable" in script
     assert "LastLauncherCheckCode = 11" in script
+    assert 'Source: "..\\..\\release-components.json"; DestDir: "{app}"; Flags: ignoreversion; AfterInstall: PrepareLauncher' in script
 
 
 def test_windows_configuration_preserves_release_and_other_settings(tmp_path, monkeypatch):
@@ -86,6 +94,46 @@ def test_windows_configuration_preserves_release_and_other_settings(tmp_path, mo
     assert settings.PACKAGED_VERSION_PATH.read_text(encoding="utf-8") == "v0.0.15-buildfix\n"
     assert (apps_root / windows_install.OWNER_FILE).read_text(encoding="utf-8").strip() == str(apps_root)
     assert settings.read_paths() == {"other": True, "apps_root": str(apps_root)}
+
+
+@pytest.mark.parametrize("core_ref", ["v0.1.12", "v0.1.14"])
+def test_launcher_patch_only_queues_changed_core(tmp_path, monkeypatch, core_ref):
+    root = tmp_path / "OpenAlma"
+    monkeypatch.setattr(settings, "SETTINGS_PATH", tmp_path / "paths.json")
+    monkeypatch.setattr(settings, "PACKAGED_VERSION_PATH", tmp_path / ".openalma-version")
+    windows_install.configure(root, "v0.1.12")
+    manifest = json.loads(settings.PACKAGED_MANIFEST_PATH.read_text(encoding="utf-8"))
+    heads = {}
+    for entry in manifest["services"]["memu-server"]["repositories"]:
+        destination = root / entry["destination"]
+        destination.mkdir()
+        marker = "run.py" if entry["destination"] == "mcp-memu-server" else "pyproject.toml"
+        (destination / marker).touch()
+        for command in (
+            ["git", "init", "-q"], ["git", "add", marker],
+            ["git", "-c", "user.name=Fictional Tester", "-c", "user.email=tester@example.invalid", "commit", "-qm", "fixture"],
+            ["git", "remote", "add", "origin", entry["repository"]], ["git", "tag", "v0.1.12"],
+        ):
+            subprocess.run(command, cwd=destination, check=True, capture_output=True)
+        heads[destination] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=destination)
+        entry["ref"] = core_ref
+    (root / "mcp-memu-server/config.json").write_text("{}", encoding="utf-8")
+    settings.PACKAGED_MANIFEST_PATH.write_text(json.dumps(manifest), encoding="utf-8")
+    paths = settings.read_paths()
+    paths["echo_enabled"] = True
+    settings.write_paths(paths)
+
+    windows_install.configure(root, "v0.1.13")
+
+    changed = core_ref != "v0.1.12"
+    assert (root / windows_install.PENDING_RELEASE_FILE).exists() == changed
+    assert (root / windows_install.RELEASE_FILE).read_text(encoding="utf-8").strip() == ("v0.1.12" if changed else "v0.1.13")
+    assert settings.read_paths()["echo_enabled"] is True
+    assert settings.PACKAGED_VERSION_PATH.read_text(encoding="utf-8").strip() == "v0.1.13"
+    for destination, head in heads.items():
+        assert subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=destination) == head
+    with pytest.raises(ValueError, match="cannot downgrade"):
+        windows_install.configure(root, "v0.1.12")
 
 
 def test_windows_configuration_refuses_unowned_nonempty_root(tmp_path, monkeypatch):

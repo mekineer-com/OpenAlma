@@ -58,7 +58,7 @@ global.pendingStarts = {};
 vm.runInThisContext(fs.readFileSync(process.argv[1] + '/static/iris-services.js', 'utf8'));
 global.renderIrisInstallations = () => {};
 const source = fs.readFileSync(process.argv[1] + '/templates/index.html', 'utf8');
-vm.runInThisContext(source.slice(source.indexOf('function pollStatus'), source.indexOf("{% for s in services + iris_rows if")));
+vm.runInThisContext(source.slice(source.indexOf('function pollStatus'), source.indexOf("{% for s in services + not_installed_services if")));
 (async () => {
   const results = [];
   for (const pending of ['none', 'stop', 'start', 'error', 'installing']) {

@@ -20,6 +20,44 @@ function fmt(n) {
   return Number(n || 0).toLocaleString();
 }
 
+var serviceRows = [];
+
+function initServiceVisibility() {
+  serviceRows = Array.from(document.querySelectorAll('tr[data-service], #echo-row'));
+  try {
+    document.getElementById('hide-not-installed').checked = localStorage.getItem('hide-not-installed') === 'true';
+  } catch (_error) {}
+  groupServiceRows();
+}
+
+function setServiceVisibility(hide) {
+  try { localStorage.setItem('hide-not-installed', String(hide)); } catch (_error) {}
+  groupServiceRows();
+}
+
+function groupServiceRows() {
+  if (!serviceRows.length) return;
+  var visible = document.getElementById('visible-services');
+  var hidden = document.getElementById('hidden-services');
+  var hide = document.getElementById('hide-not-installed').checked;
+  var last = new Map([[visible, null], [hidden, null]]);
+  var focused = document.activeElement;
+  serviceRows.forEach(function(row) {
+    var target = hide && row.dataset.installed !== 'true' ? hidden : visible;
+    var children = [];
+    for (var child = row.nextElementSibling; child && child.dataset.irisInstallation; child = child.nextElementSibling) children.push(child);
+    [row].concat(children).forEach(function(node) {
+      var before = last.get(target) ? last.get(target).nextElementSibling : target.firstElementChild;
+      if (node !== before) target.insertBefore(node, before);
+      last.set(target, node);
+    });
+  });
+  var section = document.getElementById('hidden-services-section');
+  section.hidden = !serviceRows.some(function(row) { return row.dataset.installed !== 'true'; });
+  if (!hide || section.hidden) section.open = false;
+  if (focused && document.activeElement !== focused) focused.focus();
+}
+
 function infoHtml(text, key, label) {
   return '<span class="context-info" data-info="' + esc(key) + '"><button type="button" popovertarget="info:' + esc(key) +
     '" aria-label="' + esc(text) + '" onpointerenter="if (event.pointerType === \'mouse\') this.nextElementSibling.showPopover()" onpointerleave="if (event.pointerType === \'mouse\') this.nextElementSibling.hidePopover()">' + esc(label) + '<span class="info-icon">i</span></button>' +

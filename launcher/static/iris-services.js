@@ -154,6 +154,11 @@ function renderIrisInstallations(data) {
     }
   });
   rows.forEach(function(row) { row.remove(); });
+  var installed = String(data.installations.length > 0);
+  if (parent.dataset && parent.dataset.installed !== installed) {
+    parent.dataset.installed = installed;
+    groupServiceRows();
+  }
 }
 
 function irisInstallerBusy(data) {

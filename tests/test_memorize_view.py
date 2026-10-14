@@ -508,12 +508,83 @@ def test_channels_soul_selector_is_one_combobox():
     assert ".soul-options[hidden] { display: none; }" in html
 
 
-def test_not_installed_services_are_collapsed_below_services():
+def test_not_installed_services_use_regular_rows_and_opt_in_hiding():
     html = _render({}, [{"name": "atomic", "label": "Atomic Mind Map"}])
 
-    assert '<details class="not-installed">' in html
-    assert "Not installed (1)" in html
+    assert 'id="hide-not-installed" type="checkbox"' in html
+    assert 'type="checkbox" checked' not in html
+    assert 'id="hidden-services-section" class="not-installed" hidden' in html
+    assert html.index('id="visible-services"') < html.index('Hide not installed')
+    assert '<summary><label onclick="event.stopPropagation()">Hide not installed' in html
+    assert 'data-service="atomic" data-installed="false"' in html
+    assert '<tbody id="hidden-services"></tbody>' in html
+    assert '<tr id="echo-row" data-installed="false">' in html
+    assert 'action="/echo/enable"' in html
     assert "Atomic Mind Map" in html
+
+
+def test_service_visibility_moves_existing_rows_and_preserves_preferences():
+    path = Path(__file__).resolve().parents[1] / "launcher/static/launcher.js"
+    subprocess.run(["node", "-e", r"""
+const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
+function body() {
+  return {children: [], get firstElementChild() { return this.children[0] || null; },
+    insertBefore(node, before) {
+      if (node.parentNode) node.parentNode.children.splice(node.parentNode.children.indexOf(node), 1);
+      this.children.splice(before ? this.children.indexOf(before) : this.children.length, 0, node);
+      node.parentNode = this;
+    }};
+}
+function row(id, installed) {
+  return {id, dataset: {installed: String(installed)},
+    get nextElementSibling() { return this.parentNode.children[this.parentNode.children.indexOf(this) + 1] || null; }};
+}
+const visible = body(), hidden = body(), checkbox = {checked: false}, section = {hidden: true, open: false};
+const core = row('core', false), atomic = row('atomic', true), iris = row('iris', false), echo = row('echo-row', false);
+const rows = [core, atomic, iris, echo];
+rows.forEach(node => visible.insertBefore(node, null));
+const elements = new Map([['visible-services', visible], ['hidden-services', hidden],
+  ['hide-not-installed', checkbox], ['hidden-services-section', section], ['echo-row', echo]]);
+const saved = new Map();
+global.document = {querySelectorAll: () => rows, getElementById: id => elements.get(id)};
+global.localStorage = {getItem: key => saved.get(key), setItem: (key, value) => saved.set(key, value)};
+vm.runInThisContext(fs.readFileSync(process.argv[1], 'utf8'));
+initServiceVisibility();
+assert.deepEqual(visible.children, rows);
+assert.equal(section.hidden, false);
+checkbox.checked = true;
+setServiceVisibility(true);
+assert.deepEqual(visible.children, [atomic]);
+assert.deepEqual(hidden.children, [core, iris, echo]);
+assert.equal(section.hidden, false);
+assert.equal(section.open, false);
+echo.dataset.installed = 'true'; // The server renders the enabled state after Install.
+groupServiceRows();
+assert.deepEqual(visible.children, [atomic, echo]);
+const phone = row('phone', true);
+phone.dataset.irisInstallation = 'fictional-phone';
+phone.draft = 'Unsaved name';
+hidden.insertBefore(phone, iris.nextElementSibling);
+iris.dataset.installed = 'true';
+groupServiceRows();
+assert.deepEqual(visible.children, [atomic, iris, phone, echo]);
+assert.equal(phone.draft, 'Unsaved name');
+assert.equal(visible.children.filter(node => node === phone).length, 1);
+initServiceVisibility();
+assert.equal(checkbox.checked, true);
+assert.equal(echo.dataset.installed, 'true');
+checkbox.checked = false;
+setServiceVisibility(false);
+assert.deepEqual(visible.children, [core, atomic, iris, phone, echo]);
+assert.equal(section.hidden, false);
+rows.forEach(node => { node.dataset.installed = 'true'; });
+groupServiceRows();
+assert.equal(section.hidden, true);
+assert.equal(section.open, false);
+global.localStorage = {getItem() { throw Error('Blocked'); }, setItem() { throw Error('Blocked'); }};
+assert.doesNotThrow(() => initServiceVisibility());
+assert.doesNotThrow(() => setServiceVisibility(false));
+""", str(path)], check=True, timeout=10)
 
 
 def test_force_stop_only_renders_with_failure_evidence():
