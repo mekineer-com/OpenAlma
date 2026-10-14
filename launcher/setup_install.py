@@ -491,6 +491,7 @@ def _refresh_core(root: Path, log: Any) -> None:
     python = str(_venv_python(root))
     _run([
         python, "-m", "pip", "install", "--disable-pip-version-check",
+        "-r", str(root / "mcp-memu-server" / "requirements.lock"),
         "-e", str(root / "mcp-memu-server"), "-e", str(root / "memu"),
     ], cwd=None, log=log)
     _run([python, "scripts/install-sqlite-vec.py"], cwd=root / "memu", log=log)
@@ -761,7 +762,9 @@ def _install_core(operation: InstallOperation) -> None:
             python = str(_venv_python(operation.root))
             _set_operation(operation, step="Installing core Python packages")
             _run([
-                python, "-m", "pip", "install", "-e", str(operation.root / "mcp-memu-server"),
+                python, "-m", "pip", "install",
+                "-r", str(operation.root / "mcp-memu-server" / "requirements.lock"),
+                "-e", str(operation.root / "mcp-memu-server"),
                 "-e", str(operation.root / "memu"),
             ], cwd=None, log=log)
             _set_operation(operation, step="Installing sqlite-vec")

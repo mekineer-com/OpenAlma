@@ -31,6 +31,14 @@ Later launches reuse that environment. When an update changes `requirements.txt`
 the launcher installs the updated dependencies before starting. If setup fails,
 fix the reported problem and run the same command again.
 
+`requirements.txt` pins runtime dependencies, including transitive packages.
+Maintainers edit the direct inputs in `requirements.in`, regenerate from the
+OpenAlma repository root, and test before shipping:
+
+```sh
+uv pip compile --universal --python-version 3.12 launcher/requirements.in -o launcher/requirements.txt
+```
+
 ## Run
 
 ```sh

@@ -544,7 +544,8 @@ def test_core_retry_reuses_recorded_release(tmp_path, monkeypatch, partial_check
     monkeypatch.setattr(setup_install, "_managed_checkout_state", lambda item, root: (root / item["destination"], "old-head"))
     monkeypatch.setattr(setup_install, "_local_matching_checkout", lambda *_args: False)
     monkeypatch.setattr(setup_install, "_checkout_release", lambda item, *_args: checked_out.append(item))
-    monkeypatch.setattr(setup_install, "_run", lambda *_args, **_kwargs: None)
+    commands = []
+    monkeypatch.setattr(setup_install, "_run", lambda command, **_kwargs: commands.append(command))
     monkeypatch.setattr(setup_install, "_write_config", lambda _root: None)
     monkeypatch.setattr(setup_install, "core_issue", lambda _root: "")
 
@@ -554,8 +555,19 @@ def test_core_retry_reuses_recorded_release(tmp_path, monkeypatch, partial_check
         "apps_root": str(tmp_path), "other": True,
     }]
     assert operation.state == "ready"
+    install = next(command for command in commands if "pip" in command)
+    assert install[install.index("-r") + 1] == str(tmp_path / "mcp-memu-server" / "requirements.lock")
     assert cloned == ([] if partial_checkout else [entry])
     assert checked_out == ([entry] if partial_checkout else [])
+
+
+def test_core_refresh_installs_runtime_lock_with_both_repositories(tmp_path, monkeypatch):
+    commands = []
+    monkeypatch.setattr(setup_install, "_run", lambda command, **_kwargs: commands.append(command))
+    setup_install._refresh_core(tmp_path, StringIO())
+    install = commands[0]
+    assert install[install.index("-r") + 1] == str(tmp_path / "mcp-memu-server" / "requirements.lock")
+    assert install[-4:] == ["-e", str(tmp_path / "mcp-memu-server"), "-e", str(tmp_path / "memu")]
 
 
 def test_release_selection_belongs_to_each_apps_root(tmp_path):
