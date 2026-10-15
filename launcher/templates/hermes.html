@@ -33,6 +33,9 @@
   </div>
   {% if channels_configured %}
   <h2>WhatsApp channel policy</h2>
+  {% if policy_error %}
+  <p class="failure">WhatsApp policy needs repair: {{ policy_error }}</p>
+  {% else %}
   <form method="post" action="/policy">
     <p>
       <label for="default-channel-policy">New rows default to</label>
@@ -103,6 +106,7 @@
   {% endif %}
     <p><button class="btn" type="submit">Save policies</button></p>
   </form>
+  {% endif %}
   {% endif %}
 
 {% if not channels_configured %}<p class="muted">Choose a Soul above to create the Hermes settings.</p>{% endif %}

@@ -580,11 +580,16 @@ def echo_results(soul_id: str) -> dict:
 def hermes_page(request: Request) -> HTMLResponse:
     channels_configured = soul.CHANNELS_CONFIG_PATH.exists()
     chats = policy.list_whatsapp_chats()
-    current, default_policy = (
-        policy.ensure_channel_settings(chats)
-        if channels_configured
-        else (policy.read_channel_settings(), policy.read_default_policy())
-    )
+    policy_error = ""
+    try:
+        current, default_policy = (
+            policy.ensure_channel_settings(chats)
+            if channels_configured
+            else (policy.read_channel_settings(), policy.read_default_policy())
+        )
+    except (RuntimeError, OSError) as exc:
+        policy_error = str(exc)
+        current, default_policy, chats = {}, "excluded", []
     chat_rows = []
     for c in chats:
         chat_id = str(c.get("id", ""))
@@ -620,6 +625,7 @@ def hermes_page(request: Request) -> HTMLResponse:
         "channel_directory_path": str(policy.DIRECTORY_PATH),
         "policies": policy.ALL_POLICIES,
         "default_policy": default_policy,
+        "policy_error": policy_error,
         "active_soul": active_soul,
         "channels_configured": channels_configured,
         "channels_error": channels_error,
@@ -1151,7 +1157,7 @@ async def policy_save(request: Request) -> RedirectResponse:
     if updates or default_policy is not None:
         try:
             policy.write_channel_settings(updates, default_policy=default_policy)
-        except ValueError as exc:
+        except (ValueError, RuntimeError, OSError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RedirectResponse("/hermes", status_code=303)
 

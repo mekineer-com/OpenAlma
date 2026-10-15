@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -312,14 +313,24 @@ def _default_memorize_for_policy(policy: Policy) -> bool:
 def _read_policy_data() -> dict:
     try:
         data = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except FileNotFoundError:
         return {}
-    return data if isinstance(data, dict) else {}
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(f"Failed to read {POLICY_PATH}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Expected mapping at top level in {POLICY_PATH}")
+    return data
 
 
 def _write_policy_data(data: dict) -> None:
     POLICY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    POLICY_PATH.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=POLICY_PATH.parent, delete=False) as tmp:
+        temporary = Path(tmp.name)
+        tmp.write(json.dumps(data, indent=2) + "\n")
+    try:
+        temporary.replace(POLICY_PATH)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _configured_default_policy() -> Policy | None:
@@ -400,16 +411,6 @@ def write_channel_settings(updates: dict[str, dict[str, bool | str]], *, default
         for store_key in store_keys:
             existing = channels.get(store_key)
             row = dict(existing) if isinstance(existing, dict) else {}
-            metadata = {
-                key: value
-                for key, value in row.items()
-                if key not in {"policy", "memorize"} and value not in (None, "", [], {})
-            }
-
-            if whatsapp.get("default_policy") not in ALL_POLICIES and p == "full" and memorize and not metadata:
-                # Default behavior: no row needed.
-                channels.pop(store_key, None)
-                continue
             row["policy"] = p
             row["memorize"] = memorize
             channels[store_key] = row
@@ -422,13 +423,12 @@ def ensure_channel_settings(chats: list[dict]) -> tuple[dict[str, dict[str, bool
     configured = _configured_default_policy()
     default = configured or "excluded"
     current = read_channel_settings()
-    seed_policy: Policy = "full" if configured is None else default
     if not chats:
         return current, default
     missing = {
         str(chat.get("id") or ""): {
-            "policy": seed_policy,
-            "memorize": _default_memorize_for_policy(seed_policy),
+            "policy": default,
+            "memorize": _default_memorize_for_policy(default),
         }
         for chat in chats
         if str(chat.get("id") or "")

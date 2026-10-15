@@ -93,7 +93,7 @@ def test_directory_shows_one_named_control_per_linked_dm(alias_policy, reverse, 
     assert policy.list_whatsapp_chats() == [group, {"id": lid, "name": "TestContact", "type": "dm"}]
 
 
-def test_legacy_default_removal_applies_to_each_alias(alias_policy):
+def test_explicit_full_policy_is_saved_for_each_alias(alias_policy):
     phone, lid = alias_policy
     policy.POLICY_PATH.write_text(json.dumps({"whatsapp": {"channels": {
         phone: {"policy": "listen_only", "memorize": False},
@@ -101,6 +101,7 @@ def test_legacy_default_removal_applies_to_each_alias(alias_policy):
     }}}))
     policy.write_channel_settings({phone: {"policy": "full", "memorize": True}})
     assert json.loads(policy.POLICY_PATH.read_text())["whatsapp"]["channels"] == {
+        phone: {"policy": "full", "memorize": True},
         lid: {"policy": "full", "memorize": True, "display_name": "TestContact"},
     }
 
@@ -227,7 +228,7 @@ def test_read_write_channel_settings_round_trip_preserves_metadata(tmp_path, mon
     }
 
 
-def test_write_channel_settings_removes_pure_default_policy_row(tmp_path, monkeypatch):
+def test_write_channel_settings_keeps_explicit_full_policy_row(tmp_path, monkeypatch):
     policy_path = tmp_path / "memu.json"
     policy_path.write_text(
         json.dumps({
@@ -246,10 +247,10 @@ def test_write_channel_settings_removes_pure_default_policy_row(tmp_path, monkey
     })
 
     data = json.loads(policy_path.read_text(encoding="utf-8"))
-    assert data["whatsapp"]["channels"] == {}
+    assert data["whatsapp"]["channels"] == {"test-contact@lid": {"policy": "full", "memorize": True}}
 
 
-def test_existing_chats_are_frozen_full_when_new_default_is_introduced(tmp_path, monkeypatch):
+def test_unconfigured_chats_are_excluded_when_discovered(tmp_path, monkeypatch):
     policy_path = tmp_path / "memu.json"
     policy_path.write_text('{"whatsapp":{"channels":{}}}', encoding="utf-8")
     monkeypatch.setattr(policy, "POLICY_PATH", policy_path)
@@ -259,7 +260,7 @@ def test_existing_chats_are_frozen_full_when_new_default_is_introduced(tmp_path,
     ])
 
     assert default == "excluded"
-    assert settings["existing@s.whatsapp.net"] == {"policy": "full", "memorize": True}
+    assert settings["existing@s.whatsapp.net"] == {"policy": "excluded", "memorize": False}
     data = json.loads(policy_path.read_text(encoding="utf-8"))
     assert data["whatsapp"]["default_policy"] == "excluded"
 
@@ -278,3 +279,45 @@ def test_new_chat_is_frozen_to_selected_default(tmp_path, monkeypatch):
     assert default == "listen_only"
     assert settings["new@g.us"] == {"policy": "listen_only", "memorize": True}
     assert policy.read_channel_settings()["new@g.us"]["policy"] == "listen_only"
+
+
+@pytest.mark.parametrize("raw", [b'{', b'[]', b'\xff'])
+def test_damaged_policy_shows_error_and_refuses_save(tmp_path, monkeypatch, raw):
+    from fastapi.testclient import TestClient
+    import app
+
+    path = tmp_path / "memu.json"
+    path.write_bytes(raw)
+    config = tmp_path / "config.json"
+    config.write_text('{"soul_id":"FictionalSoul"}')
+    monkeypatch.setattr(policy, "POLICY_PATH", path)
+    monkeypatch.setattr(policy, "list_whatsapp_chats", lambda: [{"id": "fictional@g.us"}])
+    monkeypatch.setattr(app.soul, "CHANNELS_CONFIG_PATH", config)
+    monkeypatch.setattr(app.soul, "read_active_soul_id", lambda: "FictionalSoul")
+    monkeypatch.setattr(app.services, "list_souls", lambda: ["FictionalSoul"])
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    page = client.get("/hermes")
+    assert page.status_code == 200 and "WhatsApp policy needs repair" in page.text
+    assert 'action="/policy"' not in page.text
+    response = client.post("/policy", data={"default_policy": "full"})
+    assert response.status_code == 400 and path.read_bytes() == raw
+
+
+def test_policy_save_publishes_complete_file_atomically(tmp_path, monkeypatch):
+    path = tmp_path / "memu.json"
+    original = '{"whatsapp":{"default_policy":"excluded"}}'
+    path.write_text(original)
+    monkeypatch.setattr(policy, "POLICY_PATH", path)
+    replace = Path.replace
+    observed = []
+
+    def publish(source, destination):
+        assert path.read_text() == original
+        assert json.loads(source.read_text())["whatsapp"]["default_policy"] == "listen_only"
+        observed.append(source)
+        return replace(source, destination)
+
+    monkeypatch.setattr(Path, "replace", publish)
+    policy.write_default_policy("listen_only")
+    assert observed and policy.read_default_policy() == "listen_only"
+    assert list(tmp_path.iterdir()) == [path]
