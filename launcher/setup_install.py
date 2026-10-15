@@ -264,8 +264,18 @@ def _write_recorded_release(root: Path, tag: str) -> None:
     _write_release(root, RELEASE_TAG_FILE, tag)
 
 
-def _write_root_marker(root: Path) -> None:
-    _write_release(root, ROOT_MARKER_FILE, str(root.resolve()))
+def _write_root_marker(root: Path) -> bool:
+    """Claim empty roots only; reused source folders are not safe to delete."""
+    root = root.resolve()
+    marker = root / ROOT_MARKER_FILE
+    if marker.exists():
+        if os.path.normcase(marker.read_text(encoding="utf-8").strip()) != os.path.normcase(str(root)):
+            raise SetupError("OpenAlma Apps-root ownership marker does not match")
+    elif root.exists() and any(root.iterdir()):
+        return False
+    root.mkdir(parents=True, exist_ok=True)
+    _write_release(root, ROOT_MARKER_FILE, str(root))
+    return True
 
 
 def _write_release(root: Path, filename: str, tag: str) -> None:
@@ -723,6 +733,7 @@ def _set_operation(operation: InstallOperation, **values: str) -> None:
 
 def _install_core(operation: InstallOperation) -> None:
     try:
+        _write_root_marker(operation.root)
         log_path = install_log_path(operation.service_name)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("w", encoding="utf-8") as log:
@@ -746,7 +757,6 @@ def _install_core(operation: InstallOperation) -> None:
             else:
                 tag, manifest = discover_release(operation.root)
                 _write_recorded_release(operation.root, tag)
-            _write_root_marker(operation.root)
             paths["apps_root"] = str(operation.root)
             settings.write_paths(paths)
 

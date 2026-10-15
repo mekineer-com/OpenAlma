@@ -181,8 +181,6 @@ begin
       else
         Result := 'OpenAlma could not verify that all services are stopped.';
     end;
-  if (Result = '') and DirExists(ExpandConstant('{app}')) and not FileExists(Script) then
-    Result := 'OpenAlma launcher files are incomplete, so running services cannot be verified.';
 end;
 
 function StopAnyLauncher(RequireUpdateReady: Boolean): String;
@@ -193,7 +191,9 @@ begin
   Result := '';
   ExtractTemporaryFile('windows_stop.py');
   Helper := ExpandConstant('{tmp}\windows_stop.py');
-  Params := '-3.12 "' + Helper + '"';
+  Params := '-3.12 "' + Helper + '" --install-dir "' + ExpandConstant('{app}') + '"';
+  if RegKeyExists(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{41D67BBF-3DC6-45AC-962B-CFE0356E7245}_is1') then
+    Params := Params + ' --registered-install';
   if RequireUpdateReady then
     Params := Params + ' --require-update-ready';
   if not RunHidden(PythonLauncher, Params, ResultCode) then
@@ -204,6 +204,8 @@ begin
     Result := 'Port 8765 is occupied by a process that is not a verified OpenAlma Launcher.'
   else if ResultCode = 13 then
     Result := 'OpenAlma Launcher did not exit. Use Exit in OpenAlma, then click Retry.'
+  else if ResultCode = 14 then
+    Result := 'OpenAlma launcher files are incomplete, so running services cannot be verified.'
   else if ResultCode <> 0 then
     Result := 'Could not stop OpenAlma Launcher.';
 end;
@@ -335,12 +337,6 @@ begin
         'Choose Yes to keep them (recommended), or No to consider removing everything.',
         mbConfirmation, MB_YESNO
       ) = IDNO;
-      if RemoveEverything then
-        RemoveEverything := MsgBox(
-          'Remove EVERYTHING in the recorded OpenAlma Apps root?'#13#10 +
-          'This permanently deletes installed components, settings, logs, and soul data.',
-          mbError, MB_YESNO
-        ) = IDYES;
     end;
     if RemoveEverything then
     begin

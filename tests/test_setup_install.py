@@ -561,7 +561,10 @@ def test_optional_worker_keeps_failure_and_status_available_during_probes(tmp_pa
 
 
 @pytest.mark.parametrize("partial_checkout", [False, True])
-def test_core_retry_reuses_recorded_release(tmp_path, monkeypatch, partial_checkout):
+@pytest.mark.parametrize("owned", [False, True])
+def test_core_retry_reuses_recorded_release(tmp_path, monkeypatch, partial_checkout, owned):
+    if owned:
+        assert setup_install._write_root_marker(tmp_path)
     operation = setup_install.InstallOperation(service_name="memu-server", root=tmp_path)
     entry = {"destination": "memu", "repository": "https://github.com/mekineer-com/memU.git", "ref": "v1.0.0"}
     manifest = {"memu-server": [entry]}
@@ -598,6 +601,7 @@ def test_core_retry_reuses_recorded_release(tmp_path, monkeypatch, partial_check
     assert install[install.index("-r") + 1] == str(tmp_path / "mcp-memu-server" / "requirements.lock")
     assert cloned == ([] if partial_checkout else [entry])
     assert checked_out == ([entry] if partial_checkout else [])
+    assert (tmp_path / setup_install.ROOT_MARKER_FILE).exists() is owned
 
 
 def test_core_refresh_installs_runtime_lock_with_both_repositories(tmp_path, monkeypatch):
@@ -622,9 +626,30 @@ def test_release_selection_belongs_to_each_apps_root(tmp_path):
 
 
 def test_manual_launcher_setup_marks_its_apps_root(tmp_path):
-    setup_install._write_root_marker(tmp_path)
+    assert setup_install._write_root_marker(tmp_path)
 
     assert (tmp_path / setup_install.ROOT_MARKER_FILE).read_text(encoding="utf-8") == str(tmp_path) + "\n"
+
+
+def test_manual_launcher_setup_preserves_unowned_folder(tmp_path):
+    unrelated = tmp_path / "fictional-notes.txt"
+    unrelated.write_text("keep", encoding="utf-8")
+    assert not setup_install._write_root_marker(tmp_path)
+    assert list(tmp_path.iterdir()) == [unrelated]
+    assert unrelated.read_text(encoding="utf-8") == "keep"
+
+
+def test_core_install_does_not_overwrite_wrong_ownership(tmp_path, monkeypatch):
+    marker = tmp_path / setup_install.ROOT_MARKER_FILE
+    marker.write_text(str(tmp_path / "other"), encoding="utf-8")
+    operation = setup_install.InstallOperation("memu-server", tmp_path)
+    monkeypatch.setattr(setup_install, "_OPERATION", operation)
+    monkeypatch.setattr(setup_install, "install_log_path", lambda _name: pytest.fail("Opened log before validating ownership"))
+    monkeypatch.setattr(setup_install.settings, "write_paths", lambda _value: pytest.fail("Changed settings"))
+    setup_install._install_core(operation)
+    assert operation.state == "error" and "ownership marker does not match" in operation.detail
+    assert marker.read_text(encoding="utf-8") == str(tmp_path / "other")
+    assert list(tmp_path.iterdir()) == [marker]
 
 
 def test_windows_package_shim_uses_comspec(tmp_path, monkeypatch):

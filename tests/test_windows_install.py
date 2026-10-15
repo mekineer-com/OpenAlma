@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -96,6 +97,9 @@ def test_windows_installer_uses_openalma_icon_everywhere():
     assert "ServicesVerified := FileExists(Python) and FileExists(Script)" in script
     assert "Remove Everything will be unavailable" in script
     assert "LastLauncherCheckCode = 11" in script
+    assert "--install-dir" in script and "--registered-install" in script
+    assert "else if ResultCode = 14 then" in script
+    assert "and DirExists(ExpandConstant('{app}')) and not FileExists(Script)" not in script
     assert 'Source: "..\\..\\release-components.json"; DestDir: "{app}"; Flags: ignoreversion; AfterInstall: PrepareLauncher' in script
 
 
@@ -281,3 +285,37 @@ def test_remove_everything_rejects_changed_owner_without_deleting(tmp_path, monk
         windows_remove.remove_everything()
 
     assert root.exists()
+
+
+def test_remove_everything_rejects_unowned_source_root(tmp_path, monkeypatch):
+    unrelated = tmp_path / "fictional-notes.txt"
+    unrelated.write_text("keep", encoding="utf-8")
+    monkeypatch.setattr(settings, "read_paths", lambda: {"apps_root": str(tmp_path)})
+    with pytest.raises(RuntimeError, match="ownership marker is unavailable"):
+        windows_remove.remove_everything()
+    assert unrelated.read_text(encoding="utf-8") == "keep"
+
+
+@pytest.mark.parametrize("answer", [6, 7])
+def test_remove_everything_confirms_exact_root_with_no_as_default(tmp_path, monkeypatch, answer):
+    root = tmp_path / "FictionalSharedFolder"
+    assert setup_install._write_root_marker(root)
+    unrelated = root / "fictional-notes.txt"
+    unrelated.write_text("explicit consent required", encoding="utf-8")
+    monkeypatch.setattr(settings, "read_paths", lambda: {"apps_root": str(root)})
+    monkeypatch.setattr(settings, "SETTINGS_PATH", tmp_path / "config/paths.json")
+    monkeypatch.setattr(settings, "LAUNCHER_LOG_PATH", tmp_path / "state/launcher.log")
+    prompts = []
+
+    def confirm(*args):
+        prompts.append(args)
+        assert unrelated.exists()
+        return answer
+
+    monkeypatch.setattr(windows_remove.ctypes, "windll", SimpleNamespace(
+        user32=SimpleNamespace(MessageBoxW=confirm),
+    ), raising=False)
+    windows_remove.remove_everything(confirm=True)
+    assert len(prompts) == 1 and str(root.resolve()) in prompts[0][1]
+    assert prompts[0][3] & 0x00000100  # MB_DEFBUTTON2 makes No the default.
+    assert root.exists() is (answer != 6)

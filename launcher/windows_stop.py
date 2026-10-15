@@ -6,6 +6,7 @@ import json
 import socket
 import time
 import urllib.request
+from pathlib import Path
 
 HOST = "127.0.0.1"
 PORT = 8765
@@ -20,7 +21,13 @@ def _port_open() -> bool:
         return False
 
 
-def stop(require_update_ready: bool = False) -> int:
+def stop(require_update_ready: bool = False, *, install_dir: Path | None = None,
+         registered_install: bool = False) -> int:
+    if install_dir is not None and install_dir.is_dir():
+        if not (install_dir / "launcher/windows_start.pyw").is_file() and (
+            registered_install or any(install_dir.glob("unins*.dat"))
+        ):
+            return 14
     if not _port_open():
         return 0
     try:
@@ -51,8 +58,11 @@ def stop(require_update_ready: bool = False) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--require-update-ready", action="store_true")
+    parser.add_argument("--install-dir", type=Path)
+    parser.add_argument("--registered-install", action="store_true")
     args = parser.parse_args()
-    raise SystemExit(stop(args.require_update_ready))
+    raise SystemExit(stop(args.require_update_ready, install_dir=args.install_dir,
+                          registered_install=args.registered_install))
 
 
 if __name__ == "__main__":

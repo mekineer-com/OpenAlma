@@ -57,15 +57,11 @@ def selected_apps_root(fallback: Path) -> Path:
 def configure(apps_root: Path, release_tag: str) -> None:
     if _TAG.fullmatch(release_tag) is None:
         raise ValueError("Invalid OpenAlma release tag")
-    apps_root = apps_root.resolve()
-    marker = apps_root / OWNER_FILE
-    if apps_root.exists() and any(apps_root.iterdir()) and not marker.exists():
-        raise ValueError(f"Refusing to claim nonempty Apps root: {apps_root}")
-    apps_root.mkdir(parents=True, exist_ok=True)
-    if marker.exists() and marker.read_text(encoding="utf-8").strip() != str(apps_root):
-        raise ValueError("OpenAlma Apps-root ownership marker does not match")
+    from setup_install import _write_root_marker
 
-    marker.write_text(str(apps_root) + "\n", encoding="utf-8")
+    apps_root = apps_root.resolve()
+    if not _write_root_marker(apps_root):
+        raise ValueError(f"Refusing to claim nonempty Apps root: {apps_root}")
     release = apps_root / RELEASE_FILE
     pending = apps_root / PENDING_RELEASE_FILE
     core_complete = (
