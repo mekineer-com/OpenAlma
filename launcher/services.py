@@ -199,8 +199,8 @@ def services_for_root(root: Path) -> list[ServiceSpec]:
             cwd=root / "sillytavern" / "SillyTavern",
             log_path=STATE_DIR / "sillytavern.log",
             pid_path=STATE_DIR / "sillytavern.pid",
-            port=8001,
-            open_url="http://127.0.0.1:8001",
+            port=8000,
+            open_url="http://127.0.0.1:8000",
             install_marker=root / "sillytavern" / "SillyTavern" / "server.js",
         ),
     ]

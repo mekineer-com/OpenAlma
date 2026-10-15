@@ -213,7 +213,8 @@ def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch)
         "sillytavern": "SillyTavern",
     }
     assert open_urls["atomic"] == "http://127.0.0.1:1420"
-    assert open_urls["sillytavern"] == "http://127.0.0.1:8001"
+    assert open_urls["sillytavern"] == "http://127.0.0.1:8000"
+    assert next(spec for spec in specs if spec.name == "sillytavern").port == 8000
     assert next(spec for spec in specs if spec.name == "sillytavern").cmd[-2:] == [
         "server.js", "--browserLaunchEnabled=false",
     ]

@@ -92,6 +92,11 @@ def test_launcher_patch_manifest_keeps_compatible_component_versions(tmp_path):
     ]
     assert coordinated == ["v0.1.12"] * len(coordinated)
     assert parsed["iris-server"][0]["ref"] == "v0.1.12"
+    assert parsed["sillytavern"][0] == {
+        "repository": "https://github.com/SillyTavern/SillyTavern.git",
+        "ref": "1.19.0",
+        "destination": "sillytavern/SillyTavern",
+    }
 
 
 def test_discover_release_rejects_prerelease(tmp_path, monkeypatch):

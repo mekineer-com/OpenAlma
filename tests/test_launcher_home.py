@@ -744,7 +744,7 @@ def test_start_route_rejects_incomplete_setup(tmp_path, monkeypatch):
 def test_open_route_uses_default_browser_tab(tmp_path, monkeypatch):
     spec = services.ServiceSpec(
         "sillytavern", "SillyTavern", [], tmp_path, tmp_path / "log", tmp_path / "pid",
-        open_url="http://127.0.0.1:8001",
+        open_url="http://127.0.0.1:8000",
     )
     opened = []
     monkeypatch.setattr(app, "_find_service", lambda _name: spec)
@@ -753,7 +753,7 @@ def test_open_route_uses_default_browser_tab(tmp_path, monkeypatch):
     response = TestClient(app.app, base_url="http://127.0.0.1").post("/service/sillytavern/open")
 
     assert response.json() == {"ok": True}
-    assert opened == ["http://127.0.0.1:8001"]
+    assert opened == ["http://127.0.0.1:8000"]
     client = TestClient(app.app, base_url="http://127.0.0.1")
     assert client.post("/open-url", data={"url": "https://example.org/guide"}).status_code == 200
     assert opened[-1] == "https://example.org/guide"

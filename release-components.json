@@ -46,7 +46,7 @@
       "repositories": [
         {
           "repository": "https://github.com/SillyTavern/SillyTavern.git",
-          "ref": "1.18.0",
+          "ref": "1.19.0",
           "destination": "sillytavern/SillyTavern"
         },
         {
