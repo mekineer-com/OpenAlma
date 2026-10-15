@@ -236,6 +236,8 @@ def test_services_can_be_built_for_pending_root(tmp_path):
 
 def test_iris_server_is_managed_by_launcher(tmp_path, monkeypatch):
     root = tmp_path / "apps"
+    bun = root / ".tools" / "bun"
+    monkeypatch.setattr(services.settings, "bun_binary", lambda _root: bun)
     monkeypatch.setattr(services, "_resolve_apps_root", lambda: root)
     monkeypatch.setattr(services, "_CHANNELS_HOME", tmp_path / "channels_data")
 
@@ -245,7 +247,8 @@ def test_iris_server_is_managed_by_launcher(tmp_path, monkeypatch):
 
     assert spec.cwd == root / "mentra-os" / "miniapps" / "openalma"
     assert spec.cmd[-1] == "scripts/release-private.mjs"
-    assert Path(spec.env["PATH"].split(services.os.pathsep, 1)[0]).parts[-2:] == (".bun", "bin")
+    assert spec.cmd[0] == str(bun)
+    assert Path(spec.env["PATH"].split(services.os.pathsep, 1)[0]) == bun.parent
     assert spec.port == 6789
     assert channels.env["CHANNELS_HOME"] == str(tmp_path / "channels_data")
 
@@ -360,6 +363,7 @@ def test_iris_repair_bundle_choices_do_not_require_latest_github(tmp_path, monke
 
 def test_iris_repair_preserves_target_lock_and_rechecks_sitting(tmp_path, monkeypatch):
     import app as launcher_app
+    monkeypatch.setattr(launcher_app, "_require_startable_setup", lambda _name: None)
     spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
     target = {"device_session_id": "test-phone", "host_package": "com.mentra.mentra.openalma"}
     busy = False
@@ -544,6 +548,7 @@ def test_iris_address_save_refuses_invalid_config_without_rewriting_it(tmp_path,
 
 def test_iris_install_rechecks_readiness_before_reserving_or_starting(tmp_path, monkeypatch):
     import app as launcher_app
+    monkeypatch.setattr(launcher_app, "_require_startable_setup", lambda _name: None)
 
     spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
     monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState())
