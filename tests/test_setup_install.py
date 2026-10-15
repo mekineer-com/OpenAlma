@@ -302,6 +302,26 @@ def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatc
     assert not (tmp_path / setup_install.RECOVERY_FILE).exists()
 
 
+def test_core_update_keeps_settings_changed_while_it_runs(tmp_path, monkeypatch):
+    settings = setup_install.settings
+    monkeypatch.setattr(settings, "SETTINGS_PATH", tmp_path / "paths.json")
+    settings.write_paths({"apps_root": str(tmp_path), "release_channel": "stable"})
+    (tmp_path / setup_install.RELEASE_TAG_FILE).write_text("v1.0.0")
+    (tmp_path / setup_install.PENDING_RELEASE_TAG_FILE).write_text("v2.0.0")
+    operation = setup_install.InstallOperation("memu-server", tmp_path)
+    monkeypatch.setattr(setup_install, "install_log_path", lambda _name: tmp_path / "install.log")
+    monkeypatch.setattr(setup_install, "packaged_manifest", lambda _root: {})
+    monkeypatch.setattr(setup_install, "read_packaged_release", lambda: "v2.0.0")
+    monkeypatch.setattr(setup_install, "_update_core", lambda *_args: settings.update_paths(
+        apps_root=str(tmp_path / "new-selection"), release_channel="prerelease", echo_enabled=True,
+    ))
+    setup_install._install_core(operation)
+    assert operation.state == "ready"
+    assert settings.read_paths() == {
+        "apps_root": str(tmp_path / "new-selection"), "release_channel": "prerelease", "echo_enabled": True,
+    }
+
+
 def test_recovery_marker_blocks_stale_update_request(tmp_path, monkeypatch):
     (tmp_path / setup_install.RECOVERY_FILE).write_text("{}", encoding="utf-8")
     monkeypatch.setattr(setup_install, "_begin_operation", lambda *_args: pytest.fail("must not start"))
@@ -1032,6 +1052,36 @@ def test_optional_worker_uses_shared_clone_and_command_pipeline(tmp_path, monkey
     assert operation.state == "ready"
 
 
+def test_status_probe_does_not_reject_a_local_install(tmp_path, monkeypatch):
+    held, release = threading.Event(), threading.Event()
+    monkeypatch.setattr(setup_install, "INSTALL_LOCK", tmp_path / "install.lock")
+    monkeypatch.setattr(setup_install, "_OPERATION", None)
+    monkeypatch.setattr(setup_install, "_OPERATIONS", {})
+    handle = setup_install._acquire_install_lock("memu-server", tmp_path)
+    setup_install._release_install_lock(handle)
+    unlock = setup_install._unlock_handle
+    def pause_probe(handle):
+        if threading.current_thread().name == "fictional-probe":
+            held.set()
+            assert release.wait(2)
+        unlock(handle)
+    monkeypatch.setattr(setup_install, "_unlock_handle", pause_probe)
+    probe = threading.Thread(target=setup_install._active_install_owner, name="fictional-probe")
+    probe.start()
+    timer = threading.Timer(0.2, release.set)
+    try:
+        assert held.wait(1)
+        timer.start()
+        operation = setup_install._begin_operation("memu-server", tmp_path,
+            lambda op: setup_install._set_operation(op, state="ready"))
+        operation.thread.join(2)
+        assert operation.state == "ready"
+    finally:
+        release.set()
+        timer.cancel()
+        probe.join(2)
+
+
 def test_install_lock_excludes_another_process_owner(tmp_path, monkeypatch):
     monkeypatch.setattr(setup_install, "INSTALL_LOCK", tmp_path / "install.lock")
     handle = setup_install._acquire_install_lock("sillytavern", tmp_path)
@@ -1175,6 +1225,7 @@ def test_private_bun_download_is_verified_and_reused(tmp_path, monkeypatch, corr
 
 
 def test_iris_readiness_requires_its_private_runtime_and_installer_cli(tmp_path, monkeypatch):
+    assert setup_install.optional_issue("iris-server", tmp_path) == "Missing Iris checkout"
     directory = tmp_path / "mentra-os/miniapps/openalma"
     directory.mkdir(parents=True)
     (directory / "miniapp.json").touch()

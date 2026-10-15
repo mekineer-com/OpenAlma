@@ -146,9 +146,7 @@ def launcher_update_readiness() -> dict[str, object]:
 
 @app.post("/launcher/window-position", include_in_schema=False)
 def launcher_window_position(x: int, y: int) -> dict[str, bool]:
-    paths = settings.read_paths()
-    paths["window_position"] = {"x": x, "y": y}
-    settings.write_paths(paths)
+    settings.update_paths(window_position={"x": x, "y": y})
     return {"ok": True}
 
 
@@ -317,8 +315,7 @@ def index(request: Request) -> HTMLResponse:
 def echo_enable() -> RedirectResponse:
     paths = settings.read_paths()
     if not paths.get("echo_enabled"):
-        paths["echo_enabled"] = True
-        settings.write_paths(paths)
+        settings.update_paths(echo_enabled=True)
     return RedirectResponse("/", status_code=303)
 
 
@@ -776,14 +773,7 @@ def settings_save(
     apps_root: str = Form(default=""),
     release_channel: Literal["stable", "prerelease"] = Form(default="stable"),
 ) -> RedirectResponse:
-    current = settings.read_paths()
-    current["release_channel"] = release_channel
-    new_root = apps_root.strip()
-    if new_root:
-        current["apps_root"] = new_root
-    else:
-        current.pop("apps_root", None)
-    settings.write_paths(current)
+    settings.update_paths(apps_root=apps_root.strip() or None, release_channel=release_channel)
     return RedirectResponse("/settings", status_code=303)
 
 

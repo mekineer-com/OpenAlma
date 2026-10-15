@@ -743,7 +743,6 @@ def _install_core(operation: InstallOperation) -> None:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("w", encoding="utf-8") as log:
             _set_operation(operation, step="Finding supported release")
-            paths = settings.read_paths()
             tag = read_recorded_release(operation.root)
             pending_tag = read_pending_release(operation.root)
             if pending_tag is not None:
@@ -751,8 +750,6 @@ def _install_core(operation: InstallOperation) -> None:
                 if manifest is None or read_packaged_release() != pending_tag:
                     raise SetupError("Pending core update does not match the packaged launcher")
                 _update_core(operation, pending_tag, manifest, log)
-                paths["apps_root"] = str(operation.root)
-                settings.write_paths(paths)
                 _set_operation(
                     operation, state="ready", step="Core updated", detail="Start memU Server when ready",
                 )
@@ -762,8 +759,7 @@ def _install_core(operation: InstallOperation) -> None:
             else:
                 tag, manifest = discover_release(operation.root)
                 _write_recorded_release(operation.root, tag)
-            paths["apps_root"] = str(operation.root)
-            settings.write_paths(paths)
+            settings.update_paths(apps_root=str(operation.root))
 
             for entry in manifest["memu-server"]:
                 _set_operation(operation, step=f"Installing {entry['destination']}")
@@ -903,8 +899,6 @@ def _node_dependencies_ready(directory: Path, *, include_dev: bool = False) -> b
 
 
 def optional_issue(service_name: str, root: Path) -> str:
-    if service_name == "iris-server" and not settings.bun_version(settings.bun_binary(root)):
-        return "Iris runtime needs preparation"
     repositories = {
         "channels-daemon": (
             ("hermes-channels/gateway/daemon.py", "Hermes Channels checkout"),
@@ -927,6 +921,8 @@ def optional_issue(service_name: str, root: Path) -> str:
     for relative, label in repositories.get(service_name, ()):
         if not (root / relative).exists():
             return f"Missing {label}"
+    if service_name == "iris-server" and not settings.bun_version(settings.bun_binary(root)):
+        return "Iris runtime needs preparation"
     dependency_checks = {
         "channels-daemon": (
             (root / "hermes-channels/bridge", False, "bridge dependencies"),
@@ -1184,27 +1180,29 @@ def _acquire_install_lock(service_name: str, root: Path) -> Any:
 
 
 def _active_install_owner() -> tuple[str, str] | None:
-    try:
-        handle = INSTALL_LOCK.open("a+b")
-    except OSError:
-        return None
-    try:
-        if handle.tell() == 0:
-            handle.write(b"\0")
-            handle.flush()
+    # A local status probe must not briefly exclude local installer admission.
+    with _LOCK:
         try:
-            _lock_handle(handle)
+            handle = INSTALL_LOCK.open("a+b")
         except OSError:
-            handle.seek(1)
+            return None
+        try:
+            if handle.tell() == 0:
+                handle.write(b"\0")
+                handle.flush()
             try:
-                owner = json.loads(handle.read().decode("utf-8"))
-                return str(owner["service"]), str(owner["root"])
-            except (OSError, ValueError, KeyError, TypeError):
-                return None
-        _unlock_handle(handle)
-        return None
-    finally:
-        handle.close()
+                _lock_handle(handle)
+            except OSError:
+                handle.seek(1)
+                try:
+                    owner = json.loads(handle.read().decode("utf-8"))
+                    return str(owner["service"]), str(owner["root"])
+                except (OSError, ValueError, KeyError, TypeError):
+                    return None
+            _unlock_handle(handle)
+            return None
+        finally:
+            handle.close()
 
 
 def _release_install_lock(handle: Any) -> None:

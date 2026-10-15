@@ -41,10 +41,25 @@ def test_saved_apps_root_waits_for_restart(tmp_path, monkeypatch):
     assert client.post("/settings", data={"apps_root": str(alias), "release_channel": "prerelease"},
                        follow_redirects=False).status_code == 303
     assert settings.read_paths()["release_channel"] == "prerelease"
+    assert client.post("/settings", data={"apps_root": "", "release_channel": "prerelease"}, follow_redirects=False).status_code == 303
+    assert "apps_root" not in settings.read_paths()
     assert settings.apps_root() == active
     assert 'value="prerelease" selected' in client.get("/settings").text
     assert client.post("/settings", data={"release_channel": "invalid"}).status_code == 422
     assert settings.read_paths()["release_channel"] == "prerelease"
+
+
+def test_concurrent_settings_updates_preserve_other_fields(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    monkeypatch.setattr(settings, "SETTINGS_PATH", tmp_path / "paths.json")
+    settings.write_paths({"release_channel": "stable"})
+    def update(index):
+        settings.update_paths(**{f"fictional_{index}": index})
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        list(pool.map(update, range(12)))
+    assert settings.read_paths() == {"release_channel": "stable", **{f"fictional_{i}": i for i in range(12)}}
+    assert list(tmp_path.iterdir()) == [settings.SETTINGS_PATH]
 
 
 def test_channels_editor_uses_active_channels_home(tmp_path, monkeypatch):

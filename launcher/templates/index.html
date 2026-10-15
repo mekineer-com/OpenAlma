@@ -388,7 +388,7 @@ function pollMemorize() {
 }
 
 setInterval(function() {
-  document.querySelectorAll('tr[data-service][data-runtime="true"], tr[data-service="iris-server"]').forEach(function(row) {
+  document.querySelectorAll('tr[data-service][data-runtime="true"]{% if not needs_setup %}, tr[data-service="iris-server"]{% endif %}').forEach(function(row) {
     pollStatus(row.dataset.service);
   });
 }, 2000);

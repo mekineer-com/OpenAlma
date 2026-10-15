@@ -39,6 +39,28 @@ def test_bundled_bun_selection_preserves_source_fallbacks(tmp_path, monkeypatch,
     assert settings.bun_binary(root) == expected
 
 
+@pytest.mark.parametrize("failure", ["timeout", "nonzero", "empty"])
+def test_transient_bun_probe_failure_is_retried_then_success_cached(tmp_path, monkeypatch, failure):
+    binary = tmp_path / "fictional-bun"
+    binary.touch()
+    calls = []
+    def probe(command, **kwargs):
+        calls.append(command)
+        assert kwargs["check"] is True
+        if len(calls) == 1:
+            if failure == "timeout":
+                raise subprocess.TimeoutExpired(command, 10)
+            if failure == "nonzero":
+                raise subprocess.CalledProcessError(1, command)
+            return SimpleNamespace(stdout="")
+        return SimpleNamespace(stdout="1.3.14\n")
+    monkeypatch.setattr(settings.subprocess, "run", probe)
+    assert settings.bun_version(binary) is None
+    assert settings.bun_version(binary) == "1.3.14"
+    assert settings.bun_version(binary) == "1.3.14"
+    assert len(calls) == 2
+
+
 @pytest.fixture(autouse=True)
 def _packaged_manifest(tmp_path, monkeypatch):
     manifest = tmp_path / "release-components.json"

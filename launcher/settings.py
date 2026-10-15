@@ -21,8 +21,10 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from functools import lru_cache
 from pathlib import Path
+from threading import Lock
 
 from process_flags import hidden_process_kwargs
 
@@ -36,6 +38,8 @@ LAUNCHER_LOG_PATH = (
     else Path.home() / ".local" / "state" / "openalma" / "launcher.log"
 )
 _AUTODISCOVER_MARKER = "mcp-memu-server/run.py"
+# ponytail: serialize this process's settings updates; separate processes remain last-writer-wins.
+_PATHS_LOCK = Lock()
 
 
 def read_paths() -> dict:
@@ -50,9 +54,24 @@ def read_paths() -> dict:
 
 def write_paths(paths: dict) -> None:
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temporary = SETTINGS_PATH.with_suffix(".tmp")
-    temporary.write_text(json.dumps(paths, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(SETTINGS_PATH)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=SETTINGS_PATH.parent, delete=False) as tmp:
+        temporary = Path(tmp.name)
+        tmp.write(json.dumps(paths, indent=2) + "\n")
+    try:
+        temporary.replace(SETTINGS_PATH)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def update_paths(**changes: object) -> None:
+    with _PATHS_LOCK:
+        paths = read_paths()
+        for key, value in changes.items():
+            if value is None:
+                paths.pop(key, None)
+            else:
+                paths[key] = value
+        write_paths(paths)
 
 
 def _autodiscover_apps_root() -> Path | None:
@@ -147,18 +166,18 @@ def bun_binary(root: Path) -> Path:
 
 
 @lru_cache
-def _bun_version(path: str, signature: tuple[int, int, int]) -> str | None:
-    try:
-        probe = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=10,
-                               **hidden_process_kwargs())
-        return probe.stdout.strip() if probe.returncode == 0 else None
-    except (OSError, subprocess.SubprocessError):
-        return None
+def _bun_version(path: str, signature: tuple[int, int, int]) -> str:
+    probe = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=10, check=True,
+                           **hidden_process_kwargs())
+    version = probe.stdout.strip()
+    if not version:
+        raise ValueError("Bun returned an empty version")
+    return version
 
 
 def bun_version(binary: Path) -> str | None:
     try:
         info = binary.stat()
-    except OSError:
+        return _bun_version(str(binary), (info.st_mtime_ns, info.st_size, info.st_mode))
+    except (OSError, subprocess.SubprocessError, ValueError):
         return None
-    return _bun_version(str(binary), (info.st_mtime_ns, info.st_size, info.st_mode))

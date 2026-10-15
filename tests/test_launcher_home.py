@@ -73,6 +73,7 @@ def test_fresh_root_shows_core_install_without_runtime_status(tmp_path, monkeypa
     for spec in services.services_for_root(tmp_path):
         assert f'data-service="{spec.name}" data-installed="false"' in response.text
     assert 'data-service="atomic" data-installed="false" data-runtime="false"' in response.text
+    assert "querySelectorAll('tr[data-service][data-runtime=\"true\"]')" in response.text
 
 
 def test_home_groups_iris_by_reported_phones_not_checkout(tmp_path, monkeypatch):
@@ -154,6 +155,10 @@ def test_launcher_mutations_reject_foreign_browser_origins(monkeypatch):
     configured = TestClient(app.app, base_url="http://lan.example:8765")
     assert configured.post("/launcher/quit", headers={"origin": "http://lan.example:8765"}).status_code == 200
     assert configured.get("/launcher/identity").status_code == 200
+    for host in ("0.0.0.0", "::"):
+        monkeypatch.setattr(app.app.state, "launcher_host", host)
+        assert client.post("/launcher/quit", headers={"origin": "https://foreign.example"}).status_code == 403
+        assert client.post("/launcher/quit", headers={"sec-fetch-site": "cross-site"}).status_code == 403
     assert len(called) == 3
 
 

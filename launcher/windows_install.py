@@ -98,9 +98,7 @@ def configure(apps_root: Path, release_tag: str) -> None:
 
     settings.PACKAGED_VERSION_PATH.write_text(release_tag + "\n", encoding="utf-8")
 
-    paths = settings.read_paths()
-    paths["apps_root"] = str(apps_root)
-    settings.write_paths(paths)
+    settings.update_paths(apps_root=str(apps_root))
 
 
 def main() -> None:
