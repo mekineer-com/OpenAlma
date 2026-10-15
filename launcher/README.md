@@ -67,7 +67,7 @@ running `python3.12 run.py` in a terminal also shows installation diagnostics.
 
 ## Windows
 
-Download the [OpenAlma v0.1.15 Beta installer](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.15)
+Download the [latest OpenAlma Beta installer](https://github.com/mekineer-com/OpenAlma/releases/latest)
 to open OpenAlma from the Start menu without a terminal window. Beta is available
 on the Stable channel. Launcher startup/tests are verified; full Windows component
 installation remains separately qualified.
@@ -79,8 +79,7 @@ The launcher downloads the matching Atomic Windows server during **Install**
 and prepares its web dependencies without Rust or
 Visual Studio. Working manual/debug binaries stay selected. Source-changing
 updates of unproven manual builds are refused rather than overwriting them.
-The compatible server package remains on Atomic's v0.1.12 release; the component
-manifest is unchanged.
+The component manifest selects the matching prebuilt server package.
 
 ## Notes
 

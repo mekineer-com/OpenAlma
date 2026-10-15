@@ -28,7 +28,7 @@
       "repositories": [
         {
           "repository": "https://github.com/mekineer-com/hermes-channels.git",
-          "ref": "v0.1.16",
+          "ref": "v0.1.17",
           "destination": "hermes-channels"
         }
       ]
@@ -37,7 +37,7 @@
       "repositories": [
         {
           "repository": "https://github.com/mekineer-com/atomic.git",
-          "ref": "v0.1.16",
+          "ref": "v0.1.17",
           "destination": "atomic"
         }
       ]

@@ -94,8 +94,8 @@ def test_launcher_patch_manifest_keeps_compatible_component_versions(tmp_path):
         "https://github.com/mekineer-com/mcp-memu-server.git": "v0.1.16",
         "https://github.com/mekineer-com/memU.git": "v0.1.12",
         "https://github.com/mekineer-com/iris.git": "v0.1.16",
-        "https://github.com/mekineer-com/hermes-channels.git": "v0.1.16",
-        "https://github.com/mekineer-com/atomic.git": "v0.1.16",
+        "https://github.com/mekineer-com/hermes-channels.git": "v0.1.17",
+        "https://github.com/mekineer-com/atomic.git": "v0.1.17",
         "https://github.com/mekineer-com/memu-sillytavern-plugin.git": "v0.1.12",
         "https://github.com/mekineer-com/memu-sillytavern-extension.git": "v0.1.12",
     }
