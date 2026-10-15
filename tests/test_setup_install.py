@@ -241,7 +241,7 @@ def test_database_backup_copies_all_regular_databases_and_ignores_hidden(tmp_pat
     assert not stale_failed.exists()
 
 
-@pytest.mark.parametrize("failure", ["migration", "verification"])
+@pytest.mark.parametrize("failure", ["checkout", "migration", "verification"])
 def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatch, failure):
     operation = setup_install.InstallOperation("memu-server", tmp_path)
     entries = [
@@ -268,7 +268,11 @@ def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatc
         lambda entry, root: (root / entry["destination"], "old-" + entry["destination"]),
     )
     monkeypatch.setattr(setup_install, "_backup_databases", lambda *_args: backup)
-    monkeypatch.setattr(setup_install, "_checkout_release", lambda *_args: events.append("new-code"))
+    def checkout(*_args):
+        if failure == "checkout":
+            raise setup_install.SetupError("Offline fetch")
+        events.append("new-code")
+    monkeypatch.setattr(setup_install, "_checkout_release", checkout)
     monkeypatch.setattr(setup_install, "_refresh_core", lambda *_args: events.append("environment"))
     monkeypatch.setattr(setup_install, "_restore_databases", lambda *_args: events.append("databases"))
     issues = iter(["core verification failed", ""] if failure == "verification" else [""])
@@ -285,11 +289,15 @@ def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatc
 
     monkeypatch.setattr(setup_install, "_run", run)
 
-    with pytest.raises(setup_install.SetupError, match="migration failed" if failure == "migration" else "core verification failed"):
+    error = {"checkout": "Offline fetch", "migration": "migration failed", "verification": "core verification failed"}[failure]
+    with pytest.raises(setup_install.SetupError, match=error):
         setup_install._update_core(operation, "v2.0.0", {"memu-server": entries}, None)
 
     assert events.index("databases") < events.index("old-code")
-    assert events.index("environment") < events.index("migration") < events.index("databases")
+    if failure == "checkout":
+        assert "environment" not in events
+    else:
+        assert events.index("environment") < events.index("migration") < events.index("databases")
     assert (tmp_path / setup_install.RELEASE_TAG_FILE).read_text() == "v1.0.0\n"
     assert not (tmp_path / setup_install.RECOVERY_FILE).exists()
 
@@ -1035,6 +1043,64 @@ def test_install_lock_excludes_another_process_owner(tmp_path, monkeypatch):
             setup_install._acquire_install_lock("atomic", tmp_path)
     finally:
         setup_install._release_install_lock(handle)
+
+
+@pytest.mark.parametrize("service", ["memu-server", "iris-server"])
+def test_reopened_launcher_observes_another_process_install(tmp_path, monkeypatch, service):
+    lock = tmp_path / "install.lock"
+    monkeypatch.setattr(setup_install, "INSTALL_LOCK", lock)
+    monkeypatch.setattr(setup_install, "_OPERATION", None)
+    monkeypatch.setattr(setup_install, "_OPERATIONS", {})
+    script = '''
+import sys
+from pathlib import Path
+import setup_install
+setup_install.INSTALL_LOCK = Path(sys.argv[1])
+handle = setup_install._acquire_install_lock(sys.argv[3], Path(sys.argv[2]))
+try:
+    print("ready", flush=True)
+    sys.stdin.readline()
+finally:
+    setup_install._release_install_lock(handle)
+'''
+    child = subprocess.Popen(
+        [sys.executable, "-c", script, str(lock), str(tmp_path), service],
+        cwd=Path(setup_install.__file__).parent, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, **process_flags.hidden_process_kwargs(),
+    )
+    deadline = threading.Timer(10, child.kill)
+    deadline.start()
+    try:
+        assert child.stdout.readline().strip() == "ready"
+        assert setup_install.operation_status(tmp_path, service)["state"] == "running"
+        status = (setup_install.setup_status(tmp_path) if service == "memu-server"
+                  else setup_install.optional_setup_status(service, tmp_path))
+        assert status["install_running"] and not status["startable"]
+        assert setup_install.operation_status(tmp_path / "other", service)["state"] == "idle"
+        other_service = "atomic" if service == "memu-server" else "memu-server"
+        assert setup_install.operation_status(tmp_path, other_service)["state"] == "idle"
+    finally:
+        child.communicate(input="\n", timeout=3)
+        deadline.cancel()
+    assert child.returncode == 0
+    assert setup_install.operation_status(tmp_path, service)["state"] == "idle"
+
+
+def test_local_install_details_survive_external_status_probe(tmp_path, monkeypatch):
+    operation = setup_install.InstallOperation("iris-server", tmp_path, step="Specific progress", detail="Detail")
+    monkeypatch.setattr(setup_install, "_OPERATION", operation)
+    monkeypatch.setattr(setup_install, "_OPERATIONS", {})
+    monkeypatch.setattr(setup_install, "_active_install_owner", lambda: pytest.fail("Do not probe a local running install"))
+    assert setup_install.operation_status(tmp_path, "iris-server")["step"] == "Specific progress"
+    operation.state = "error"
+    monkeypatch.setattr(setup_install, "_active_install_owner", lambda: ("iris-server", str(tmp_path)))
+    assert setup_install.operation_status(tmp_path, "iris-server")["state"] == "running"
+    monkeypatch.setattr(setup_install, "_OPERATION", setup_install.InstallOperation("atomic", tmp_path))
+    monkeypatch.setattr(setup_install, "_OPERATIONS", {"iris-server": operation})
+    monkeypatch.setattr(setup_install, "_active_install_owner", lambda: None)
+    assert setup_install.operation_status(tmp_path, "iris-server") == {
+        "state": "error", "step": "Specific progress", "detail": "Detail",
+    }
 
 
 def test_operation_worker_reports_early_failure_and_releases_lock(tmp_path, monkeypatch):

@@ -72,6 +72,8 @@ def test_iris_automatic_preparation_defers_when_not_eligible(iris_preparation, m
         monkeypatch.setattr(app.setup_install, "optional_issue", lambda *_args: "")
     else:
         stop.set()
+    if block in {"stale", "unavailable", "disabled", "shutdown"}:
+        monkeypatch.setattr(app.setup_install, "release_issue", lambda *_args: pytest.fail("No release Git checks before an eligible phone"))
     app._prepare_iris_if_needed(stop)
     assert calls == [] and app.setup_install.operation_status(root, "iris-server")["state"] == "idle"
 

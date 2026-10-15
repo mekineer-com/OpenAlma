@@ -539,7 +539,9 @@ def _recovery_state(root: Path) -> tuple[dict[str, Any], Path]:
     return state, backup
 
 
-def _restore_previous_core(root: Path, state: dict[str, Any], backup: Path, log: Any) -> None:
+def _restore_previous_core(
+    root: Path, state: dict[str, Any], backup: Path, log: Any, *, refresh_packages: bool = True,
+) -> None:
     _restore_databases(root, backup)
     for destination in sorted(CORE_DESTINATIONS):
         _run(
@@ -547,7 +549,8 @@ def _restore_previous_core(root: Path, state: dict[str, Any], backup: Path, log:
             cwd=root / destination, log=log,
         )
     try:
-        _refresh_core(root, log)
+        if refresh_packages:
+            _refresh_core(root, log)
     except Exception as exc:
         raise SetupError(
             "Could not restore the previous core packages. Connect to the internet if needed, then Recover again."
@@ -593,11 +596,13 @@ def _update_core(
         "commits": {entry["destination"]: head for entry, (_path, head) in zip(entries, states)},
     }, indent=2) + "\n", encoding="utf-8")
     committed = False
+    refresh_started = False
     try:
         for entry, (destination, _head) in zip(entries, states):
             _set_operation(operation, step=f"Updating {entry['destination']}")
             _checkout_release(entry, destination, log)
         _set_operation(operation, step="Refreshing core Python packages")
+        refresh_started = True
         _refresh_core(operation.root, log)
         _set_operation(operation, step="Migrating soul databases")
         _run(
@@ -624,7 +629,7 @@ def _update_core(
             ) from update_error
         try:
             state, recovery_backup = _recovery_state(operation.root)
-            _restore_previous_core(operation.root, state, recovery_backup, log)
+            _restore_previous_core(operation.root, state, recovery_backup, log, refresh_packages=refresh_started)
             recovery.unlink(missing_ok=True)
             shutil.rmtree(recovery_backup)
             rollback_errors = []
@@ -1286,8 +1291,12 @@ def operation_status(root: Path, service_name: str = "memu-server") -> dict[str,
     with _LOCK:
         operation = _OPERATION if _OPERATION is not None and _OPERATION.service_name == service_name else _OPERATIONS.get(service_name)
         if operation is None or operation.root != root.resolve() or operation.service_name != service_name:
-            return {"state": "idle", "step": "", "detail": ""}
-        return {"state": operation.state, "step": operation.step, "detail": operation.detail}
+            status = {"state": "idle", "step": "", "detail": ""}
+        else:
+            status = {"state": operation.state, "step": operation.step, "detail": operation.detail}
+    if status["state"] != "running" and _active_install_owner() == (service_name, str(root.resolve())):
+        return {"state": "running", "step": "Installation running in another OpenAlma process", "detail": ""}
+    return status
 
 
 def setup_status(

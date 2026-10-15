@@ -51,15 +51,9 @@ def _begin_iris_preparation(root: Path) -> setup_install.InstallOperation:
 
 def _prepare_iris_if_needed(stop: Event) -> None:
     root = settings.apps_root()
-    if root is None or setup_install.operation_status(root, "iris-server")["state"] != "idle":
+    if stop.is_set() or root is None or setup_install.operation_status(root, "iris-server")["state"] != "idle":
         return
     if (root / setup_install.RECOVERY_FILE).exists() or setup_install.core_issue(root, verify_runtime=False):
-        return
-    issue = setup_install.optional_issue("iris-server", root)
-    release_issue = setup_install.release_issue("iris-server", root)
-    if not issue and not release_issue:
-        return
-    if release_issue and not release_issue.startswith("Update required:"):
         return
     try:
         config = json.loads((root / "mcp-memu-server/config.json").read_text(encoding="utf-8"))
@@ -77,6 +71,12 @@ def _prepare_iris_if_needed(stop: Event) -> None:
     if not fresh_phone:
         return
     if stop.is_set():
+        return
+    issue = setup_install.optional_issue("iris-server", root)
+    release_issue = setup_install.release_issue("iris-server", root)
+    if not issue and not release_issue:
+        return
+    if release_issue and not release_issue.startswith("Update required:"):
         return
     try:
         _begin_iris_preparation(root)
