@@ -31,7 +31,7 @@ def git_source(repository: str, revision: str, target: Path) -> None:
                        cwd=temporary, check=True)
         if setup_install._git_output(["git", "rev-parse", "FETCH_HEAD"], Path(temporary)) != revision:
             raise RuntimeError("Git source does not match the pinned revision")
-        subprocess.run(["git", "archive", "--format=tar.gz", f"--prefix={revision}/",
+        subprocess.run(["git", "-c", "core.autocrlf=false", "archive", "--format=tar.gz", f"--prefix={revision}/",
                         f"--output={target.resolve()}", revision], cwd=temporary, check=True)
 
 

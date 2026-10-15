@@ -81,13 +81,15 @@ def test_git_source_archives_only_verified_pinned_commit(tmp_path, monkeypatch, 
     git.run(["git", "init", str(source)], check=True, capture_output=True)
     license = source / "LICENSE"
     for text in ("Pinned fictional source", "Later fictional source"):
-        license.write_text(text, encoding="utf-8")
-        git.run(["git", "add", "LICENSE"], cwd=source, check=True)
+        license.write_bytes((text + "\n").encode("utf-8"))
+        git.run(["git", "-c", "core.autocrlf=false", "add", "LICENSE"], cwd=source, check=True)
         git.run(["git", "-c", "user.name=Test Builder", "-c", "user.email=test@example.invalid",
                  "commit", "-m", "Fictional source"], cwd=source, check=True, capture_output=True)
         if text.startswith("Pinned"):
             pinned = stage_bun.setup_install._git_output(["git", "rev-parse", "HEAD"], source)
     temporary = tmp_path / "bare"
+    git.run(["git", "init", "--bare", str(temporary)], check=True, capture_output=True)
+    git.run(["git", "config", "core.autocrlf", "true"], cwd=temporary, check=True)
     monkeypatch.setattr(stage_bun.tempfile, "TemporaryDirectory", lambda: nullcontext(str(temporary)))
     if wrong_revision:
         monkeypatch.setattr(stage_bun.setup_install, "_git_output", lambda *_args: "0" * 40)
@@ -101,7 +103,7 @@ def test_git_source_archives_only_verified_pinned_commit(tmp_path, monkeypatch, 
     assert stage_bun.setup_install._git_output(["git", "rev-list", "--count", "FETCH_HEAD"], temporary) == "1"
     with tarfile.open(target, "r:gz") as archive:
         assert archive.getnames() == [pinned, f"{pinned}/LICENSE"]
-        assert archive.extractfile(f"{pinned}/LICENSE").read() == b"Pinned fictional source"
+        assert archive.extractfile(f"{pinned}/LICENSE").read() == b"Pinned fictional source\n"
 
 
 def test_windows_workflow_stages_runtime_and_keeps_sources_outside_inno_payload():
