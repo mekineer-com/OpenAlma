@@ -15,6 +15,179 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "launcher"))
 import services  # noqa: E402
 
 
+@pytest.fixture
+def iris_preparation(tmp_path, monkeypatch):
+    import app
+    from threading import Event, Lock
+
+    config = tmp_path / "mcp-memu-server/config.json"
+    config.parent.mkdir()
+    config.write_text(json.dumps({"mentra": {"enabled": True}}))
+    status = {"state": "ready", "installations": [{"device_session_id": "fictional-phone",
+              "host_reporting": True, "host": {"host_package": "com.mentra.mentra.openalma"}}]}
+    calls = []
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app, "_IRIS_PREPARATION_ATTEMPTED", set())
+    monkeypatch.setattr(app.app.state, "iris_preparation_error", "", raising=False)
+    monkeypatch.setattr(services, "_IRIS_INSTALL_LOCK", Lock())
+    monkeypatch.setattr(services, "_read_mentra_status", lambda _port: status)
+    monkeypatch.setattr(services, "raise_if_stopping", lambda _spec: None)
+    monkeypatch.setattr(services, "raise_if_iris_installer_busy", lambda _spec: None)
+    monkeypatch.setattr(app.setup_install, "optional_issue", lambda *_args: "Missing Iris checkout")
+    monkeypatch.setattr(app.setup_install, "release_issue", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(app.setup_install, "_iris_workspace_issue", lambda _root: "")
+    monkeypatch.setattr(app.setup_install, "_OPERATION", None)
+    def begin(name, root, **kwargs):
+        calls.append((name, root))
+        app.setup_install._OPERATION = app.setup_install.InstallOperation(service_name=name, root=root, automatic=kwargs.get("automatic", False))
+    monkeypatch.setattr(app.setup_install, "begin_optional_install", begin)
+    return app, tmp_path, config, status, calls, Event()
+
+
+def test_connected_phone_prepares_once_without_installing_on_phone(iris_preparation, monkeypatch):
+    app, root, _config, _status, calls, stop = iris_preparation
+    monkeypatch.setattr(services, "start", lambda *_args, **_kwargs: pytest.fail("Preparation must not install on a phone"))
+    app._prepare_iris_if_needed(stop)
+    app._prepare_iris_if_needed(stop)
+    assert calls == [("iris-server", root)]
+    assert root in app._IRIS_PREPARATION_ATTEMPTED
+
+
+@pytest.mark.parametrize("block", ["stale", "unavailable", "disabled", "core", "recovery", "workspace", "ready", "shutdown"])
+def test_iris_automatic_preparation_defers_when_not_eligible(iris_preparation, monkeypatch, block):
+    app, root, config, status, calls, stop = iris_preparation
+    if block == "stale":
+        status["installations"][0]["host_reporting"] = False
+    elif block == "unavailable":
+        status["state"] = "unavailable"
+    elif block == "disabled":
+        config.write_text(json.dumps({"mentra": {"enabled": False}}))
+    elif block == "core":
+        monkeypatch.setattr(app.setup_install, "release_issue", lambda *_args: "Core update required first")
+    elif block == "recovery":
+        (root / app.setup_install.RECOVERY_FILE).touch()
+    elif block == "workspace":
+        monkeypatch.setattr(app.setup_install, "_iris_workspace_issue", lambda _root: "Workspace conflict")
+    elif block == "ready":
+        monkeypatch.setattr(app.setup_install, "optional_issue", lambda *_args: "")
+    else:
+        stop.set()
+    app._prepare_iris_if_needed(stop)
+    assert calls == [] and root not in app._IRIS_PREPARATION_ATTEMPTED
+
+
+def test_opening_setup_does_not_prepare_without_a_reported_phone(iris_preparation, monkeypatch):
+    from fastapi.testclient import TestClient
+    app, root, _config, status, calls, stop = iris_preparation
+    status["installations"] = []
+    monkeypatch.setattr(app, "_setup_aware_status", lambda *_args, **_kwargs: {"installations": [], "setup": {"enabled": True, "ready": False, "rows": []}})
+    assert TestClient(app.app, base_url="http://127.0.0.1").get("/iris").status_code == 200
+    app._prepare_iris_if_needed(stop)
+    assert not calls
+
+
+@pytest.mark.parametrize("branch", ["HEAD", "main"])
+def test_matching_tools_update_keeps_development_branches_unchanged(iris_preparation, monkeypatch, branch):
+    app, root, _config, _status, calls, stop = iris_preparation
+    monkeypatch.setattr(app.setup_install, "optional_issue", lambda *_args: "")
+    monkeypatch.setattr(app.setup_install, "release_issue", lambda *_args, **_kwargs: "Update required: openalma")
+    monkeypatch.setattr(app.setup_install, "_git_output", lambda *_args: branch)
+    app._prepare_iris_if_needed(stop)
+    assert calls == ([("iris-server", root)] if branch == "HEAD" else [])
+
+
+def test_preparation_conflict_defers_without_latching_failure(iris_preparation, monkeypatch):
+    app, root, _config, _status, calls, stop = iris_preparation
+    with services._IRIS_INSTALL_LOCK:
+        app._prepare_iris_if_needed(stop)
+    assert not calls and root not in app._IRIS_PREPARATION_ATTEMPTED
+    begin = app.setup_install.begin_optional_install
+    monkeypatch.setattr(app.setup_install, "begin_optional_install", lambda *_args, **_kwargs: (_ for _ in ()).throw(app.setup_install.SetupConflict("Other installation")))
+    app._prepare_iris_if_needed(stop)
+    assert root not in app._IRIS_PREPARATION_ATTEMPTED
+    monkeypatch.setattr(app.setup_install, "begin_optional_install", begin)
+    app._prepare_iris_if_needed(stop)
+    assert calls == [("iris-server", root)]
+
+
+def test_phone_install_rechecks_preparation_under_iris_lock(tmp_path, monkeypatch):
+    import app
+    from threading import Lock
+
+    monkeypatch.setattr(services, "_IRIS_INSTALL_LOCK", Lock())
+    spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    def blocked(_name):
+        assert services._IRIS_INSTALL_LOCK.locked()
+        raise app.HTTPException(status_code=409, detail="Preparation running")
+    monkeypatch.setattr(app, "_require_startable_setup", blocked)
+    monkeypatch.setattr(services, "iris_installation_request", lambda **_kwargs: pytest.fail("Must not reserve a ticket"))
+    with pytest.raises(app.HTTPException, match="Preparation running"):
+        app._start_iris_install(spec, "fictional-phone", "com.mentra.mentra.openalma")
+    assert not services._IRIS_INSTALL_LOCK.locked()
+
+
+def test_iris_status_keeps_phone_discovery_available_without_checkout(iris_preparation, monkeypatch):
+    from fastapi.testclient import TestClient
+    app, root, _config, status, _calls, _stop = iris_preparation
+    spec = services.ServiceSpec("iris-server", "Iris", [], root, root / "log", root / "pid", install_marker=root / "missing")
+    monkeypatch.setattr(services, "all_services", lambda: [spec])
+    monkeypatch.setattr(services, "status", lambda _spec: {"running": False, **status})
+    monkeypatch.setattr(app.setup_install, "optional_setup_status", lambda *_args: {"ready": False, "state": "setup", "action_kind": "install"})
+    response = TestClient(app.app, base_url="http://127.0.0.1").get("/service/iris-server/status")
+    assert response.status_code == 200
+    assert response.json()["installations"][0]["device_session_id"] == "fictional-phone"
+    assert response.json()["ready"] is False
+
+
+def test_preparation_watcher_survives_errors_and_exposes_retry(iris_preparation, monkeypatch):
+    app, root, _config, status, _calls, _stop = iris_preparation
+    turns = []
+    class Stop:
+        def wait(self, _seconds):
+            return len(turns) >= 2
+    def prepare(_stop):
+        turns.append(True)
+        if len(turns) == 1:
+            raise OSError("Fictional discovery failure")
+    monkeypatch.setattr(app, "_prepare_iris_if_needed", prepare)
+    app._watch_iris_preparation(Stop())
+    assert len(turns) == 2
+    monkeypatch.setattr(services, "status", lambda _spec: {"running": False, **status})
+    monkeypatch.setattr(app.setup_install, "optional_setup_status", lambda *_args: {"ready": False, "state": "setup"})
+    spec = services.ServiceSpec("iris-server", "Iris", [], root, root / "log", root / "pid")
+    row = app._setup_aware_status(spec, root)
+    assert row["preparation_attempted"] and "Retry in Setup" in row["detail"]
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_stock_install_prepares_transparently_before_phone_work(iris_preparation, monkeypatch, failed):
+    app, root, _config, _status, _calls, _stop = iris_preparation
+    steps = []
+    spec = services.ServiceSpec("iris-server", "Iris", [], root, root / "log", root / "pid")
+    operation = app.setup_install.InstallOperation(service_name="iris-server", root=root,
+                                                  state="error" if failed else "ready", detail="Fictional preparation failure")
+    class Thread:
+        def join(self):
+            steps.append("prepared")
+    operation.thread = Thread()
+    monkeypatch.setattr(app, "_find_service", lambda _name: spec)
+    monkeypatch.setattr(app, "_require_startable_setup", lambda _name: (_ for _ in ()).throw(app.HTTPException(status_code=409, detail="Missing tools")))
+    monkeypatch.setattr(app, "_begin_iris_preparation", lambda _root: operation)
+    monkeypatch.setattr(services, "services_for_root", lambda _root: [spec])
+    monkeypatch.setattr(services, "_MENTRA_READINESS_CACHE", {str(root): (services.time.monotonic(), {"ready": False})})
+    def start(*_args, **_kwargs):
+        assert services._MENTRA_READINESS_CACHE == {}
+        steps.append("phone-install")
+    monkeypatch.setattr(app, "_start_iris_install", start)
+    if failed:
+        with pytest.raises(app.HTTPException, match="Fictional preparation failure"):
+            app.iris_install("", "")
+        assert steps == ["prepared"]
+    else:
+        assert app.iris_install("", "").status_code == 303
+        assert steps == ["prepared", "phone-install"]
+
+
 class _FakeResponse:
     status = 200
 
@@ -150,7 +323,7 @@ def test_iris_install_target_cleanup(tmp_path, monkeypatch, stage, host_package)
 
 def test_iris_repair_bundle_choices_do_not_require_latest_github(tmp_path, monkeypatch):
     from zipfile import ZipFile
-    spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    spec = services.ServiceSpec("iris-server", "Iris", ["/fictional/bun"], tmp_path, tmp_path / "log", tmp_path / "pid")
     manifest = {"packageName": services.IRIS_PACKAGE, "version": "0.1.12",
                 "name": "Test Iris", "hardwareRequirements": [],
                 "entry": {"background": "background/index.js", "ui": "ui/index.html"}}

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import sqlite3
@@ -9,8 +10,9 @@ import tempfile
 import urllib.error
 import urllib.parse
 import webbrowser
+from contextlib import asynccontextmanager
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock, Thread
 from typing import Annotated, Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -35,7 +37,98 @@ CONFIG_LABELS: dict[str, str] = {
     "channels-config": "CHANNELS_HOME/config.json",
 }
 
-app = FastAPI(title="OpenAlma")
+_IRIS_PREPARATION_ATTEMPTED: set[Path] = set()
+
+
+def _begin_iris_preparation(root: Path, *, automatic: bool = False) -> setup_install.InstallOperation:
+    if not services._IRIS_INSTALL_LOCK.acquire(blocking=False):
+        raise setup_install.SetupConflict("Iris installer is busy")
+    try:
+        spec = next(item for item in services.services_for_root(root) if item.name == "iris-server")
+        services.raise_if_stopping(spec)
+        services.raise_if_iris_installer_busy(spec)
+        issue = setup_install.release_issue("iris-server", root, refresh=True)
+        if (root / setup_install.RECOVERY_FILE).exists() or (issue and not issue.startswith("Update required:")):
+            raise setup_install.SetupError(issue or "Core recovery is required first")
+        with setup_install._LOCK:
+            setup_install.begin_optional_install("iris-server", root, automatic=automatic)
+            operation = setup_install._OPERATION
+        assert operation is not None
+        _IRIS_PREPARATION_ATTEMPTED.add(root.resolve())
+        app.state.iris_preparation_error = ""
+        return operation
+    finally:
+        services._IRIS_INSTALL_LOCK.release()
+
+
+def _prepare_iris_if_needed(stop: Event) -> None:
+    root = settings.apps_root()
+    if root is None or root.resolve() in _IRIS_PREPARATION_ATTEMPTED:
+        return
+    if (root / setup_install.RECOVERY_FILE).exists():
+        return
+    issue = setup_install.optional_issue("iris-server", root)
+    release_issue = setup_install.release_issue("iris-server", root)
+    if not issue and not release_issue:
+        return
+    if release_issue:
+        if not release_issue.startswith("Update required:"):
+            return
+        # Released installs are detached; don't automatically move a development branch.
+        try:
+            if setup_install._git_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], root / "mentra-os/miniapps/openalma") != "HEAD":
+                return
+        except setup_install.SetupError:
+            return
+    try:
+        config = json.loads((root / "mcp-memu-server/config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    mentra_config = config.get("mentra") if isinstance(config, dict) else None
+    if not isinstance(mentra_config, dict) or not services._coerce_bool(mentra_config.get("enabled")):
+        return
+    mentra = services._read_mentra_status(services.MEMU_SERVER_PORT)
+    if mentra.get("state") in {"unavailable", "disabled"}:
+        return
+    fresh_phone = any(record.get("host_reporting") and
+                      (record.get("host") or {}).get("host_package") == "com.mentra.mentra.openalma"
+                      for record in mentra.get("installations", []))
+    if not fresh_phone:
+        return
+    if setup_install._iris_workspace_issue(root):
+        return
+    if stop.is_set():
+        return
+    try:
+        _begin_iris_preparation(root, automatic=True)
+    except (setup_install.SetupConflict, services.ServiceStoppingError):
+        pass  # Existing status/logs show prerequisites; an occupied installer is checked again.
+    except setup_install.SetupError as exc:
+        app.state.iris_preparation_error = str(exc)
+
+
+def _watch_iris_preparation(stop: Event) -> None:
+    while not stop.wait(5):
+        try:
+            _prepare_iris_if_needed(stop)
+        except Exception:
+            logging.getLogger(__name__).exception("Automatic Iris preparation failed; discovery will continue")
+            app.state.iris_preparation_error = "Iris preparation failed. See the launcher log and Retry in Setup."
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    stop = Event()
+    watcher = Thread(target=_watch_iris_preparation, args=(stop,), daemon=True, name="iris-preparation")
+    watcher.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        watcher.join(timeout=3)
+
+
+app = FastAPI(title="OpenAlma", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 
 
@@ -93,7 +186,7 @@ def _editable_configs(apps_root: Path | None) -> dict[str, Path]:
 
 def _find_service(name: str) -> services.ServiceSpec:
     for s in services.all_services():
-        if s.name == name and services.is_installed(s):
+        if s.name == name and (name == "iris-server" or services.is_installed(s)):
             return s
     raise HTTPException(status_code=404, detail=f"Unknown service: {name}")
 
@@ -142,9 +235,16 @@ def _setup_aware_status(spec: services.ServiceSpec, root: Path, *, verify_runtim
         release = setup_install.release_issue("memu-server", root)
         return _row_with_setup(runtime, setup) if issue or setup_install.read_pending_release(root) or release else runtime
     setup = setup_install.optional_setup_status(spec.name, root)
+    if spec.name == "iris-server":
+        runtime["preparation_attempted"] = root.resolve() in _IRIS_PREPARATION_ATTEMPTED
+        if error := getattr(app.state, "iris_preparation_error", ""):
+            runtime["preparation_attempted"] = True
+            if not setup["ready"]:
+                setup = {**setup, "detail": error, "status_label": "Iris preparation failed"}
     if not setup["ready"]:
         row = _row_with_setup(runtime, setup)
-        return {**runtime, **row} if spec.name == "iris-server" else row
+        return ({**runtime, **row, "ready": False, "install_running": bool(setup.get("install_running"))}
+                if spec.name == "iris-server" else row)
     if setup["guidance"]:
         runtime["detail"] = "; ".join(filter(None, (runtime.get("detail"), setup["guidance"])))
     return runtime
@@ -724,9 +824,11 @@ def install_service(service_name: str) -> RedirectResponse:
     try:
         if service_name == "memu-server":
             setup_install.begin_core_install(root)
+        elif service_name == "iris-server":
+            _begin_iris_preparation(root)
         else:
             setup_install.begin_optional_install(service_name, root)
-    except setup_install.SetupConflict as exc:
+    except (setup_install.SetupConflict, services.ServiceStoppingError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except setup_install.SetupError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -863,7 +965,22 @@ def iris_install(
     repair: Annotated[bool, Form()] = False,
 ) -> RedirectResponse:
     spec = _find_service("iris-server")
-    _require_startable_setup("iris-server")
+    try:
+        _require_startable_setup("iris-server")
+    except HTTPException as unavailable:
+        root = settings.apps_root()
+        if unavailable.status_code != 409 or root is None:
+            raise
+        try:
+            operation = _begin_iris_preparation(root)
+            if operation.thread is not None:
+                operation.thread.join()
+            if operation.state != "ready":
+                raise setup_install.SetupError(operation.detail or "Iris preparation failed")
+            services._MENTRA_READINESS_CACHE.clear()
+            spec = next(item for item in services.services_for_root(root) if item.name == "iris-server")
+        except (setup_install.SetupError, services.ServiceStoppingError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
     try:
         if repair or repair_source or bundle_file is not None or github_version or source_folder:
             if repair_source not in {"github", "zip", "source"}:
@@ -891,6 +1008,7 @@ def _start_iris_install(spec: services.ServiceSpec, device_session_id: str, host
         raise services.ServiceStoppingError("Iris installer is starting; wait before installing another app")
     installation_ticket = ""
     try:
+        _require_startable_setup("iris-server")
         services._IRIS_INSTALL_CANCELLED.clear()
         services.raise_if_stopping(spec)
         services.raise_if_iris_installer_busy(spec)

@@ -69,6 +69,7 @@ class InstallOperation:
     state: str = "running"
     step: str = "Starting"
     detail: str = ""
+    automatic: bool = False
     thread: threading.Thread | None = field(default=None, repr=False)
     lock_handle: Any = field(default=None, repr=False)
 
@@ -78,6 +79,7 @@ _OPERATION: InstallOperation | None = None
 _RELEASE_ISSUE_CACHE: dict[tuple[str, str, str], tuple[float, str]] = {}
 _LAUNCHER_UPDATE_CACHE: tuple[float, str, dict[str, str] | None] | None = None
 INSTALL_LOCK = Path.home() / ".cache" / "openalma-launcher" / "install.lock"
+BUN_VERSION = "1.3.14"
 
 
 def _request_json(url: str) -> dict[str, Any]:
@@ -276,12 +278,13 @@ def _write_release(root: Path, filename: str, tag: str) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def _run(command: list[str] | str, *, cwd: Path | None, log: Any, timeout: float | None = None) -> None:
+def _run(command: list[str] | str, *, cwd: Path | None, log: Any, timeout: float | None = None,
+         env: dict[str, str] | None = None) -> None:
     printable = command if isinstance(command, str) else " ".join(command)
     log.write(f"\n$ {printable}\n")
     log.flush()
     subprocess.run(
-        command, cwd=cwd, stdout=log, stderr=subprocess.STDOUT, text=True, check=True, timeout=timeout,
+        command, cwd=cwd, stdout=log, stderr=subprocess.STDOUT, text=True, check=True, timeout=timeout, env=env,
         **hidden_process_kwargs(),
     )
 
@@ -815,8 +818,48 @@ def _npm_command(*arguments: str) -> list[str] | str:
     return _package_command("npm", *arguments)
 
 
-def _bun_command(*arguments: str) -> list[str] | str:
-    return _package_command("bun", *arguments)
+def _install_bun(root: Path, log: Any) -> None:
+    binary = settings.bun_binary(root)
+    if version := settings.bun_version(binary):
+        log.write(f"Using existing Bun {version}: {binary}\n")
+        return
+    system = {"win32": "windows", "linux": "linux", "darwin": "darwin"}.get(sys.platform)
+    machine = platform.machine().lower()
+    arch = {"x86_64": "x64", "amd64": "x64", "aarch64": "aarch64", "arm64": "aarch64"}.get(machine)
+    if not system or not arch:
+        raise SetupError(f"Bun is unavailable for {sys.platform}/{machine}")
+    musl = "-musl" if system == "linux" and any(Path("/lib").glob("ld-musl-*.so.1")) else ""
+    target = f"bun-{system}-{arch}{musl}{'-baseline' if arch == 'x64' else ''}"
+    name = f"{target}.zip"
+    tag = f"bun-v{BUN_VERSION}"
+    url = f"https://github.com/oven-sh/bun/releases/download/{tag}/{name}"
+    release = _request_json(f"https://api.github.com/repos/oven-sh/bun/releases/tags/{tag}")
+    asset = next((item for item in release.get("assets") or [] if isinstance(item, dict) and item.get("name") == name), None)
+    if (release.get("tag_name") != tag or release.get("draft") is not False
+            or release.get("prerelease") is not False or not asset or asset.get("state") != "uploaded"
+            or asset.get("browser_download_url") != url):
+        raise SetupError(f"No supported Bun package: {name}")
+    digest = asset.get("digest", "")
+    if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+        raise SetupError("Bun package has no SHA256 digest")
+    binary = root / ".tools" / ("bun.exe" if sys.platform == "win32" else "bun")
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    log.write(f"Downloading {url}\n")
+    log.flush()
+    with tempfile.TemporaryDirectory(prefix=".bun-install-", dir=binary.parent) as temporary:
+        archive = Path(temporary) / "bun.zip"
+        with urllib.request.urlopen(urllib.request.Request(url, headers=_HEADERS), timeout=30) as response, archive.open("wb") as output:
+            shutil.copyfileobj(response, output)
+        with archive.open("rb") as downloaded:
+            if f"sha256:{hashlib.file_digest(downloaded, 'sha256').hexdigest()}" != digest:
+                raise SetupError("Bun package SHA256 mismatch")
+        prepared = Path(temporary) / binary.name
+        with zipfile.ZipFile(archive) as package, package.open(f"{target}/{binary.name}") as executable, prepared.open("wb") as output:
+            shutil.copyfileobj(executable, output)
+        prepared.chmod(0o755)
+        if settings.bun_version(prepared) != BUN_VERSION:
+            raise SetupError("Downloaded Bun did not report the expected version")
+        prepared.replace(binary)
 
 
 def _iris_workspace_issue(root: Path) -> str:
@@ -845,6 +888,8 @@ def _node_dependencies_ready(directory: Path, *, include_dev: bool = False) -> b
 
 
 def optional_issue(service_name: str, root: Path) -> str:
+    if service_name == "iris-server" and not settings.bun_version(settings.bun_binary(root)):
+        return "Iris runtime needs preparation"
     repositories = {
         "channels-daemon": (
             ("hermes-channels/gateway/daemon.py", "Hermes Channels checkout"),
@@ -872,7 +917,7 @@ def optional_issue(service_name: str, root: Path) -> str:
             (root / "hermes-channels/bridge", False, "bridge dependencies"),
             (root / "hermes-channels/web-source", False, "web-source dependencies"),
         ),
-        "iris-server": ((root / "mentra-os/miniapps/openalma", False, "Iris dependencies"),),
+        "iris-server": ((root / "mentra-os/miniapps/openalma", True, "Iris dependencies"),),
         "atomic": ((root / "atomic", True, "Atomic dependencies"),),
         "sillytavern": (
             (root / "sillytavern/SillyTavern", False, "SillyTavern dependencies"),
@@ -996,7 +1041,7 @@ def _optional_commands(service_name: str, root: Path) -> list[tuple[list[str] | 
             (_npm_command("ci"), root / "hermes-channels" / "web-source"),
         ]
     if service_name == "iris-server":
-        return [(_bun_command("install", "--frozen-lockfile"), root / "mentra-os/miniapps/openalma")]
+        return [([str(settings.bun_binary(root)), "install", "--frozen-lockfile"], root / "mentra-os/miniapps/openalma")]
     if service_name == "atomic":
         flags = ("--ignore-scripts", "--include=dev", "--include=optional") if sys.platform == "win32" else ()
         return [(_npm_command("ci", *flags), root / "atomic")]
@@ -1009,8 +1054,9 @@ def _optional_commands(service_name: str, root: Path) -> list[tuple[list[str] | 
 
 
 def _optional_tool_issue(service_name: str) -> str:
-    tool = "bun" if service_name == "iris-server" else "npm"
-    return "" if shutil.which(tool) else f"Install {tool} to finish {service_name} setup"
+    if service_name == "iris-server":
+        return ""
+    return "" if shutil.which("npm") else f"Install npm to finish {service_name} setup"
 
 
 def _install_optional(operation: InstallOperation) -> None:
@@ -1032,6 +1078,9 @@ def _install_optional(operation: InstallOperation) -> None:
                 destination = operation.root / entry["destination"]
                 if destination in existing_paths:
                     if not _local_matching_checkout(destination, entry["repository"], entry["ref"]):
+                        if operation.automatic and operation.service_name == "iris-server":
+                            if _git_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], destination) != "HEAD":
+                                raise SetupError("Automatic Iris preparation cannot change a development checkout")
                         if operation.service_name == "atomic" and sys.platform == "win32":
                             binary = settings.atomic_server_binary(operation.root)
                             head = _git_output(["git", "rev-parse", "HEAD"], destination)
@@ -1047,9 +1096,15 @@ def _install_optional(operation: InstallOperation) -> None:
                 raise SetupError(issue)
             if operation.service_name == "iris-server" and (issue := _iris_workspace_issue(operation.root)):
                 raise SetupError(issue)
+            if operation.service_name == "iris-server":
+                _set_operation(operation, step="Preparing Iris runtime")
+                _install_bun(operation.root, log)
             for command, cwd in _optional_commands(operation.service_name, operation.root):
                 _set_operation(operation, step=f"Installing dependencies in {cwd.name}")
-                _run(command, cwd=cwd, log=log)
+                if operation.service_name == "iris-server":
+                    _run(command, cwd=cwd, log=log, env={**os.environ, "NODE_ENV": "development"})
+                else:
+                    _run(command, cwd=cwd, log=log)
             if operation.service_name == "atomic" and sys.platform == "win32":
                 _set_operation(operation, step="Installing Atomic Windows server")
                 _install_atomic_windows(entries[0], operation.root, log)
@@ -1058,6 +1113,9 @@ def _install_optional(operation: InstallOperation) -> None:
                 raise SetupError(issue)
         detail = optional_issue(operation.service_name, operation.root)
         _RELEASE_ISSUE_CACHE.clear()
+        if operation.service_name == "iris-server":
+            import services
+            services._MENTRA_READINESS_CACHE.clear()
         _set_operation(operation, state="ready", step="Installation complete", detail=detail)
     except Exception as exc:
         _set_operation(operation, state="error", step="Installation failed", detail=str(exc))
@@ -1150,7 +1208,7 @@ def _operation_worker(operation: InstallOperation, target: Any) -> None:
         _release_install_lock(operation.lock_handle)
 
 
-def _begin_operation(service_name: str, root: Path, target: Any) -> dict[str, Any]:
+def _begin_operation(service_name: str, root: Path, target: Any, *, automatic: bool = False) -> dict[str, Any]:
     global _OPERATION
     with _LOCK:
         if _OPERATION is not None and _OPERATION.thread is not None and _OPERATION.thread.is_alive():
@@ -1158,7 +1216,7 @@ def _begin_operation(service_name: str, root: Path, target: Any) -> dict[str, An
                 raise SetupConflict(f"{_OPERATION.service_name} installation is already running")
             return operation_status(root, service_name)
         lock_handle = _acquire_install_lock(service_name, root)
-        operation = InstallOperation(service_name=service_name, root=root, lock_handle=lock_handle)
+        operation = InstallOperation(service_name=service_name, root=root, lock_handle=lock_handle, automatic=automatic)
         thread = threading.Thread(
             target=_operation_worker, args=(operation, target),
             name=f"openalma-{service_name}-install", daemon=False,
@@ -1191,13 +1249,13 @@ def begin_core_recovery(root: Path) -> dict[str, Any]:
     return _begin_operation("memu-server", root, _recover_core)
 
 
-def begin_optional_install(service_name: str, root: Path) -> dict[str, Any]:
+def begin_optional_install(service_name: str, root: Path, *, automatic: bool = False) -> dict[str, Any]:
     if service_name not in OPTIONAL_SERVICES:
         raise SetupError(f"Unknown optional service: {service_name}")
     root = root.resolve()
     if issue := core_issue(root):
         raise SetupError(f"Install core first: {issue}")
-    return _begin_operation(service_name, root, _install_optional)
+    return _begin_operation(service_name, root, _install_optional, automatic=automatic)
 
 
 def operation_status(root: Path, service_name: str = "memu-server") -> dict[str, Any]:

@@ -18,7 +18,13 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
+import sys
+from functools import lru_cache
 from pathlib import Path
+
+from process_flags import hidden_process_kwargs
 
 LAUNCHER_DIR = Path(__file__).resolve().parent
 PACKAGED_VERSION_PATH = LAUNCHER_DIR.parent / ".openalma-version"
@@ -123,3 +129,33 @@ def atomic_server_binary(root: Path) -> Path:
     production = root / "atomic" / "target" / "server" / filename
     debug = root / "atomic" / "target" / "debug" / filename
     return production if production.exists() or not debug.exists() else debug
+
+
+def bun_binary(root: Path) -> Path:
+    filename = "bun.exe" if sys.platform == "win32" else "bun"
+    private = root / ".tools" / filename
+    if private.exists():
+        return private
+    installed = shutil.which("bun")
+    if installed:
+        return Path(installed)
+    home = Path.home() / ".bun" / "bin" / filename
+    return home if home.exists() else private
+
+
+@lru_cache
+def _bun_version(path: str, signature: tuple[int, int, int]) -> str | None:
+    try:
+        probe = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=10,
+                               **hidden_process_kwargs())
+        return probe.stdout.strip() if probe.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def bun_version(binary: Path) -> str | None:
+    try:
+        info = binary.stat()
+    except OSError:
+        return None
+    return _bun_version(str(binary), (info.st_mtime_ns, info.st_size, info.st_mode))

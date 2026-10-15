@@ -81,6 +81,10 @@ manifest is unchanged.
 
 ## Notes
 
+- Development sources prepare Iris's computer-side tools automatically after a
+  phone connects. The main row has APK/QR/Setup links only; installing Iris on a
+  phone still requires its Install action. Stock's explicit Install prepares
+  tools as needed. Preparation failures offer Retry in Setup.
 - On first use, confirm your name and choose or create your companion's Soul.
 - Each Soul has its own memory progress and recovery controls.
 - **Hide not installed** moves uninstalled services into the existing collapsed section. It disappears when all services are installed.

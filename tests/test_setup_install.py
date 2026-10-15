@@ -986,3 +986,105 @@ def test_operation_worker_reports_early_failure_and_releases_lock(tmp_path, monk
     assert operation.state == "error"
     assert operation.detail == "log failure"
     assert released == [operation.lock_handle]
+
+
+@pytest.mark.parametrize("corrupt", [False, True])
+@pytest.mark.parametrize("reported_version", ["1.3.14", "wrong-version"])
+def test_private_bun_download_is_verified_and_reused(tmp_path, monkeypatch, corrupt, reported_version):
+    monkeypatch.setattr(setup_install.sys, "platform", "win32")
+    monkeypatch.setattr(setup_install.platform, "machine", lambda: "AMD64")
+    binary = tmp_path / ".tools/bun.exe"
+    monkeypatch.setattr(setup_install.settings, "bun_binary", lambda _root: binary)
+    target = "bun-windows-x64-baseline"
+    url = f"https://github.com/oven-sh/bun/releases/download/bun-v{setup_install.BUN_VERSION}/{target}.zip"
+    zipped = BytesIO()
+    with zipfile.ZipFile(zipped, "w") as package:
+        package.writestr(f"{target}/bun.exe", b"fictional runtime")
+        package.writestr("../outside.txt", b"not extracted")
+    payload = zipped.getvalue()
+    metadata = {"tag_name": f"bun-v{setup_install.BUN_VERSION}", "draft": False, "prerelease": False,
+                "assets": [{"name": f"{target}.zip", "state": "uploaded", "browser_download_url": url,
+                            "digest": "sha256:" + ("0" * 64 if corrupt else hashlib.sha256(payload).hexdigest())}]}
+    requests, probes = [], []
+    monkeypatch.setattr(setup_install, "_request_json", lambda _url: metadata)
+    def download(request, **_kwargs):
+        requests.append(request.full_url)
+        return BytesIO(payload)
+    monkeypatch.setattr(setup_install.urllib.request, "urlopen", download)
+    def probe(path):
+        probes.append(path)
+        return reported_version if path.exists() else None
+    monkeypatch.setattr(setup_install.settings, "bun_version", probe)
+    if corrupt:
+        with pytest.raises(setup_install.SetupError, match="SHA256 mismatch"):
+            setup_install._install_bun(tmp_path, StringIO())
+        assert not binary.exists() and probes == [binary]
+    elif reported_version != setup_install.BUN_VERSION:
+        with pytest.raises(setup_install.SetupError, match="expected version"):
+            setup_install._install_bun(tmp_path, StringIO())
+        assert not binary.exists()
+    else:
+        setup_install._install_bun(tmp_path, StringIO())
+        assert binary.read_bytes() == b"fictional runtime"
+        assert probes[-1].name == "bun.exe"
+        setup_install._install_bun(tmp_path, StringIO())
+        assert requests == [url]
+    assert not (tmp_path / "outside.txt").exists()
+    assert not list(binary.parent.glob(".bun-install-*"))
+
+
+def test_iris_readiness_requires_its_private_runtime_and_installer_cli(tmp_path, monkeypatch):
+    directory = tmp_path / "mentra-os/miniapps/openalma"
+    directory.mkdir(parents=True)
+    (directory / "miniapp.json").touch()
+    (directory / "package.json").write_text(json.dumps({"dependencies": {}, "devDependencies": {"@mentra/miniapp-cli": "fixed"}}))
+    binary = tmp_path / ".tools/bun"
+    monkeypatch.setattr(setup_install.settings, "bun_binary", lambda _root: binary)
+    monkeypatch.setattr(setup_install.settings, "bun_version", lambda path: setup_install.BUN_VERSION if path.exists() else None)
+    assert setup_install.optional_issue("iris-server", tmp_path) == "Iris runtime needs preparation"
+    binary.parent.mkdir()
+    binary.touch()
+    (directory / "node_modules").mkdir()
+    assert setup_install.optional_issue("iris-server", tmp_path) == "Missing Iris dependencies"
+    cli = directory / "node_modules/@mentra/miniapp-cli"
+    cli.mkdir(parents=True)
+    (cli / "package.json").touch()
+    assert setup_install.optional_issue("iris-server", tmp_path) == ""
+    assert setup_install._optional_commands("iris-server", tmp_path)[0][0] == [str(binary), "install", "--frozen-lockfile"]
+
+
+def test_automatic_worker_rechecks_manual_branch_for_recorded_manifest(tmp_path, monkeypatch):
+    entry = {"repository": "https://github.com/mekineer-com/iris.git", "ref": "v0.1.12", "destination": "mentra-os/miniapps/openalma"}
+    directory = tmp_path / entry["destination"]
+    directory.mkdir(parents=True)
+    operation = setup_install.InstallOperation(service_name="iris-server", root=tmp_path, automatic=True)
+    monkeypatch.setattr(setup_install, "_OPERATION", operation)
+    monkeypatch.setattr(setup_install, "install_log_path", lambda _name: tmp_path / "install.log")
+    monkeypatch.setattr(setup_install, "packaged_manifest", lambda _root: None)
+    monkeypatch.setattr(setup_install, "recorded_manifest", lambda _root: {"iris-server": [entry]})
+    monkeypatch.setattr(setup_install, "_managed_checkout_state", lambda *_args: (directory, "old-head"))
+    monkeypatch.setattr(setup_install, "_local_matching_checkout", lambda *_args: False)
+    monkeypatch.setattr(setup_install, "_git_output", lambda *_args: "main")
+    monkeypatch.setattr(setup_install, "_checkout_release", lambda *_args: pytest.fail("Do not move a development branch"))
+    setup_install._install_optional(operation)
+    assert operation.state == "error" and "development checkout" in operation.detail
+
+
+@pytest.mark.parametrize("automatic", [False, True])
+def test_iris_worker_completion_clears_stale_readiness(tmp_path, monkeypatch, automatic):
+    import services
+    entry = {"repository": "https://github.com/mekineer-com/iris.git", "ref": "v0.1.12", "destination": "mentra-os/miniapps/openalma"}
+    directory = tmp_path / entry["destination"]
+    directory.mkdir(parents=True)
+    operation = setup_install.InstallOperation(service_name="iris-server", root=tmp_path, automatic=automatic)
+    monkeypatch.setattr(setup_install, "_OPERATION", operation)
+    monkeypatch.setattr(setup_install, "install_log_path", lambda _name: tmp_path / "install.log")
+    monkeypatch.setattr(setup_install, "_optional_entries", lambda *_args: [entry])
+    monkeypatch.setattr(setup_install, "_managed_checkout_state", lambda *_args: (directory, "head"))
+    monkeypatch.setattr(setup_install, "_local_matching_checkout", lambda *_args: True)
+    monkeypatch.setattr(setup_install, "_install_bun", lambda *_args: None)
+    monkeypatch.setattr(setup_install, "_optional_commands", lambda *_args: [])
+    monkeypatch.setattr(setup_install, "optional_issue", lambda *_args: "")
+    monkeypatch.setattr(services, "_MENTRA_READINESS_CACHE", {str(tmp_path): (0, {"ready": False})})
+    setup_install._install_optional(operation)
+    assert operation.state == "ready" and services._MENTRA_READINESS_CACHE == {}

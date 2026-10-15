@@ -61,17 +61,27 @@ const source = fs.readFileSync(process.argv[1] + '/templates/index.html', 'utf8'
 vm.runInThisContext(source.slice(source.indexOf('function pollStatus'), source.indexOf("{% for s in services + not_installed_services if")));
 (async () => {
   const results = [];
-  for (const pending of ['none', 'stop', 'start', 'error', 'installing']) {
+  for (const pending of ['none', 'stop', 'start', 'error', 'installing', 'preparing']) {
     const status = {}, actions = {};
     const row = {dataset:{runtime:'true'}, querySelector: key => key === '.svc-status' ? status : actions};
     global.document = {querySelector: () => row};
-    global.fetch = async () => ({json: async () => ({state:pending === 'error' ? 'unavailable' : pending === 'installing' ? 'installing' : 'ready', status_label:pending === 'error' ? 'Status unavailable' : pending === 'installing' ? 'Installing Iris' : 'Host ready'})});
+    global.fetch = async () => ({json: async () => ({install_setup:pending === 'preparing', state:pending === 'error' ? 'unavailable' : pending === 'installing' ? 'installing' : 'ready', status_label:pending === 'error' ? 'Status unavailable' : pending === 'installing' ? 'Installing Iris' : 'Host ready'})});
+    global.location = {reload: () => { throw new Error('Iris preparation must not reload Home'); }};
     pendingStops = pending === 'stop' ? {'iris-server':true} : {};
     pendingStarts = pending === 'start' ? {'iris-server':Date.now()+10000} : {};
     pollStatus('iris-server');
     await new Promise(resolve => setImmediate(resolve));
     results.push([status.innerHTML, actions.innerHTML]);
   }
+  const polling = source.slice(source.indexOf('setInterval(function() {'), source.indexOf('{% if owner_error or soul_error %}'));
+  let tick, selector;
+  global.setInterval = callback => { tick = callback; };
+  document.querySelectorAll = value => { selector = value; return [{dataset:{service:'iris-server',runtime:'false'}}]; };
+  let polled;
+  global.pollStatus = name => { polled = name; };
+  vm.runInThisContext(polling);
+  tick();
+  if (!selector.includes('tr[data-service="iris-server"]') || polled !== 'iris-server') throw new Error('Unprepared Iris must keep polling');
   const urls = [], canvas = {}, message = {};
   document.getElementById = id => id === 'mentra-apk-qr' ? canvas : message;
   global.QRCode = {toCanvas: async (_canvas, url) => urls.push(url)};
@@ -85,7 +95,7 @@ vm.runInThisContext(source.slice(source.indexOf('function pollStatus'), source.i
 })();
 """
     rows = json.loads(subprocess.check_output(["node", "-e", script, str(root)], text=True, encoding="utf-8"))
-    for status, actions in rows[:5]:
+    for status, actions in rows[:6]:
         assert 'href="https://openalma.org/mentra"' not in status
         assert 'href="https://github.com/mekineer-com/MentraOS/releases"' in status
         assert '>apk on github</a>' in status
@@ -93,7 +103,9 @@ vm.runInThisContext(source.slice(source.indexOf('function pollStatus'), source.i
         assert actions.index('>QR</button>') < actions.index('>Setup</a>')
         assert 'popovertarget="mentra-apk-popup"' in actions
         assert 'href="/iris"' in actions
+        assert '<form' not in actions
+        assert 'Cancel' not in actions and 'Force Stop' not in actions and 'spinner' not in actions
     assert 'Status unavailable' in rows[3][0]
     assert 'Installing Iris' in rows[4][0]
-    assert rows[5] == ['https://github.com/mekineer-com/MentraOS/releases',
+    assert rows[6] == ['https://github.com/mekineer-com/MentraOS/releases',
                        'https://github.com/mekineer-com/MentraOS/releases/download/v3.2.1/fixture.apk']

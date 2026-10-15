@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import psutil
+import settings
 
 from settings import apps_root as _resolve_apps_root
 from settings import atomic_server_binary as _atomic_server_binary
@@ -128,7 +129,8 @@ def _resolve_memu_server_pid_path(root: Path) -> Path:
 
 
 def services_for_root(root: Path) -> list[ServiceSpec]:
-    bun_dir = Path(shutil.which("bun") or Path.home() / ".bun" / "bin" / "bun").parent
+    bun = settings.bun_binary(root)
+    bun_dir = bun.parent
     node = shutil.which("node") or "node"
     python = shutil.which("python3") or shutil.which("python") or sys.executable
     venv_python = root / "mcp-memu-server" / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python3")
@@ -147,7 +149,7 @@ def services_for_root(root: Path) -> list[ServiceSpec]:
         ServiceSpec(
             name="iris-server",
             label="Mentra Iris",
-            cmd=[node, "scripts/release-private.mjs"],
+            cmd=[str(bun), "scripts/release-private.mjs"],
             cwd=root / "mentra-os" / "miniapps" / "openalma",
             log_path=Path.home() / ".local" / "state" / "openalma" / "iris-server.log",
             pid_path=STATE_DIR / "iris-server.pid",
@@ -874,7 +876,7 @@ def host_prerequisites(root: Path | None, os_release_path: Path = Path("/etc/os-
     if root is not None and (root / "mcp-memu-server/run.py").exists():
         commands.append(("memU Server Python 3.12", str(root / venv_python)))
     if root is not None and (root / optional_paths["Iris"][0]).exists():
-        commands.extend((command, command) for command in ("node", "bun"))
+        commands.append(("Iris Bun", str(settings.bun_binary(root))))
     if root is not None and (root / optional_paths["Atomic"][0]).exists():
         commands.append(("node", "node"))
     if root is not None and (root / optional_paths["Hermes Channels"][0]).exists():
@@ -945,12 +947,11 @@ def _mentra_readiness_uncached(root: Path) -> dict:
         return fail("config", "OpenAlma / mcp configuration", f"Configure Mentra: {', '.join(missing)}")
     rows.append({"label": "OpenAlma / mcp configuration", "state": "ready", "detail": "Ready"})
 
-    missing_tools = [command for command in ("node", "bun") if shutil.which(command) is None]
-    if missing_tools:
+    if not settings.bun_version(settings.bun_binary(root)):
         return fail(
             "release",
             "Iris private release runtime",
-            f"Private release unavailable; install: {', '.join(missing_tools)}",
+            "Iris runtime is being prepared automatically",
         )
     rows.append({"label": "Iris private release runtime", "state": "ready", "detail": "Ready"})
 
@@ -1134,8 +1135,9 @@ def _validate_iris_repair_bundle(path: Path, spec: ServiceSpec) -> dict:
     script = (f"import {{validateManifest}} from {json.dumps(validator.as_uri())}; "
               "const result=validateManifest(JSON.parse(await Bun.stdin.text())); "
               "if(!result.valid){console.error(result.errors.join('; '));process.exit(1)}")
-    result = subprocess.run([shutil.which("bun") or "bun", "-e", script], cwd=spec.cwd,
-                            input=json.dumps(manifest), text=True, capture_output=True)
+    result = subprocess.run([spec.cmd[0], "-e", script], cwd=spec.cwd,
+                            input=json.dumps(manifest), text=True, capture_output=True,
+                            env={**os.environ, **spec.env})
     if result.returncode:
         raise ValueError(f"Invalid Iris manifest: {result.stderr.strip()}")
     return manifest
@@ -1169,8 +1171,9 @@ def prepare_iris_repair(spec: ServiceSpec, mode: str, version: str, source_folde
         script = f"import {{pack}} from {json.dumps(pack_module.as_uri())}; await pack({{cwd:process.argv[1],build:true,outDir:process.argv[2]}})"
         spec.log_path.parent.mkdir(parents=True, exist_ok=True)
         with spec.log_path.open("ab") as log:
-            result = subprocess.run([shutil.which("bun") or "bun", "-e", script, str(folder), str(destination)],
-                                    cwd=spec.cwd, stdout=log, stderr=subprocess.STDOUT)
+            result = subprocess.run([spec.cmd[0], "-e", script, str(folder), str(destination)],
+                                    cwd=spec.cwd, stdout=log, stderr=subprocess.STDOUT,
+                                    env={**os.environ, **spec.env})
         if result.returncode:
             raise ValueError("Iris source build failed; check the Iris log and source dependencies")
     else:
@@ -1293,7 +1296,8 @@ def _iris_product_status(
     elif automatic_host and not installed_package:
         state, label, detail, action = (
             "unverified", "Iris installation unverified",
-            "The phone has not reported its Iris installation.", None,
+            "The phone has not reported its Iris installation.",
+            "start" if available_package and available_version else None,
         )
     elif not installed_package and (not available_package or not available_version):
         state, label, detail, action = "unavailable", "Iris bundle unavailable", "Check GitHub releases in Iris Setup", None

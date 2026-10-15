@@ -73,15 +73,6 @@
         </td>
         <td class="svc-actions">
           {% if s.name == 'iris-server' %}
-            {% if s.install_enabled is defined and not s.install_enabled %}
-            {% elif s.install_running or s.state == 'stopping' %}
-            <span class="spinner" role="status" aria-label="Working"></span>
-            {% if s.force_stoppable %}<button class="btn" onclick="svcAction('iris-server','force-stop',this)">Force Stop</button>{% endif %}
-            {% elif s.action_kind == 'stop' or s.force_stoppable %}
-            <button class="btn" onclick="svcAction('iris-server','{{ 'force-stop' if s.force_stoppable else 'stop' }}',this)">{{ 'Force Stop' if s.force_stoppable else s.action_label or 'Cancel' }}</button>
-            {% elif s.action_kind == 'install' %}
-            <form class="inline" method="post" action="/install/iris-server"><button class="btn" type="submit">{{ s.action_label or 'Install' }}</button></form>
-            {% endif %}
             <button class="btn" type="button" popovertarget="mentra-apk-popup" onclick="mentraApkQr()" aria-label="OpenAlma Mentra APK download QR">QR</button>
             <a class="btn" href="/iris">Setup</a>
           {% elif s.install_enabled is defined and not s.install_enabled %}
@@ -223,7 +214,7 @@ var pendingStops = {};
 
 document.addEventListener('submit', async function(event) {
   var form = event.target;
-  if (!['/iris/install', '/install/iris-server'].includes(form.getAttribute('action'))) return;
+  if (form.getAttribute('action') !== '/iris/install') return;
   event.preventDefault();
   if (form.dataset.submitting) return;
   form.dataset.submitting = 'true';
@@ -235,11 +226,8 @@ document.addEventListener('submit', async function(event) {
       var result = await response.json();
       throw new Error(irisErrorMessage(result, 'Iris install failed'));
     }
-    if (form.getAttribute('action') === '/iris/install') {
-      var device = form.elements.device_session_id.value;
-      location.assign('/iris?device_session_id=' + encodeURIComponent(device));
-    }
-    else location.reload();
+    var device = form.elements.device_session_id.value;
+    location.assign('/iris?device_session_id=' + encodeURIComponent(device));
   } catch (error) {
     alert(error.message);
     if (button) button.disabled = false;
@@ -337,7 +325,7 @@ function pollStatus(name) {
     .then(function(r) { return r.json(); })
     .then(function(data) {
       var row = document.querySelector('tr[data-service="' + name + '"]');
-      if (data.install_setup && row.dataset.runtime === 'true') {
+      if (name !== 'iris-server' && data.install_setup && row.dataset.runtime === 'true') {
         location.reload();
         return;
       }
@@ -363,11 +351,13 @@ function pollStatus(name) {
       var apkLink = name === 'iris-server' ? '<a class="mentra-apk-link" href="https://github.com/mekineer-com/MentraOS/releases">apk on github</a>' : '';
       statusCell.innerHTML = apkLink + html;
       var starting = pendingStarts[name] > Date.now() && !data.stoppable && data.startable !== false;
-      if (pendingStops[name]) {
+      if (name === 'iris-server') {
+        actionsCell.innerHTML = irisParentActions();
+      } else if (pendingStops[name]) {
         statusCell.innerHTML = apkLink + '<span class="starting">◐ waiting for graceful shutdown</span>';
-        actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Stopping"></span>' + (name === 'iris-server' ? irisParentActions({install_enabled: false}) : '');
+        actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Stopping"></span>';
       } else if (starting) {
-        actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Starting"></span>' + (name === 'iris-server' ? irisParentActions({install_enabled: false}) : '');
+        actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Starting"></span>';
       } else {
         delete pendingStarts[name];
         actionsCell.innerHTML = actionHtml(name, data);
@@ -398,7 +388,7 @@ function pollMemorize() {
 }
 
 setInterval(function() {
-  document.querySelectorAll('tr[data-service][data-runtime="true"]').forEach(function(row) {
+  document.querySelectorAll('tr[data-service][data-runtime="true"], tr[data-service="iris-server"]').forEach(function(row) {
     pollStatus(row.dataset.service);
   });
 }, 2000);

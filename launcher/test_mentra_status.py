@@ -145,7 +145,8 @@ class MentraStatusTest(TestCase):
         self.assertEqual(result["rows"][0]["state"], "ready")
         self.assertEqual(result["rows"][1]["state"], "ready")
         self.assertEqual(result["rows"][2]["detail"], "Ready")
-        self.assertTrue({"node", "bun"}.issubset(checked))
+        self.assertIn("bun", checked)
+        self.assertNotIn("node", checked)
         self.assertTrue({"ip", "npm", "sh", "bash", "wg", "nginx"}.isdisjoint(checked))
 
     def test_memu_server_keeps_only_iris_stop_guard(self) -> None:
@@ -225,7 +226,7 @@ class MentraStatusTest(TestCase):
                 services.RuntimeState(),
                 {"state": "ready", "host": {"host_package": "com.mentra.mentra.openalma"}},
                 "Iris installation unverified",
-                None,
+                "start",
             ),
             (
                 services.RuntimeState(),
@@ -375,7 +376,8 @@ class MentraStatusTest(TestCase):
         self.assertEqual(active["soul_id"], "Fictional Soul")
         self.assertIsNone(active["action_kind"])
         self.assertEqual(idle["state"], "unverified")
-        self.assertIsNone(idle["action_kind"])
+        self.assertEqual(idle["action_kind"], "start")
+        self.assertEqual(idle["action_label"], "Install")
         self.assertIsNone(idle["host_version"])
         self.assertTrue(idle["host_reporting"])
 
@@ -459,11 +461,11 @@ class MentraStatusTest(TestCase):
                 "model": "fictional-model",
                 "voice": "fictional-voice",
             }}))
-            with patch.object(services.shutil, "which", side_effect=lambda command: None if command == "bun" else command):
+            with patch.object(services.settings, "bun_binary", return_value=root / "missing-bun"):
                 result = services._mentra_readiness_uncached(root)
 
         self.assertEqual(result["step"], "release")
-        self.assertEqual(result["reason"], "Private release unavailable; install: bun")
+        self.assertEqual(result["reason"], "Iris runtime is being prepared automatically")
 
     def test_running_installer_shows_stock_steps_and_exact_phone_id(self) -> None:
         from app import templates
@@ -509,7 +511,7 @@ class MentraStatusTest(TestCase):
             "MENTRA_PUBLIC_OPENALMA_DEVICE_SESSION_ID=fictional-phone\n"
         )
         memu = services.ServiceSpec("memu-server", "memU", [], root, root / "log", root / "pid")
-        runtime_tools = patch.object(services.shutil, "which", return_value="/fictional/tool")
+        runtime_tools = patch.object(services.settings, "bun_version", return_value="1.3.14")
         runtime_tools.start()
 
         try:
@@ -982,7 +984,7 @@ class MentraStatusTest(TestCase):
                 ):
                     running_home = client.get("/").text
                 self.assertIn("waiting for phone installation", running_home)
-                self.assertIn(">Cancel<", running_home)
+                self.assertNotIn(">Cancel<", running_home)
                 self.assertNotIn("Not installed (1)", running_home)
                 self.assertIn('action="/iris/install"', client.get("/iris").text)
                 with (

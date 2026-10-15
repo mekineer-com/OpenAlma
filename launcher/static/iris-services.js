@@ -1,20 +1,5 @@
-function irisParentActions(data) {
-  var links = ' <button class="btn" type="button" popovertarget="mentra-apk-popup" onclick="mentraApkQr()" aria-label="OpenAlma Mentra APK download QR">QR</button> <a class="btn" href="/iris">Setup</a>';
-  if (data.install_enabled === false) return links;
-  if (data.install_running || data.state === 'stopping') {
-    return '<span class="spinner" role="status" aria-label="Working"></span>' +
-      (data.force_stoppable ? ' <button class="btn" onclick="svcAction(\'iris-server\',\'force-stop\',this)">Force Stop</button>' : '') + links;
-  }
-  if (data.action_kind === 'stop' || data.force_stoppable) {
-    return '<button class="btn" onclick="svcAction(\'iris-server\',\'' +
-      (data.force_stoppable ? 'force-stop' : 'stop') + '\',this)">' +
-      esc(data.force_stoppable ? 'Force Stop' : data.action_label || 'Cancel') + '</button>' + links;
-  }
-  if (data.action_kind === 'install') {
-    return '<form class="inline" method="post" action="/install/iris-server"><button class="btn" type="submit">' +
-      esc(data.action_label || 'Install') + '</button></form>' + links;
-  }
-  return links;
+function irisParentActions() {
+  return ' <button class="btn" type="button" popovertarget="mentra-apk-popup" onclick="mentraApkQr()" aria-label="OpenAlma Mentra APK download QR">QR</button> <a class="btn" href="/iris">Setup</a>';
 }
 
 async function mentraApkQr() {
@@ -165,10 +150,10 @@ function irisInstallerBusy(data) {
   return Boolean(data.running || data.starting || data.stuck || data.orphaned);
 }
 
-function irisInstallDisabled(data) {
+function irisInstallDisabled(data, prepare = false) {
   return Boolean(irisInstallerBusy(data) || data.blocked ||
-    data.install_running || data.state === 'stopping' || data.ready === false ||
-    !Array.isArray(data.installations) || (data.setup && (!data.setup.enabled || !data.setup.ready)));
+    data.install_running || data.state === 'stopping' || (data.ready === false && !(prepare && data.action_kind === 'install')) ||
+    !Array.isArray(data.installations) || (data.setup && (!data.setup.enabled || (!data.setup.ready && !(prepare && data.setup.step === 'release')))));
 }
 
 async function irisMetadataAction(id, action, body) {

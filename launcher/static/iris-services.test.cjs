@@ -14,6 +14,20 @@ const ready = {
   setup: {enabled: true, ready: true, rows: []},
 };
 
+test('Parent actions stay QR and Setup for every preparation and installer state', () => {
+  const context = vm.createContext({});
+  vm.runInContext(source, context);
+  const links = context.irisParentActions();
+  assert.match(links, />QR<\/button>/);
+  assert.match(links, /href="\/iris">Setup<\/a>/);
+  assert.doesNotMatch(links, /<form|Install|Cancel|Force Stop|spinner/);
+  for (const status of [{action_kind: 'install', action_label: 'Retry'}, {install_running: true},
+                        {action_kind: 'stop'}, {force_stoppable: true}, {state: 'stopping'},
+                        {install_enabled: false}, {ready: false}]) {
+    assert.equal(context.irisParentActions(status), links);
+  }
+});
+
 test('Services preserves rows and Rename drafts through outages, then restores current actions', async () => {
   const name = {disabled: false, setAttribute() {}};
   const save = {disabled: false};
@@ -73,6 +87,13 @@ test('Services preserves rows and Rename drafts through outages, then restores c
                        {setup: {enabled: false, ready: true}}, {setup: {enabled: true, ready: false}}]) {
     assert.equal(context.irisInstallDisabled({...ready, ...patch}), true);
   }
+  for (const preparation of [{ready: false, install_running: true},
+                             {ready: false, action_kind: 'install', action_label: 'Retry'}]) {
+    context.renderIrisInstallations({...ready, ...preparation});
+    assert.equal(install.disabled, true);
+  }
+  context.renderIrisInstallations({...ready, ready: true});
+  assert.equal(install.disabled, false);
   context.renderIrisInstallations({...ready, installations: [{...installation, action_label: 'Update',
     repair_available: true, update_available: true}]});
   assert.match(actions.innerHTML, />Update<\/button>/);
@@ -89,13 +110,19 @@ test('Services preserves rows and Rename drafts through outages, then restores c
 });
 
 test('Setup poll applies blocks and outages even with Rename open, without disabling installer cancellation', async () => {
-  const stock = {}, install = {}, rename = {}, forget = {}, cancel = {disabled: false};
+  const stock = {form: {id: 'iris-install-form', classList: {contains: () => false}}}, install = {}, rename = {}, forget = {}, cancel = {disabled: false};
   const address = {disabled: false}, busyHint = {hidden: true}, installerStatus = {};
   const progress = {hidden: false}, cancelControls = {hidden: false};
+  const retryButton = {}, retry = {hidden: true, querySelector: () => retryButton};
+  let retrySubmit;
+  retry.action = '/install/iris-server';
+  retry.hasAttribute = () => false;
+  retry.addEventListener = (_event, handler) => { retrySubmit = handler; };
   const actionError = {textContent: 'Invalid address'};
   const elements = new Map([
     ['iris-action-error', actionError], ['iris-installer-status', installerStatus], ['iris-address-busy', busyHint],
     ['iris-installer-progress', progress], ['iris-cancel-controls', cancelControls],
+    ['iris-preparation-retry', retry],
   ]);
   const selectors = new Map([
     ['form[action="/iris/install"] button', install], ['.iris-rename button', rename],
@@ -110,7 +137,7 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
       querySelectorAll: s => {
         if (s === 'form[action="/iris/install"] button') return [stock, install];
         if (s === '#iris-installations form button') return [install, rename, forget];
-        if (s === 'form[action^="/iris/"]') return [];
+        if (s === 'form[action^="/iris/"], #iris-preparation-retry') return [retry];
         assert.equal(s, '[data-device-session-id]');
         return [item];
       },
@@ -122,6 +149,7 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
       return {ok: responseOK, json: async () => next};
     },
     location: {reload: () => { reloads++; }},
+    FormData: class {},
   });
   const template = fs.readFileSync(__dirname + '/../templates/iris.html', 'utf8');
   const inlineStart = template.indexOf('const initialStatus = ');
@@ -136,6 +164,8 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
   const signature = context.statusSignature(ready);
   assert.notEqual(context.statusSignature({...ready, blocked: true}), signature);
   assert.notEqual(context.statusSignature({...ready, available_package: 'changed'}), signature);
+  assert.notEqual(context.statusSignature({...ready, action_kind: 'install', action_label: 'Retry'}), signature);
+  assert.notEqual(context.statusSignature({...ready, preparation_attempted: true}), signature);
   await poll();
   assert.equal(progress.hidden, true);
   assert.equal(cancelControls.hidden, true);
@@ -150,6 +180,46 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
     assert.equal(address.disabled, false);
     assert.equal(reloads, 0);
   }
+  next = {...ready, ready: false, preparation_attempted: true, install_running: true, status_label: 'Preparing installer', detail: 'Installing Bun'};
+  await poll();
+  assert.equal(installerStatus.textContent, 'Installing Bun');
+  assert.equal(retry.hidden, true);
+  assert.equal(install.disabled, true);
+  next = {...ready, ready: false, action_kind: 'install', action_label: 'Install',
+          setup: {enabled: true, ready: false, step: 'release', reason: 'Iris runtime needs preparation'}};
+  await poll();
+  assert.equal(stock.disabled, false, 'First Stock Install can request preparation without a phone report');
+  assert.equal(install.disabled, true, 'Known phone actions still require prepared tools');
+  assert.equal(retry.hidden, true);
+  for (const step of ['config', 'server', 'ingress']) {
+    next = {...next, setup: {...next.setup, step}};
+    await poll();
+    assert.equal(stock.disabled, true);
+  }
+  next = {...ready, ready: false, action_kind: 'install', action_label: 'Retry', detail: 'Preparation failed'};
+  await poll();
+  assert.equal(installerStatus.textContent, 'Preparation failed');
+  assert.equal(retry.hidden, false);
+  assert.equal(Boolean(retryButton.disabled), false);
+  assert.equal(install.disabled, true);
+  next = {...next, running: true};
+  await poll();
+  assert.equal(retryButton.disabled, true);
+  next = {...ready, ready: false, preparation_attempted: true, action_kind: 'install', action_label: 'Continue Install', detail: 'Missing dependencies'};
+  await poll();
+  assert.equal(retry.hidden, false, 'Admission latch keeps recovery visible after another component replaces operation state');
+  assert.equal(Boolean(retryButton.disabled), false);
+  assert.equal(install.disabled, true);
+  next = {...next, install_running: true};
+  await poll();
+  assert.equal(retry.hidden, true);
+  next = {...ready, ready: true, preparation_attempted: true};
+  await poll();
+  assert.equal(retry.hidden, true);
+  assert.equal(install.disabled, false);
+  next = {...ready, ready: false, action_kind: 'install', action_label: 'Install'};
+  await poll();
+  assert.equal(retry.hidden, true);
   for (const outage of [{detail: 'MCP unavailable'}, new Error('Offline')]) {
     cancelControls.hidden = false;
     next = outage;
@@ -157,6 +227,7 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
     for (const button of [stock, install, rename, forget]) assert.equal(button.disabled, true);
     assert.equal(cancel.disabled, false);
     assert.equal(cancelControls.hidden, false);
+    assert.equal(retry.hidden, true);
   }
   next = ready;
   responseOK = false;
@@ -165,6 +236,7 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
   responseOK = true;
   await poll();
   for (const button of [stock, install, rename, forget]) assert.equal(Boolean(button.disabled), false);
+  assert.equal(retry.hidden, true);
   for (const busy of [{running: true}, {starting: true}, {stuck: true}, {orphaned: true}]) {
     next = {...ready, ...busy};
     await poll();
@@ -193,4 +265,25 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
   await poll();
   assert.equal(reloads, 1);
   assert.equal(actionError.textContent, 'Invalid address');
+  let prevented = false, request, finishRequest;
+  context.fetch = async (url, options) => {
+    if (url === '/install/iris-server') {
+      request = {url, options};
+      return new Promise(resolve => { finishRequest = resolve; });
+    }
+    return {ok: true, json: async () => next};
+  };
+  retrySubmit({preventDefault() { prevented = true; }, submitter: retryButton});
+  next = {...ready, ready: false, install_running: true, detail: 'Installing Iris dependencies'};
+  await poll();
+  assert.equal(installerStatus.textContent, 'Installing Iris dependencies');
+  assert.equal(stock.disabled, true);
+  assert.equal(retryButton.disabled, true);
+  assert.equal(reloads, 1, 'A pending preparation POST keeps polling without navigating');
+  finishRequest({ok: true, redirected: true, url: '/'});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(prevented, true);
+  assert.equal(request.url, '/install/iris-server');
+  assert.equal(request.options.method, 'POST');
+  assert.equal(reloads, 2, 'Retry reloads Setup rather than following the Home redirect');
 });

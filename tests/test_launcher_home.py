@@ -214,7 +214,10 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
             assert 'Install OpenAlma Mentra: <button class="btn qr-inline"' in steps
             assert 'Enter the server address into Mentra.' in steps
             assert 'id="mentra-apk-popup"' in visible
-            assert 'Install Iris on the <a href="/">main page</a>.' in steps
+            assert 'Click Install beside your phone on the <a href="/">main page</a> to install Iris.' in steps
+            assert 'or you open Setup' not in visible
+            assert 'automatically after OpenAlma Mentra reports your phone.' in visible
+            assert 'For Stock Mentra, clicking Install below prepares the tools first.' in visible
             stock = ""
             if page.endswith('=fork-test'):
                 assert 'id="iris-stock-installation"' not in visible
@@ -320,9 +323,11 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
 def test_iris_install_redirect_preserves_provided_target(tmp_path, monkeypatch, device_session_id, host_package, target):
     spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
     started = []
-    monkeypatch.setattr(app, "_find_service", lambda _name: spec)
+    monkeypatch.setattr(app, "_find_service", lambda _name, **_kwargs: spec)
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
     monkeypatch.setattr(app.setup_install, "start_issue", lambda *_args: "")
+    monkeypatch.setattr(app.setup_install, "optional_issue", lambda *_args: "")
+    monkeypatch.setattr(app.setup_install, "release_issue", lambda *_args: "")
     monkeypatch.setattr(app, "_start_iris_install", lambda *args: started.append(args))
 
     response = TestClient(app.app, base_url="http://127.0.0.1").post(
@@ -433,7 +438,12 @@ def test_active_core_enables_optional_install_actions(tmp_path, monkeypatch):
     response = TestClient(app.app, base_url="http://127.0.0.1").get("/")
 
     assert response.status_code == 200
-    for name in ("iris-server", "atomic", "channels-daemon", "sillytavern"):
+    assert 'action="/install/iris-server"' not in response.text
+    parent = response.text.split('<tr data-service="iris-server"', 1)[1].split('</tr>', 1)[0]
+    assert '>apk on github</a>' in parent
+    assert '>QR</button>' in parent and '>Setup</a>' in parent
+    assert '<form' not in parent and '>Install</button>' not in parent
+    for name in ("atomic", "channels-daemon", "sillytavern"):
         assert f'action="/install/{name}"' in response.text
 
 
@@ -527,13 +537,15 @@ def test_iris_runtime_setup_state_is_not_an_install_row(tmp_path, monkeypatch):
 
     status = app._setup_aware_status(spec, tmp_path)
 
-    assert status == {"state": "setup", "action_kind": "settings"}
+    assert status == {"state": "setup", "action_kind": "settings", "preparation_attempted": False}
     assert "install_setup" not in status
 
 
 @pytest.mark.parametrize("setup", [
     {"ready": False, "status_label": "Installing", "install_running": True, "detail": "Dependencies"},
     {"ready": False, "status_label": "Installation incomplete", "detail": "Missing dependencies"},
+    {"ready": False, "status_label": "Preparation failed", "detail": "Download failed",
+     "action_kind": "install", "action_label": "Retry"},
     {"ready": True, "guidance": ""},
 ])
 @pytest.mark.parametrize("runtime", [{}, {"blocked": True, "detail": "Free installer port 6789"},
@@ -564,14 +576,26 @@ def test_iris_page_and_poll_share_setup_status(tmp_path, monkeypatch, setup, run
         html = client.get(url).text
         initial = json.JSONDecoder().raw_decode(html.split("const initialStatus = ", 1)[1])[0]
         assert initial == client.get("/service/iris-server/status").json()
+        retry = html.split('<form id="iris-preparation-retry"', 1)[1].split('</form>', 1)[0]
+        show_retry = initial.get("ready") is False and not initial.get("install_running") and (
+            initial.get("preparation_attempted") or initial.get("action_kind") == "install" and initial.get("action_label") == "Retry"
+        )
+        assert ('hidden' not in retry.split('>', 1)[0]) == show_retry
+        assert 'action="/install/iris-server"' in retry
+        assert '>Retry</button>' in retry and '>Install</button>' not in retry
+        if initial.get("ready") is False and not initial.get("blocked"):
+            assert initial["detail"] in html.split('id="iris-installer-status"', 1)[1].split('</p>', 1)[0]
         script = '<script src="/static/iris-services.js"></script>'
         assert html.index(script) < html.index("const initialStatus = ")
         if not runtime and setup["ready"] and url == "/iris":
             shared = client.get("/static/iris-services.js")
             assert shared.status_code == 200
-            assert "function irisInstallDisabled(data)" in shared.text
+            assert "function irisInstallDisabled(data, prepare = false)" in shared.text
         install = html.split('action="/iris/install"', 1)[1].split("</form>", 1)[0]
-        assert bool(re.search(r'<button[^>]*disabled', install)) == (not setup["ready"] or bool(runtime))
+        disabled = bool(runtime) or bool(setup.get("install_running")) or (
+            not setup["ready"] and (url != "/iris" or setup.get("action_kind") != "install")
+        )
+        assert bool(re.search(r'<button[^>]*disabled', install)) == disabled
         address = html.split('class="iris-address">', 1)[1].split("</form>", 1)[0]
         busy = any(runtime.get(key) for key in ("running", "starting", "stuck", "orphaned"))
         assert bool(re.search(r'<button[^>]*disabled', address)) == busy
@@ -587,6 +611,31 @@ def test_iris_page_and_poll_share_setup_status(tmp_path, monkeypatch, setup, run
             assert repair_form.index('>Repair</button>') < repair_form.index('name="repair_source"')
             assert 'Repair from' not in html
             assert html.index('>Forget</button>') < html.index('class="iris-repair"')
+
+
+@pytest.mark.parametrize("setup_ready", [False, True])
+@pytest.mark.parametrize("ready, running, attempted, show_retry", [
+    (False, False, True, True),
+    (False, True, True, False),
+    (False, False, False, False),
+    (True, False, True, False),
+])
+def test_iris_preparation_retry_uses_admission_latch_after_operation_replaced(tmp_path, monkeypatch, ready, running, attempted, show_retry, setup_ready):
+    spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    status = {"ready": ready, "install_running": running, "preparation_attempted": attempted,
+              "action_kind": "install", "action_label": "Continue Install", "installations": [],
+              "available_package": services.IRIS_PACKAGE, "available_version": "0.1.12",
+              "setup": {"enabled": True, "ready": setup_ready, "step": 'release', "rows": []}}
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "all_services", lambda: [spec])
+    monkeypatch.setattr(app, "_setup_aware_status", lambda *_args, **_kwargs: status)
+    html = TestClient(app.app, base_url="http://127.0.0.1").get("/iris").text
+    retry = html.split('<form id="iris-preparation-retry"', 1)[1].split('</form>', 1)[0]
+    assert ('hidden' not in retry.split('>', 1)[0]) == show_retry
+    assert 'href="/install/iris-server/logs"' in retry
+    assert '>Retry</button>' in retry and '>Install</button>' not in retry
+    stock = html.split('id="iris-install-form"', 1)[1].split('</form>', 1)[0]
+    assert ('disabled' in stock) == running
 
 
 def test_iris_repair_success_follows_status_redirect():
