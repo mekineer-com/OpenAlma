@@ -218,6 +218,10 @@ def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch)
     assert next(spec for spec in specs if spec.name == "sillytavern").cmd[-2:] == [
         "server.js", "--browserLaunchEnabled=false",
     ]
+    assert next(spec for spec in specs if spec.name == "sillytavern").env == {
+        "SILLYTAVERN_ENABLESERVERPLUGINS": "true",
+        "SILLYTAVERN_ENABLESERVERPLUGINSAUTOUPDATE": "false",
+    }
 
 
 def test_services_can_be_built_for_pending_root(tmp_path):

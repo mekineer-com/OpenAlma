@@ -110,7 +110,7 @@ The soul needs somewhere to meet you. Each client is independent; combine as man
 
 [SillyTavern](https://github.com/SillyTavern/SillyTavern) is a popular platform for AI roleplay and companionship. Its launcher Install uses stock SillyTavern and adds:
 
-3. **[memu-sillytavern-plugin](https://github.com/mekineer-com/memu-sillytavern-plugin)** — installed in SillyTavern's `plugins/` folder. Enable `enableServerPlugins: true` in SillyTavern's `config.yaml`, then Stop and Start SillyTavern.
+3. **[memu-sillytavern-plugin](https://github.com/mekineer-com/memu-sillytavern-plugin)** — installed in SillyTavern's `plugins/` folder. Launcher-managed starts enable server plugins and disable their automatic updates, keeping the managed plugin version. For manual starts or older launchers, set `enableServerPlugins: true` in SillyTavern's `config.yaml`, then Stop and Start SillyTavern.
 
 4. **[memu-sillytavern-extension](https://github.com/mekineer-com/memu-sillytavern-extension)** — installed in SillyTavern's `data/default-user/extensions/` folder. This adds the memU panel.
 

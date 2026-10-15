@@ -201,6 +201,10 @@ def services_for_root(root: Path) -> list[ServiceSpec]:
             pid_path=STATE_DIR / "sillytavern.pid",
             port=8000,
             open_url="http://127.0.0.1:8000",
+            env={
+                "SILLYTAVERN_ENABLESERVERPLUGINS": "true",
+                "SILLYTAVERN_ENABLESERVERPLUGINSAUTOUPDATE": "false",
+            },
             install_marker=root / "sillytavern" / "SillyTavern" / "server.js",
         ),
     ]
