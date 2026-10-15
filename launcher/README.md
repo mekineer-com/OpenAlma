@@ -93,7 +93,7 @@ manifest is unchanged.
 - New WhatsApp chats are excluded until you choose to include them. Changing
   the default for new chats does not change the choices for existing chats.
 - **Stop** gives an app time to finish safely. If it gets stuck, you can choose
-  **Force Stop** after 30 seconds; OpenAlma will not do that automatically.
+  **Force Stop** after 15 seconds; OpenAlma will not do that automatically.
 - Finish your Iris conversation before stopping the memory services.
 - If memory processing fails, the launcher shows the problem and a **Retry**
   button. You decide when to try again; other Souls can continue independently.

@@ -46,7 +46,7 @@ PROCESS_SCAN_CACHE_SECONDS = 10.0
 PORT_PID_CACHE_SECONDS = 5.0
 UNKNOWN_PORT_PID = -1
 STARTUP_GRACE_SECONDS = 30.0
-FORCE_STOP_RECOVERY_SECONDS = 30.0
+FORCE_STOP_RECOVERY_SECONDS = 15.0
 _PROCESS_SCAN_CACHE: dict[tuple[str, str, str], tuple[float, list[int]]] = {}
 _PORT_PID_CACHE: dict[int, tuple[float, int | None]] = {}
 _MENTRA_READINESS_CACHE: dict[str, tuple[float, dict]] = {}
@@ -1536,7 +1536,7 @@ def _stop_status(spec: ServiceSpec, result: dict) -> dict:
     if stopping:
         result.update(
             state="stopping",
-            status_label="◐ waiting for graceful shutdown",
+            status_label="Still finishing…" if elapsed else "◐ waiting for graceful shutdown",
             detail=(
                 f"Force Stop failed: {error}"
                 if error else
