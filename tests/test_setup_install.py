@@ -84,14 +84,22 @@ def test_launcher_patch_manifest_keeps_compatible_component_versions(tmp_path):
 
     parsed = setup_install.validate_manifest(manifest, tmp_path, "v9.8.7-buildfix")
 
-    coordinated = [
-        entry["ref"]
+    coordinated = {
+        entry["repository"]: entry["ref"]
         for service in parsed.values()
         for entry in service
         if entry["repository"] != "https://github.com/SillyTavern/SillyTavern.git"
-    ]
-    assert coordinated == ["v0.1.12"] * len(coordinated)
-    assert parsed["iris-server"][0]["ref"] == "v0.1.12"
+    }
+    assert coordinated == {
+        "https://github.com/mekineer-com/mcp-memu-server.git": "v0.1.16",
+        "https://github.com/mekineer-com/memU.git": "v0.1.12",
+        "https://github.com/mekineer-com/iris.git": "v0.1.16",
+        "https://github.com/mekineer-com/hermes-channels.git": "v0.1.16",
+        "https://github.com/mekineer-com/atomic.git": "v0.1.16",
+        "https://github.com/mekineer-com/memu-sillytavern-plugin.git": "v0.1.12",
+        "https://github.com/mekineer-com/memu-sillytavern-extension.git": "v0.1.12",
+    }
+    assert parsed["iris-server"][0]["ref"] == "v0.1.16"
     assert parsed["sillytavern"][0] == {
         "repository": "https://github.com/SillyTavern/SillyTavern.git",
         "ref": "1.19.0",

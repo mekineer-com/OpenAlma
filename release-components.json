@@ -5,7 +5,7 @@
       "repositories": [
         {
           "repository": "https://github.com/mekineer-com/mcp-memu-server.git",
-          "ref": "v0.1.12",
+          "ref": "v0.1.16",
           "destination": "mcp-memu-server"
         },
         {
@@ -19,7 +19,7 @@
       "repositories": [
         {
           "repository": "https://github.com/mekineer-com/iris.git",
-          "ref": "v0.1.12",
+          "ref": "v0.1.16",
           "destination": "mentra-os/miniapps/openalma"
         }
       ]
@@ -28,7 +28,7 @@
       "repositories": [
         {
           "repository": "https://github.com/mekineer-com/hermes-channels.git",
-          "ref": "v0.1.12",
+          "ref": "v0.1.16",
           "destination": "hermes-channels"
         }
       ]
@@ -37,7 +37,7 @@
       "repositories": [
         {
           "repository": "https://github.com/mekineer-com/atomic.git",
-          "ref": "v0.1.12",
+          "ref": "v0.1.16",
           "destination": "atomic"
         }
       ]
