@@ -69,13 +69,13 @@ class InstallOperation:
     state: str = "running"
     step: str = "Starting"
     detail: str = ""
-    automatic: bool = False
     thread: threading.Thread | None = field(default=None, repr=False)
     lock_handle: Any = field(default=None, repr=False)
 
 
 _LOCK = threading.RLock()
 _OPERATION: InstallOperation | None = None
+_OPERATIONS: dict[str, InstallOperation] = {}
 _RELEASE_ISSUE_CACHE: dict[tuple[str, str, str], tuple[float, str]] = {}
 _LAUNCHER_UPDATE_CACHE: tuple[float, str, dict[str, str] | None] | None = None
 INSTALL_LOCK = Path.home() / ".cache" / "openalma-launcher" / "install.lock"
@@ -717,9 +717,8 @@ def install_log_path(service_name: str) -> Path:
 
 def _set_operation(operation: InstallOperation, **values: str) -> None:
     with _LOCK:
-        if _OPERATION is operation:
-            for key, value in values.items():
-                setattr(operation, key, value)
+        for key, value in values.items():
+            setattr(operation, key, value)
 
 
 def _install_core(operation: InstallOperation) -> None:
@@ -1065,6 +1064,8 @@ def _install_optional(operation: InstallOperation) -> None:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("w", encoding="utf-8") as log:
             _set_operation(operation, step="Loading release selection")
+            if operation.service_name == "iris-server" and (issue := _iris_workspace_issue(operation.root)):
+                raise SetupError(issue)
             entries = sorted(
                 _optional_entries(operation.service_name, operation.root),
                 key=lambda entry: len(Path(entry["destination"]).parts),
@@ -1078,9 +1079,9 @@ def _install_optional(operation: InstallOperation) -> None:
                 destination = operation.root / entry["destination"]
                 if destination in existing_paths:
                     if not _local_matching_checkout(destination, entry["repository"], entry["ref"]):
-                        if operation.automatic and operation.service_name == "iris-server":
+                        if operation.service_name == "iris-server":
                             if _git_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], destination) != "HEAD":
-                                raise SetupError("Automatic Iris preparation cannot change a development checkout")
+                                raise SetupError("Iris preparation cannot change a development checkout")
                         if operation.service_name == "atomic" and sys.platform == "win32":
                             binary = settings.atomic_server_binary(operation.root)
                             head = _git_output(["git", "rev-parse", "HEAD"], destination)
@@ -1093,8 +1094,6 @@ def _install_optional(operation: InstallOperation) -> None:
                     _clone(entry, operation.root, log)
             issue = _optional_tool_issue(operation.service_name)
             if issue:
-                raise SetupError(issue)
-            if operation.service_name == "iris-server" and (issue := _iris_workspace_issue(operation.root)):
                 raise SetupError(issue)
             if operation.service_name == "iris-server":
                 _set_operation(operation, step="Preparing Iris runtime")
@@ -1201,6 +1200,10 @@ def _release_install_lock(handle: Any) -> None:
 
 def _operation_worker(operation: InstallOperation, target: Any) -> None:
     try:
+        if operation.service_name in OPTIONAL_SERVICES:
+            _set_operation(operation, step="Checking core installation")
+            if issue := core_issue(operation.root):
+                raise SetupError(f"Install core first: {issue}")
         target(operation)
     except Exception as exc:
         _set_operation(operation, state="error", step="Installation failed", detail=str(exc))
@@ -1208,28 +1211,31 @@ def _operation_worker(operation: InstallOperation, target: Any) -> None:
         _release_install_lock(operation.lock_handle)
 
 
-def _begin_operation(service_name: str, root: Path, target: Any, *, automatic: bool = False) -> dict[str, Any]:
+def _begin_operation(service_name: str, root: Path, target: Any) -> InstallOperation:
     global _OPERATION
     with _LOCK:
         if _OPERATION is not None and _OPERATION.thread is not None and _OPERATION.thread.is_alive():
             if _OPERATION.root != root or _OPERATION.service_name != service_name:
                 raise SetupConflict(f"{_OPERATION.service_name} installation is already running")
-            return operation_status(root, service_name)
+            return _OPERATION
         lock_handle = _acquire_install_lock(service_name, root)
-        operation = InstallOperation(service_name=service_name, root=root, lock_handle=lock_handle, automatic=automatic)
+        operation = InstallOperation(service_name=service_name, root=root, lock_handle=lock_handle)
         thread = threading.Thread(
             target=_operation_worker, args=(operation, target),
             name=f"openalma-{service_name}-install", daemon=False,
         )
         operation.thread = thread
         _OPERATION = operation
+        _OPERATIONS[service_name] = operation
         try:
             thread.start()
-        except Exception:
+        except Exception as exc:
             _OPERATION = None
+            operation.thread = None
+            _set_operation(operation, state="error", step="Installation failed", detail=str(exc))
             _release_install_lock(lock_handle)
             raise
-    return operation_status(root, service_name)
+    return operation
 
 
 def begin_core_install(root: Path) -> dict[str, Any]:
@@ -1239,28 +1245,35 @@ def begin_core_install(root: Path) -> dict[str, Any]:
     issue = _prerequisite_issue(root)
     if issue:
         raise SetupError(issue)
-    return _begin_operation("memu-server", root, _install_core)
+    _begin_operation("memu-server", root, _install_core)
+    return operation_status(root)
 
 
 def begin_core_recovery(root: Path) -> dict[str, Any]:
     root = root.resolve()
     if not (root / RECOVERY_FILE).exists():
         raise SetupError("Core recovery is not required")
-    return _begin_operation("memu-server", root, _recover_core)
+    _begin_operation("memu-server", root, _recover_core)
+    return operation_status(root)
 
 
-def begin_optional_install(service_name: str, root: Path, *, automatic: bool = False) -> dict[str, Any]:
+def begin_optional_install(service_name: str, root: Path) -> InstallOperation:
     if service_name not in OPTIONAL_SERVICES:
         raise SetupError(f"Unknown optional service: {service_name}")
     root = root.resolve()
-    if issue := core_issue(root):
-        raise SetupError(f"Install core first: {issue}")
-    return _begin_operation(service_name, root, _install_optional, automatic=automatic)
+    if (root / RECOVERY_FILE).exists():
+        raise SetupConflict("Core recovery is required first")
+    issue = release_issue(service_name, root, refresh=True)
+    if issue and not issue.startswith("Update required:"):
+        raise SetupConflict(issue)
+    if issue := core_issue(root, verify_runtime=False):
+        raise SetupConflict(f"Install core first: {issue}")
+    return _begin_operation(service_name, root, _install_optional)
 
 
 def operation_status(root: Path, service_name: str = "memu-server") -> dict[str, Any]:
     with _LOCK:
-        operation = _OPERATION
+        operation = _OPERATION if _OPERATION is not None and _OPERATION.service_name == service_name else _OPERATIONS.get(service_name)
         if operation is None or operation.root != root.resolve() or operation.service_name != service_name:
             return {"state": "idle", "step": "", "detail": ""}
         return {"state": operation.state, "step": operation.step, "detail": operation.detail}
@@ -1352,7 +1365,7 @@ def optional_setup_status(service_name: str, root: Path) -> dict[str, Any]:
             "startable": False, "action_kind": None if core_blocked else "install",
             "action_label": "" if core_blocked else ("Retry" if operation["state"] == "error" else "Update"),
         }
-    issue = optional_issue(service_name, root)
+    issue = optional_issue(service_name, root) or (operation["detail"] if operation["state"] == "error" else "")
     if not issue:
         guidance = "Enable server plugins in SillyTavern configuration" if service_name == "sillytavern" else ""
         return {"ready": True, "guidance": guidance}
@@ -1364,7 +1377,7 @@ def optional_setup_status(service_name: str, root: Path) -> dict[str, Any]:
     if service_name == "atomic" and sys.platform != "win32" and present and _node_dependencies_ready(root / "atomic", include_dev=True):
         manual = issue
     detail = operation["detail"] if operation["state"] == "error" else (manual or issue)
-    action = not present or not manual
+    action = not present or not manual or (service_name == "iris-server" and operation["state"] == "error")
     primary = {
         "channels-daemon": "hermes-channels/gateway/daemon.py",
         "iris-server": "mentra-os/miniapps/openalma/miniapp.json",

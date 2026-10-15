@@ -402,7 +402,7 @@ def test_update_readiness_names_active_services(tmp_path, monkeypatch, install_r
         response = TestClient(app.app, base_url="http://127.0.0.1").get("/launcher/update-readiness")
         active = ["Atomic Mind Map"]
         if install_running:
-            active.append("Installation in progress (wait for it to finish)")
+            active.append("memu-server installation in progress (wait for it to finish)")
         assert response.json() == {"application": "openalma-launcher", "active_services": active}
     finally:
         if handle is not None:
@@ -537,7 +537,7 @@ def test_iris_runtime_setup_state_is_not_an_install_row(tmp_path, monkeypatch):
 
     status = app._setup_aware_status(spec, tmp_path)
 
-    assert status == {"state": "setup", "action_kind": "settings", "preparation_attempted": False}
+    assert status == {"state": "setup", "action_kind": "settings"}
     assert "install_setup" not in status
 
 
@@ -614,16 +614,16 @@ def test_iris_page_and_poll_share_setup_status(tmp_path, monkeypatch, setup, run
 
 
 @pytest.mark.parametrize("setup_ready", [False, True])
-@pytest.mark.parametrize("ready, running, attempted, show_retry", [
+@pytest.mark.parametrize("ready, running, failed, show_retry", [
     (False, False, True, True),
     (False, True, True, False),
     (False, False, False, False),
     (True, False, True, False),
 ])
-def test_iris_preparation_retry_uses_admission_latch_after_operation_replaced(tmp_path, monkeypatch, ready, running, attempted, show_retry, setup_ready):
+def test_iris_preparation_retry_uses_worker_failure(tmp_path, monkeypatch, ready, running, failed, show_retry, setup_ready):
     spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
-    status = {"ready": ready, "install_running": running, "preparation_attempted": attempted,
-              "action_kind": "install", "action_label": "Continue Install", "installations": [],
+    status = {"ready": ready, "install_running": running,
+              "action_kind": "install", "action_label": "Retry" if failed else "Continue Install", "installations": [],
               "available_package": services.IRIS_PACKAGE, "available_version": "0.1.12",
               "setup": {"enabled": True, "ready": setup_ready, "step": 'release', "rows": []}}
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)

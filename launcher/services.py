@@ -951,7 +951,7 @@ def _mentra_readiness_uncached(root: Path) -> dict:
         return fail(
             "release",
             "Iris private release runtime",
-            "Iris runtime is being prepared automatically",
+            "Iris runtime needs preparation",
         )
     rows.append({"label": "Iris private release runtime", "state": "ready", "detail": "Ready"})
 

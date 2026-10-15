@@ -165,7 +165,6 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
   assert.notEqual(context.statusSignature({...ready, blocked: true}), signature);
   assert.notEqual(context.statusSignature({...ready, available_package: 'changed'}), signature);
   assert.notEqual(context.statusSignature({...ready, action_kind: 'install', action_label: 'Retry'}), signature);
-  assert.notEqual(context.statusSignature({...ready, preparation_attempted: true}), signature);
   await poll();
   assert.equal(progress.hidden, true);
   assert.equal(cancelControls.hidden, true);
@@ -180,7 +179,7 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
     assert.equal(address.disabled, false);
     assert.equal(reloads, 0);
   }
-  next = {...ready, ready: false, preparation_attempted: true, install_running: true, status_label: 'Preparing installer', detail: 'Installing Bun'};
+  next = {...ready, ready: false, install_running: true, status_label: 'Preparing installer', detail: 'Installing Bun'};
   await poll();
   assert.equal(installerStatus.textContent, 'Installing Bun');
   assert.equal(retry.hidden, true);
@@ -205,15 +204,15 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
   next = {...next, running: true};
   await poll();
   assert.equal(retryButton.disabled, true);
-  next = {...ready, ready: false, preparation_attempted: true, action_kind: 'install', action_label: 'Continue Install', detail: 'Missing dependencies'};
+  next = {...ready, ready: false, action_kind: 'install', action_label: 'Retry', detail: 'Missing dependencies'};
   await poll();
-  assert.equal(retry.hidden, false, 'Admission latch keeps recovery visible after another component replaces operation state');
+  assert.equal(retry.hidden, false, 'Retained worker failure keeps recovery visible after another component finishes');
   assert.equal(Boolean(retryButton.disabled), false);
   assert.equal(install.disabled, true);
   next = {...next, install_running: true};
   await poll();
   assert.equal(retry.hidden, true);
-  next = {...ready, ready: true, preparation_attempted: true};
+  next = {...ready, ready: true};
   await poll();
   assert.equal(retry.hidden, true);
   assert.equal(install.disabled, false);

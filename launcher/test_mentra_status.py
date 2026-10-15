@@ -465,7 +465,7 @@ class MentraStatusTest(TestCase):
                 result = services._mentra_readiness_uncached(root)
 
         self.assertEqual(result["step"], "release")
-        self.assertEqual(result["reason"], "Iris runtime is being prepared automatically")
+        self.assertEqual(result["reason"], "Iris runtime needs preparation")
 
     def test_running_installer_shows_stock_steps_and_exact_phone_id(self) -> None:
         from app import templates

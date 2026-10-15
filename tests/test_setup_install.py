@@ -523,6 +523,43 @@ def test_thread_start_failure_clears_operation_and_releases_lock(tmp_path, monke
     assert released == ["lock"]
 
 
+def test_optional_worker_keeps_failure_and_status_available_during_probes(tmp_path, monkeypatch):
+    probing, finish = threading.Event(), threading.Event()
+    monkeypatch.setattr(setup_install, "_OPERATION", None)
+    monkeypatch.setattr(setup_install, "_OPERATIONS", {})
+    monkeypatch.setattr(setup_install, "INSTALL_LOCK", tmp_path / "install.lock")
+    monkeypatch.setattr(setup_install, "release_issue", lambda *_args, **_kwargs: "")
+
+    def core(_root, *, verify_runtime=True):
+        if verify_runtime:
+            probing.set()
+            assert finish.wait(2)
+            return "Fictional package failure"
+        return ""
+
+    monkeypatch.setattr(setup_install, "core_issue", core)
+    operation = setup_install.begin_optional_install("iris-server", tmp_path)
+    try:
+        assert probing.wait(1)
+        assert setup_install.operation_status(tmp_path, "iris-server")["state"] == "running"
+        with pytest.raises(setup_install.SetupConflict):
+            setup_install._begin_operation("memu-server", tmp_path, lambda _op: None)
+    finally:
+        finish.set()
+        operation.thread.join(3)
+    other = setup_install._begin_operation("memu-server", tmp_path, lambda op: setup_install._set_operation(op, state="ready"))
+    other.thread.join(1)
+    status = setup_install.operation_status(tmp_path, "iris-server")
+    assert status["state"] == "error" and "Fictional package failure" in status["detail"]
+    monkeypatch.setattr(setup_install, "optional_issue", lambda *_args: "")
+    assert setup_install.optional_setup_status("iris-server", tmp_path)["action_label"] == "Retry"
+    assert setup_install.operation_status(tmp_path / "other", "iris-server")["state"] == "idle"
+    monkeypatch.setattr(setup_install, "core_issue", lambda *_args: "")
+    retry = setup_install._begin_operation("iris-server", tmp_path, lambda op: setup_install._set_operation(op, state="ready"))
+    retry.thread.join(1)
+    assert retry is not operation and setup_install.operation_status(tmp_path, "iris-server")["state"] == "ready"
+
+
 @pytest.mark.parametrize("partial_checkout", [False, True])
 def test_core_retry_reuses_recorded_release(tmp_path, monkeypatch, partial_checkout):
     operation = setup_install.InstallOperation(service_name="memu-server", root=tmp_path)
@@ -978,6 +1015,7 @@ def test_install_lock_excludes_another_process_owner(tmp_path, monkeypatch):
 def test_operation_worker_reports_early_failure_and_releases_lock(tmp_path, monkeypatch):
     operation = setup_install.InstallOperation(service_name="atomic", root=tmp_path, lock_handle=object())
     released = []
+    monkeypatch.setattr(setup_install, "core_issue", lambda *_args: "")
     monkeypatch.setattr(setup_install, "_OPERATION", operation)
     monkeypatch.setattr(setup_install, "_release_install_lock", lambda handle: released.append(handle))
 
@@ -1053,11 +1091,12 @@ def test_iris_readiness_requires_its_private_runtime_and_installer_cli(tmp_path,
     assert setup_install._optional_commands("iris-server", tmp_path)[0][0] == [str(binary), "install", "--frozen-lockfile"]
 
 
-def test_automatic_worker_rechecks_manual_branch_for_recorded_manifest(tmp_path, monkeypatch):
+@pytest.mark.parametrize("block", ["branch", "workspace"])
+def test_iris_worker_protects_checkout_before_mutation(tmp_path, monkeypatch, block):
     entry = {"repository": "https://github.com/mekineer-com/iris.git", "ref": "v0.1.12", "destination": "mentra-os/miniapps/openalma"}
     directory = tmp_path / entry["destination"]
     directory.mkdir(parents=True)
-    operation = setup_install.InstallOperation(service_name="iris-server", root=tmp_path, automatic=True)
+    operation = setup_install.InstallOperation(service_name="iris-server", root=tmp_path)
     monkeypatch.setattr(setup_install, "_OPERATION", operation)
     monkeypatch.setattr(setup_install, "install_log_path", lambda _name: tmp_path / "install.log")
     monkeypatch.setattr(setup_install, "packaged_manifest", lambda _root: None)
@@ -1066,17 +1105,20 @@ def test_automatic_worker_rechecks_manual_branch_for_recorded_manifest(tmp_path,
     monkeypatch.setattr(setup_install, "_local_matching_checkout", lambda *_args: False)
     monkeypatch.setattr(setup_install, "_git_output", lambda *_args: "main")
     monkeypatch.setattr(setup_install, "_checkout_release", lambda *_args: pytest.fail("Do not move a development branch"))
+    if block == "workspace":
+        monkeypatch.setattr(setup_install, "_iris_workspace_issue", lambda _root: "Workspace conflict")
+        monkeypatch.setattr(setup_install, "_optional_entries", lambda *_args: pytest.fail("Check workspace before checkout"))
     setup_install._install_optional(operation)
-    assert operation.state == "error" and "development checkout" in operation.detail
+    assert operation.state == "error"
+    assert ("development checkout" if block == "branch" else "Workspace conflict") in operation.detail
 
 
-@pytest.mark.parametrize("automatic", [False, True])
-def test_iris_worker_completion_clears_stale_readiness(tmp_path, monkeypatch, automatic):
+def test_iris_worker_completion_clears_stale_readiness(tmp_path, monkeypatch):
     import services
     entry = {"repository": "https://github.com/mekineer-com/iris.git", "ref": "v0.1.12", "destination": "mentra-os/miniapps/openalma"}
     directory = tmp_path / entry["destination"]
     directory.mkdir(parents=True)
-    operation = setup_install.InstallOperation(service_name="iris-server", root=tmp_path, automatic=automatic)
+    operation = setup_install.InstallOperation(service_name="iris-server", root=tmp_path)
     monkeypatch.setattr(setup_install, "_OPERATION", operation)
     monkeypatch.setattr(setup_install, "install_log_path", lambda _name: tmp_path / "install.log")
     monkeypatch.setattr(setup_install, "_optional_entries", lambda *_args: [entry])

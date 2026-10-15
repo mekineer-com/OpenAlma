@@ -35,7 +35,7 @@
     </ol>
     <p class="hint">OpenAlma prepares the Iris installer tools automatically after OpenAlma Mentra reports your phone. For Stock Mentra, clicking Install below prepares the tools first.</p>
     <p id="iris-installer-status" class="failure" role="alert">{% if iris.blocked %}{{ iris.detail or 'Iris installer port 6789 is occupied. Free the port before installing.' }}{% elif iris.ready is sameas false %}{{ iris.status_label }}: {{ iris.detail }}{% elif iris.installations is not defined %}Iris app status is unavailable.{% endif %}</p>
-    <form id="iris-preparation-retry" method="post" action="/install/iris-server" {% if not (iris.ready is sameas false and not iris.install_running and (iris.preparation_attempted or (iris.action_kind == 'install' and iris.action_label == 'Retry'))) %}hidden{% endif %}>
+    <form id="iris-preparation-retry" method="post" action="/install/iris-server" {% if not (iris.ready is sameas false and not iris.install_running and (iris.action_kind == 'install' and iris.action_label == 'Retry')) %}hidden{% endif %}>
       <p>Installer tools are not ready. <button class="btn" type="submit" {% if installer_busy or iris.blocked or iris.install_running or iris.state == 'stopping' %}disabled{% endif %}>Retry</button> <a href="/install/iris-server/logs">View preparation log</a></p>
     </form>
     {% if iris.github_status == "unavailable" %}
@@ -181,7 +181,7 @@
         status.stoppable, status.force_stoppable, status.status_label, status.release_uri,
         status.release_device_session_id, status.release_host_package,
         status.github_status, status.available_package, status.available_version,
-        status.ready, status.install_running, status.preparation_attempted, status.action_kind, status.action_label,
+        status.ready, status.install_running, status.action_kind, status.action_label,
         [setup.enabled, setup.ready, setup.reason, setup.step,
           (setup.rows || []).map(row => [row.label, row.state, row.detail])],
         (status.installations || []).filter(row => !selectedDevice || row.device_session_id === selectedDevice).map(row => [
@@ -209,7 +209,7 @@
         status.ready === false ? status.detail || status.status_label :
         status.setup && !status.setup.ready ? status.setup.reason : '';
       const preparationRetry = document.getElementById('iris-preparation-retry');
-      preparationRetry.hidden = !(status.ready === false && !status.install_running && (status.preparation_attempted || (status.action_kind === 'install' && status.action_label === 'Retry')));
+      preparationRetry.hidden = !(status.ready === false && !status.install_running && (status.action_kind === 'install' && status.action_label === 'Retry'));
       preparationRetry.querySelector('button').disabled = submitting || installerBusy || status.blocked || status.install_running || status.state === 'stopping';
       document.querySelectorAll('form[action="/iris/install"] button').forEach(button => {
         button.disabled = submitting || irisInstallDisabled(status, button.form?.id === 'iris-install-form') || (!button.form?.classList.contains('iris-repair') && (!status.available_package || !status.available_version));

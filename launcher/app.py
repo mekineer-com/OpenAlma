@@ -37,49 +37,30 @@ CONFIG_LABELS: dict[str, str] = {
     "channels-config": "CHANNELS_HOME/config.json",
 }
 
-_IRIS_PREPARATION_ATTEMPTED: set[Path] = set()
-
-
-def _begin_iris_preparation(root: Path, *, automatic: bool = False) -> setup_install.InstallOperation:
+def _begin_iris_preparation(root: Path) -> setup_install.InstallOperation:
     if not services._IRIS_INSTALL_LOCK.acquire(blocking=False):
         raise setup_install.SetupConflict("Iris installer is busy")
     try:
         spec = next(item for item in services.services_for_root(root) if item.name == "iris-server")
         services.raise_if_stopping(spec)
         services.raise_if_iris_installer_busy(spec)
-        issue = setup_install.release_issue("iris-server", root, refresh=True)
-        if (root / setup_install.RECOVERY_FILE).exists() or (issue and not issue.startswith("Update required:")):
-            raise setup_install.SetupError(issue or "Core recovery is required first")
-        with setup_install._LOCK:
-            setup_install.begin_optional_install("iris-server", root, automatic=automatic)
-            operation = setup_install._OPERATION
-        assert operation is not None
-        _IRIS_PREPARATION_ATTEMPTED.add(root.resolve())
-        app.state.iris_preparation_error = ""
-        return operation
+        return setup_install.begin_optional_install("iris-server", root)
     finally:
         services._IRIS_INSTALL_LOCK.release()
 
 
 def _prepare_iris_if_needed(stop: Event) -> None:
     root = settings.apps_root()
-    if root is None or root.resolve() in _IRIS_PREPARATION_ATTEMPTED:
+    if root is None or setup_install.operation_status(root, "iris-server")["state"] != "idle":
         return
-    if (root / setup_install.RECOVERY_FILE).exists():
+    if (root / setup_install.RECOVERY_FILE).exists() or setup_install.core_issue(root, verify_runtime=False):
         return
     issue = setup_install.optional_issue("iris-server", root)
     release_issue = setup_install.release_issue("iris-server", root)
     if not issue and not release_issue:
         return
-    if release_issue:
-        if not release_issue.startswith("Update required:"):
-            return
-        # Released installs are detached; don't automatically move a development branch.
-        try:
-            if setup_install._git_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], root / "mentra-os/miniapps/openalma") != "HEAD":
-                return
-        except setup_install.SetupError:
-            return
+    if release_issue and not release_issue.startswith("Update required:"):
+        return
     try:
         config = json.loads((root / "mcp-memu-server/config.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -95,16 +76,12 @@ def _prepare_iris_if_needed(stop: Event) -> None:
                       for record in mentra.get("installations", []))
     if not fresh_phone:
         return
-    if setup_install._iris_workspace_issue(root):
-        return
     if stop.is_set():
         return
     try:
-        _begin_iris_preparation(root, automatic=True)
+        _begin_iris_preparation(root)
     except (setup_install.SetupConflict, services.ServiceStoppingError):
         pass  # Existing status/logs show prerequisites; an occupied installer is checked again.
-    except setup_install.SetupError as exc:
-        app.state.iris_preparation_error = str(exc)
 
 
 def _watch_iris_preparation(stop: Event) -> None:
@@ -113,7 +90,6 @@ def _watch_iris_preparation(stop: Event) -> None:
             _prepare_iris_if_needed(stop)
         except Exception:
             logging.getLogger(__name__).exception("Automatic Iris preparation failed; discovery will continue")
-            app.state.iris_preparation_error = "Iris preparation failed. See the launcher log and Retry in Setup."
 
 
 @asynccontextmanager
@@ -163,8 +139,8 @@ def launcher_update_readiness() -> dict[str, object]:
         spec.label for spec in services.all_services()
         if _runtime_active(services.status(spec))
     ]
-    if setup_install._active_install_owner() is not None:
-        active.append("Installation in progress (wait for it to finish)")
+    if owner := setup_install._active_install_owner():
+        active.append(f"{owner[0]} installation in progress (wait for it to finish)")
     return {"application": LAUNCHER_ID, "active_services": active}
 
 
@@ -235,12 +211,6 @@ def _setup_aware_status(spec: services.ServiceSpec, root: Path, *, verify_runtim
         release = setup_install.release_issue("memu-server", root)
         return _row_with_setup(runtime, setup) if issue or setup_install.read_pending_release(root) or release else runtime
     setup = setup_install.optional_setup_status(spec.name, root)
-    if spec.name == "iris-server":
-        runtime["preparation_attempted"] = root.resolve() in _IRIS_PREPARATION_ATTEMPTED
-        if error := getattr(app.state, "iris_preparation_error", ""):
-            runtime["preparation_attempted"] = True
-            if not setup["ready"]:
-                setup = {**setup, "detail": error, "status_label": "Iris preparation failed"}
     if not setup["ready"]:
         row = _row_with_setup(runtime, setup)
         return ({**runtime, **row, "ready": False, "install_running": bool(setup.get("install_running"))}
