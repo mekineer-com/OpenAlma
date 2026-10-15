@@ -24,6 +24,17 @@ def download(url: str, target: Path) -> None:
         shutil.copyfileobj(response, output)
 
 
+def git_source(repository: str, revision: str, target: Path) -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        subprocess.run(["git", "init", "--bare", temporary], check=True)
+        subprocess.run(["git", "fetch", "--depth=1", "--no-tags", repository, revision],
+                       cwd=temporary, check=True)
+        if setup_install._git_output(["git", "rev-parse", "FETCH_HEAD"], Path(temporary)) != revision:
+            raise RuntimeError("Git source does not match the pinned revision")
+        subprocess.run(["git", "archive", "--format=tar.gz", f"--prefix={revision}/",
+                        f"--output={target.resolve()}", revision], cwd=temporary, check=True)
+
+
 def stage_rust(packaging: Path, sources: Path, licenses) -> None:
     # ponytail: frozen runtime inventory; rederive from Windows Cargo.lock when Bun is upgraded.
     entries = json.loads((packaging / "bun-rust-sources.json").read_text(encoding="utf-8"))
@@ -85,8 +96,15 @@ def stage(root: Path) -> None:
                 licenses.write(f"\n{'=' * 72}\n{url}\n{'=' * 72}\n{text}\n")
             if entry.get("source"):
                 archive = sources / f"{entry['name']}-{entry['revision']}-source.tar.gz"
-                download(f"https://codeload.github.com/{entry['repository']}/tar.gz/{entry['revision']}",
-                         archive)
+                if entry["name"] == "webkit":
+                    # GitHub blocks archive creation for this tree; fetch no history or tags.
+                    git_source(f"https://github.com/{entry['repository']}.git", entry["revision"], archive)
+                else:
+                    download(f"https://codeload.github.com/{entry['repository']}/tar.gz/{entry['revision']}",
+                             archive)
+                print(f"Source archive: {archive.name}: {archive.stat().st_size} bytes", flush=True)
+                if archive.stat().st_size >= 2 * 1024 ** 3:
+                    raise RuntimeError(f"Source archive exceeds GitHub's release asset limit: {archive.name}")
                 required = {entry["licenses"][0]}
                 with tarfile.open(archive, "r|gz") as package:
                     for member in package:

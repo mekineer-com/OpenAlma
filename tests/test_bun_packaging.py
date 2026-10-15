@@ -3,6 +3,7 @@ import json
 import hashlib
 import tarfile
 from io import BytesIO, StringIO
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -51,6 +52,7 @@ def test_bun_packaging_separates_payload_and_sources(tmp_path, monkeypatch, fail
                 archive.addfile(entry, BytesIO(b"License"))
 
     monkeypatch.setattr(stage_bun, "download", download)
+    monkeypatch.setattr(stage_bun, "git_source", lambda _repository, _revision, path: download("", path))
     if failure:
         with pytest.raises(RuntimeError, match="Empty license|Incomplete source"):
             stage_bun.stage(tmp_path)
@@ -69,6 +71,37 @@ def test_bun_packaging_separates_payload_and_sources(tmp_path, monkeypatch, fail
         assert hashlib.sha256((sources / name).read_bytes()).hexdigest() == expected
     assert "BUN-LICENSES.txt" in sums and "webkit-" in sums
     assert "OpenAlma/releases" in (binary.parent / "BUN-SOURCE.txt").read_text()
+
+
+@pytest.mark.parametrize("wrong_revision", [False, True])
+def test_git_source_archives_only_verified_pinned_commit(tmp_path, monkeypatch, wrong_revision):
+    git = stage_bun.subprocess
+    source = tmp_path / "source"
+    source.mkdir()
+    git.run(["git", "init", str(source)], check=True, capture_output=True)
+    license = source / "LICENSE"
+    for text in ("Pinned fictional source", "Later fictional source"):
+        license.write_text(text, encoding="utf-8")
+        git.run(["git", "add", "LICENSE"], cwd=source, check=True)
+        git.run(["git", "-c", "user.name=Test Builder", "-c", "user.email=test@example.invalid",
+                 "commit", "-m", "Fictional source"], cwd=source, check=True, capture_output=True)
+        if text.startswith("Pinned"):
+            pinned = stage_bun.setup_install._git_output(["git", "rev-parse", "HEAD"], source)
+    temporary = tmp_path / "bare"
+    monkeypatch.setattr(stage_bun.tempfile, "TemporaryDirectory", lambda: nullcontext(str(temporary)))
+    if wrong_revision:
+        monkeypatch.setattr(stage_bun.setup_install, "_git_output", lambda *_args: "0" * 40)
+    target = tmp_path / "source.tar.gz"
+    if wrong_revision:
+        with pytest.raises(RuntimeError, match="does not match the pinned revision"):
+            stage_bun.git_source(str(source), pinned, target)
+        assert not target.exists()
+        return
+    stage_bun.git_source(str(source), pinned, target)
+    assert stage_bun.setup_install._git_output(["git", "rev-list", "--count", "FETCH_HEAD"], temporary) == "1"
+    with tarfile.open(target, "r:gz") as archive:
+        assert archive.getnames() == [pinned, f"{pinned}/LICENSE"]
+        assert archive.extractfile(f"{pinned}/LICENSE").read() == b"Pinned fictional source"
 
 
 def test_windows_workflow_stages_runtime_and_keeps_sources_outside_inno_payload():

@@ -10,7 +10,12 @@ separate downloads for developers who want to inspect, modify or relink Bun.
 `bun-sources.json` records immutable source revisions and notice paths. The
 four Git-source `*-source.tar.gz` files contain the complete upstream Bun,
 patched WebKit, TinyCC and pinned lol-html trees, including their build scripts
-and licenses. The fifth archive, `bun-lolhtml-runtime-source.tar.gz`, contains
+and licenses. GitHub blocks archive creation for the pinned WebKit tree, so
+staging fetches only that commit (depth 1, no tags) into a temporary bare Git
+repository, verifies `FETCH_HEAD`, and creates its archive locally. No checkout
+or history is included. Staging reports archive sizes and refuses files at or
+above GitHub's 2 GiB release-asset limit.
+The fifth archive, `bun-lolhtml-runtime-source.tar.gz`, contains
 the original `.crate` archives
 listed in `bun-rust-sources.json`, with versions and archive SHA256 checksums
 from the pinned lol-html `c-api/Cargo.lock`. Its 29 registry crates are the
