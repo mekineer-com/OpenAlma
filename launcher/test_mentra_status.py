@@ -389,6 +389,7 @@ class MentraStatusTest(TestCase):
             (root / "build").mkdir()
             (root / "build/release-private-status.json").write_text(json.dumps({"device_session_id": "stock-test", "display_name": "stock_01"}))
             with (
+                patch.object(app, "_require_startable_setup"),
                 patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
                 patch.object(services, "_download_iris_release", side_effect=AssertionError("must not download")),
             ):
@@ -1139,6 +1140,7 @@ class MentraStatusTest(TestCase):
             env_path = root / ".env.local"
             env_path.write_text("MENTRA_PUBLIC_OPENALMA_BASE_URL=http://old.example\n")
             with (
+                patch.object(app, "_require_startable_setup"),
                 patch.object(services, "mentra_readiness", return_value={"enabled": True, "ready": True}),
                 patch.object(services, "_resolve_apps_root", return_value=root),
                 patch.object(services, "_read_mentra_status", return_value={
