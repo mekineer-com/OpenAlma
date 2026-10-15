@@ -48,6 +48,11 @@ Type: filesandordirs; Name: "{app}\launcher\__pycache__"
 Type: files; Name: "{app}\.openalma-version"
 
 [Code]
+const
+  PythonInstallerName = 'python-3.12.10-amd64.exe';
+  PythonInstallerUrl = 'https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe';
+  PythonInstallerSHA256 = '67b5635e80ea51072b87941312d00ec8927c4db9ba18938f7ad2d27b328b95fb';
+
 var
   PythonLauncher: String;
   RemoveEverything: Boolean;
@@ -125,15 +130,35 @@ begin
       Result := 'Python 3.12 is required.';
       Exit;
     end;
-    if not InstallWithWinget('Python.Python.3.12', 'user') then
+    WizardForm.StatusLabel.Caption := 'Downloading Python 3.12...';
+    try
+      DownloadTemporaryFile(PythonInstallerUrl, PythonInstallerName, PythonInstallerSHA256, nil);
+    except
+      Log('Python download or verification failed: ' + GetExceptionMessage);
+      Result := 'Could not download and verify Python 3.12. Reconnect and try again.'#13#10 +
+        'Or install it from ' + PythonInstallerUrl + ' and run OpenAlma Setup again.';
+      Exit;
+    end;
+    WizardForm.StatusLabel.Caption := 'Installing Python 3.12 for your account...';
+    if not RunHidden(
+      ExpandConstant('{tmp}\') + PythonInstallerName,
+      '/quiet /norestart InstallAllUsers=0 PrependPath=1 Include_launcher=1 InstallLauncherAllUsers=0',
+      ResultCode
+    ) or (ResultCode <> 0) then
     begin
-      Result := 'Python 3.12 installation failed.';
+      Log(Format('Python installer exited with code %d.', [ResultCode]));
+      if ResultCode = 3010 then
+        Result := 'Python 3.12 was installed. Restart Windows, then run OpenAlma Setup again.'
+      else
+        Result := 'Python 3.12 installation failed. Install it from ' + PythonInstallerUrl +
+          ' and run OpenAlma Setup again.';
       Exit;
     end;
     PythonLauncher := FindPythonLauncher();
-    if PythonLauncher = '' then
+    if (PythonLauncher = '') or not RunHidden(PythonLauncher, '-3.12 --version', ResultCode) or (ResultCode <> 0) then
     begin
-      Result := 'Python 3.12 was installed but its launcher could not be found.';
+      Result := 'Python 3.12 could not be verified. Install it from ' + PythonInstallerUrl +
+        ' with Python Launcher enabled, then run OpenAlma Setup again.';
       Exit;
     end;
   end;
