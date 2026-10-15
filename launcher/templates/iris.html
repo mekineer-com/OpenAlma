@@ -3,13 +3,10 @@
 {% include "_settings_head.html" %}
 {% include "_header.html" %}
   {% set installer_busy = iris.running or iris.starting or iris.stuck or iris.orphaned %}
-  {% set install_disabled = not iris_setup.ready or not iris_setup.enabled or iris.ready is sameas false or installer_busy or iris.blocked or iris.install_running or iris.state == 'stopping' or iris.installations is not defined %}
-  {% set stock_install_disabled = not iris_setup.enabled or (not iris_setup.ready and iris_setup.step != 'release') or (iris.ready is sameas false and iris.action_kind != 'install') or installer_busy or iris.blocked or iris.install_running or iris.state == 'stopping' or iris.installations is not defined %}
+  {% set install_disabled = not iris_setup.ready or iris.ready is sameas false or installer_busy or iris.blocked or iris.install_running or iris.state == 'stopping' or iris.installations is not defined %}
+  {% set stock_install_disabled = (not iris_setup.ready and iris_setup.step != 'release') or (iris.ready is sameas false and iris.action_kind != 'install') or installer_busy or iris.blocked or iris.install_running or iris.state == 'stopping' or iris.installations is not defined %}
   {% set show_installer = not selected_installation or iris.release_device_session_id == selected_installation.device_session_id %}
   <h2>{{ selected_installation.display_name ~ ' setup' if selected_installation else 'Iris & Phone Setup' }}</h2>
-  {% if not iris_setup.enabled %}
-    <p class="muted">Disabled. Enable Mentra in <code>mcp-memu-server/config.json</code> to use Iris.</p>
-  {% else %}
     <h3 class="iris-section">memU Server readiness</h3>
     <ul class="checklist">
       {% for row in iris_setup.rows %}
@@ -17,8 +14,6 @@
       {% endfor %}
     </ul>
     {% if iris_setup.ready %}<p class="ready">Host ready</p>{% else %}<p class="failure">Next: {{ iris_setup.reason }}</p>{% endif %}
-
-  {% endif %}
 
     <h3 class="iris-section">memU Server address</h3>
     <form method="post" action="/iris/address" class="iris-address">
@@ -33,7 +28,6 @@
       <li>Enter the server address into Mentra.</li>
       <li>Click Install beside your phone on the <a href="/">main page</a> to install Iris.</li>
     </ol>
-    <p class="hint">OpenAlma prepares the Iris installer tools automatically after OpenAlma Mentra reports your phone. For Stock Mentra, clicking Install below prepares the tools first.</p>
     <p id="iris-installer-status" class="failure" role="alert">{% if iris.blocked %}{{ iris.detail or 'Iris installer port 6789 is occupied. Free the port before installing.' }}{% elif iris.ready is sameas false %}{{ iris.status_label }}: {{ iris.detail }}{% elif iris.installations is not defined %}Iris app status is unavailable.{% endif %}</p>
     <form id="iris-preparation-retry" method="post" action="/install/iris-server" {% if not (iris.ready is sameas false and not iris.install_running and (iris.action_kind == 'install' and iris.action_label == 'Retry')) %}hidden{% endif %}>
       <p>Installer tools are not ready. <button class="btn" type="submit" {% if installer_busy or iris.blocked or iris.install_running or iris.state == 'stopping' %}disabled{% endif %}>Retry</button> <a href="/install/iris-server/logs">View preparation log</a></p>
@@ -182,7 +176,7 @@
         status.release_device_session_id, status.release_host_package,
         status.github_status, status.available_package, status.available_version,
         status.ready, status.install_running, status.action_kind, status.action_label,
-        [setup.enabled, setup.ready, setup.reason, setup.step,
+        [setup.ready, setup.reason, setup.step,
           (setup.rows || []).map(row => [row.label, row.state, row.detail])],
         (status.installations || []).filter(row => !selectedDevice || row.device_session_id === selectedDevice).map(row => [
           row.device_session_id, row.display_name, row.host_package,

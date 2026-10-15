@@ -550,6 +550,10 @@ def _coerce_bool(value: object, default: bool = False) -> bool:
     return default if value is None else bool(value)
 
 
+def channels_setup_issue() -> str:
+    return "" if str(_read_channels_config().get("soul_id") or "").strip() else "Choose a Soul in Setup"
+
+
 def _channels_bridge_health(config: dict | None = None) -> dict:
     port = (config or _read_channels_config()).get("bridge_port", 3000)
     try:
@@ -787,8 +791,6 @@ def iris_install_env(target: dict[str, str] | None) -> dict[str, str]:
     if root is None:
         raise ValueError("Set the apps-root directory")
     mentra = json.loads((root / "mcp-memu-server" / "config.json").read_text()).get("mentra") or {}
-    if not mentra.get("enabled"):
-        raise ValueError("Enable Mentra before installing Iris")
     owner_id = read_owner()
     if owner_id is None:
         raise ValueError("Establish the OpenAlma owner before installing Iris")
@@ -928,13 +930,11 @@ def _mentra_readiness_uncached(root: Path) -> dict:
     try:
         config = json.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {"enabled": True, "ready": False, "reason": "Cannot read mcp config.json", "step": "config", "rows": []}
+        return {"ready": False, "reason": "Cannot read mcp config.json", "step": "config", "rows": []}
     if not isinstance(config, dict):
-        return {"enabled": True, "ready": False, "reason": "mcp config.json must be a JSON object", "step": "config", "rows": []}
+        return {"ready": False, "reason": "mcp config.json must be a JSON object", "step": "config", "rows": []}
     mentra = config.get("mentra")
     mentra = mentra if isinstance(mentra, dict) else {}
-    if not _coerce_bool(mentra.get("enabled")):
-        return {"enabled": False, "ready": False, "reason": "Mentra is disabled", "step": "disabled", "rows": []}
 
     rows: list[dict[str, str]] = []
     row_labels = (
@@ -952,7 +952,6 @@ def _mentra_readiness_uncached(root: Path) -> dict:
             for remaining in row_labels[len(rows):]
         )
         return {
-            "enabled": True,
             "ready": False,
             "reason": reason,
             "step": step,
@@ -990,7 +989,7 @@ def _mentra_readiness_uncached(root: Path) -> dict:
     if status != 200:
         reason = "Cannot reach Mentra; check the server and connection" if not status else f"Mentra health check failed (HTTP {status}); check the server and proxy"
         if status == 404:
-            reason = "Restart memU Server after enabling Mentra; if HTTP 404 persists, check the private Mentra proxy"
+            reason = "Check the private Mentra proxy and memU Server version"
         return fail("ingress", "Narrow ingress", reason)
     if base_url not in _MENTRA_INGRESS_AUDIT_CACHE:
         status = _mentra_http_status(f"{base_url}/health")
@@ -1000,7 +999,6 @@ def _mentra_readiness_uncached(root: Path) -> dict:
         _MENTRA_INGRESS_AUDIT_CACHE.add(base_url)
     rows.append({"label": "Narrow ingress", "state": "ready", "detail": "Ready"})
     return {
-        "enabled": True,
         "ready": True,
         "reason": "Host ready",
         "step": "ready",
@@ -1011,7 +1009,7 @@ def _mentra_readiness_uncached(root: Path) -> dict:
 def mentra_readiness(root: Path | None = None) -> dict:
     root = root or _resolve_apps_root()
     if root is None:
-        return {"enabled": True, "ready": False, "reason": "Set the apps-root directory", "step": "apps_root", "rows": []}
+        return {"ready": False, "reason": "Set the apps-root directory", "step": "apps_root", "rows": []}
     key = str(root)
     now = time.monotonic()
     cached = _MENTRA_READINESS_CACHE.get(key)
@@ -1277,11 +1275,10 @@ def _iris_product_status(
     )
     age = _seen_age(mentra.get("installed_seen_at"))
     setup_required = bool(
-        readiness and readiness.get("enabled") and not readiness.get("ready")
+        readiness and not readiness.get("ready")
     )
 
-    if mentra.get("state") == "unavailable" and not (readiness and (
-            readiness.get("step") == "server" or not readiness.get("enabled"))):
+    if mentra.get("state") == "unavailable" and not (readiness and readiness.get("step") == "server"):
         state, label, detail = "unavailable", "▲ status unavailable", mentra["detail"]
         action = "stop" if runtime.running or runtime.stuck or runtime.orphaned else None
     elif active:
@@ -1298,18 +1295,13 @@ def _iris_product_status(
             state, label, detail = "blocked", "▲ installer port occupied", "Cancel and free port 6789"
     elif runtime.stuck or runtime.orphaned:
         state, label, detail, action = "degraded", "▲ installer failed", "View the Iris log", "stop"
-    elif readiness and not readiness.get("enabled"):
-        state, label, detail, action = "disabled", "Disabled", "", None
     elif runtime.port_blocked:
         state, label, detail, action = "blocked", "▲ installer port occupied", "Free port 6789 before installing Iris", None
     elif readiness and readiness.get("step") == "server":
         state, label, detail, action = "stopped", "○ waiting for memU Server", "Start memU Server in Services", None
     elif setup_required:
         state, label, detail, action = "setup", "▲ setup needed", str(readiness.get("reason") or "Open Iris & Phone Setup"), "settings"
-    elif (
-        not mentra
-        or mentra.get("state") == "disabled"
-    ):
+    elif not mentra:
         state, label, detail, action = "setup", "▲ setup needed", "Open Iris & Phone Setup", "settings"
     elif automatic_host and not installed_package:
         state, label, detail, action = (
@@ -1415,7 +1407,7 @@ def status(spec: ServiceSpec) -> dict:
             session = next((s for s in mentra.get("sessions", []) if s["device_session_id"] == device), None)
             host = record.get("host") or {}
             scoped = {
-                "state": "active" if session else mentra.get("state", "ready") if mentra.get("state") in {"disabled", "unavailable"} else "ready",
+                "state": "active" if session else mentra.get("state", "ready") if mentra.get("state") == "unavailable" else "ready",
                 "detail": mentra.get("detail", ""), "active": bool(session),
                 "installed_package": record.get("package_name"),
                 "installed_version": record.get("version"), "installed_seen_at": record.get("seen_at"),
@@ -1524,7 +1516,7 @@ def status(spec: ServiceSpec) -> dict:
         elif mentra.get("busy") is not False:
             detail = str(mentra.get("detail") or "Iris status unknown") + "; Stop requires confirmation"
 
-    return _stop_status(spec, {
+    result = _stop_status(spec, {
         "running": running,
         "stuck": stuck,
         "orphaned": orphaned,
@@ -1539,6 +1531,9 @@ def status(spec: ServiceSpec) -> dict:
         "pairing_required": pairing_required,
         "open_url": spec.open_url,
     })
+    if spec.name == "channels-daemon" and result["startable"] and (issue := channels_setup_issue()):
+        result.update(startable=False, state="setup", status_label="Setup needed", detail=issue, action_kind="settings")
+    return result
 
 
 def _stop_status(spec: ServiceSpec, result: dict) -> dict:
@@ -1603,6 +1598,8 @@ def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None, bu
     runtime = _runtime_state(spec)
     if runtime.running or runtime.stuck or runtime.orphaned or runtime.port_blocked:
         return
+    if spec.name == "channels-daemon" and (issue := channels_setup_issue()):
+        raise ValueError(issue)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     spec.log_path.parent.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, **spec.env}

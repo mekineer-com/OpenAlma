@@ -20,6 +20,17 @@ function fmt(n) {
   return Number(n || 0).toLocaleString();
 }
 
+function installProgressHtml(progress) {
+  var attributes = progress && progress.total_steps ? ' max="' + esc(progress.total_steps) + '" value="' + esc(progress.step_number - 1) + '"' : '';
+  var html = '<progress class="install-progress" aria-label="Installation steps completed"' + attributes + '></progress>';
+  if (progress) {
+    var seconds = progress.elapsed_seconds;
+    html += '<div class="svc-detail">' + (progress.total_steps ? 'Step ' + esc(progress.step_number) + ' of ' + esc(progress.total_steps) + ' · ' : '') +
+      Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0') + ' elapsed</div>';
+  }
+  return html;
+}
+
 var serviceRows = [];
 
 function initServiceVisibility() {

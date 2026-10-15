@@ -3,6 +3,10 @@
 {% macro info(text, key, label='') -%}
 <span class="context-info" data-info="{{ key }}"><button type="button" popovertarget="info:{{ key }}" aria-label="{{ text }}" onpointerenter="if (event.pointerType === 'mouse') this.nextElementSibling.showPopover()" onpointerleave="if (event.pointerType === 'mouse') this.nextElementSibling.hidePopover()">{{ label }}<span class="info-icon">i</span></button><span class="info-text" popover id="info:{{ key }}">{{ text }}</span></span>
 {%- endmacro %}
+{% macro install_meter(progress) -%}
+<progress class="install-progress" aria-label="Installation steps completed" {% if progress and progress.total_steps %}max="{{ progress.total_steps }}" value="{{ progress.step_number - 1 }}"{% endif %}></progress>
+{% if progress %}<div class="svc-detail">{% if progress.total_steps %}Step {{ progress.step_number }} of {{ progress.total_steps }} · {% endif %}{{ '%d:%02d'|format(progress.elapsed_seconds // 60, progress.elapsed_seconds % 60) }} elapsed</div>{% endif %}
+{%- endmacro %}
   <p class="muted">Start, stop, and configure the local stack.</p>
 
   {% if launcher_update %}
@@ -14,6 +18,14 @@
       <p>OpenAlma Launcher updates first. Installed services will show Update required and cannot start until their matching updates complete. Your settings and soul data are preserved.</p>
       <a class="btn" href="{{ launcher_update.url }}">Download Update</a>
     {% endif %}
+  </div>
+  {% endif %}
+
+  {% if ai_setup_message %}
+  <div class="banner">
+    <strong>AI setup needed.</strong>
+    Open <form class="inline" method="post" action="/edit/memu-server-config"><button class="config-link" type="submit" title="Open config.json on the launcher machine">config.json</button></form>
+    {{ ai_setup_message }} Save the file, then restart memU Server.
   </div>
   {% endif %}
 
@@ -55,13 +67,14 @@
     </thead>
     <tbody id="visible-services">
       {% for s in services + not_installed_services %}
-      <tr data-service="{{ s.name }}" data-installed="{{ 'true' if s in services else 'false' }}" data-runtime="{{ 'false' if s.install_setup else 'true' }}">
+      <tr data-service="{{ s.name }}" data-installed="{{ 'true' if s in services else 'false' }}" data-runtime="{{ 'false' if s.install_setup else 'true' }}" data-installing="{{ 'true' if s.install_running else 'false' }}">
         <td>{{ s.label }}</td>
         <td class="svc-status">
           {% if s.name == 'iris-server' %}<a class="mentra-apk-link" href="https://github.com/mekineer-com/MentraOS/releases">apk on github</a>{% endif %}
           {% if s.name != 'iris-server' or s.state != 'ready' %}
           <span class="{{ s.state }}">{{ s.status_label }}</span>
           {% endif %}
+          {% if s.install_running %}{{ install_meter(s.install_progress) }}{% endif %}
           {% if s.detail %}<div class="svc-detail">{{ s.detail }}</div>{% endif %}
           {% if s.children %}
             <div class="svc-children">
@@ -78,7 +91,6 @@
           {% elif s.install_enabled is defined and not s.install_enabled %}
             <button class="btn" disabled>Install</button>
           {% elif s.install_running %}
-            <span class="spinner" role="status" aria-label="Installing"></span>
           {% elif s.state == "stopping" %}
             <span class="spinner" role="status" aria-label="Stopping"></span>
             {% if s.force_stoppable %}<button class="btn" onclick="svcAction('{{ s.name }}','force-stop',this)">Force Stop</button>{% endif %}
@@ -97,10 +109,10 @@
           {% elif s.action_kind == "stop" %}
             <button class="btn" onclick="svcAction('{{ s.name }}','stop',this)">{{ s.action_label }}</button>
           {% elif s.action_kind == "install" %}
-            <form method="post" action="/install/{{ s.name }}"><button class="btn" type="submit">{{ s.action_label }}</button></form>
+            <form class="inline" method="post" action="/install/{{ s.name }}"><button class="btn" type="submit">{{ s.action_label }}</button></form>
             {% if s.startable %}<button class="btn" onclick="svcAction('{{ s.name }}','start',this)">Start</button>{% endif %}
           {% elif s.action_kind == "recover" %}
-            <form method="post" action="/install/memu-server/recover"><button class="btn" type="submit">Recover</button></form>
+            <form class="inline" method="post" action="/install/memu-server/recover"><button class="btn" type="submit">Recover</button></form>
           {% elif s.restart_required %}
             <button class="btn" onclick="quitLauncher(this)">Quit launcher</button>
           {% elif s.action_kind is defined %}
@@ -133,10 +145,6 @@
       <tbody id="hidden-services"></tbody>
     </table>
   </details>
-
-  {% if install_running %}
-  <script>setTimeout(function () { location.reload(); }, 1500);</script>
-  {% endif %}
 
   <h2>Memorize</h2>
   <details>
@@ -272,7 +280,7 @@ function actionHtml(name, data) {
   if (data.install_enabled === false) return '<button class="btn" disabled>Install</button>';
   var setup = name === 'channels-daemon' ? ' <a class="btn" href="/hermes' + (data.pairing_required ? '?pair=1' : '') + '">Setup</a>' : '';
   var open = data.running && data.open_url && data.state !== 'starting' ? ' <button class="btn" onclick="openService(\'' + esc(name) + '\')">Open</button>' : '';
-  if (data.install_running) return '<span class="spinner" role="status" aria-label="Installing"></span>' + setup;
+  if (data.install_running) return setup;
   if (data.state === 'stopping') {
     return '<span class="spinner" role="status" aria-label="Stopping"></span>' +
       (data.force_stoppable ? ' <button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'force-stop\',this)">Force Stop</button>' : '') + setup;
@@ -322,21 +330,25 @@ async function openService(name) {
 }
 
 function pollStatus(name) {
-  fetch('/service/' + name + '/status')
-    .then(function(r) { return r.json(); })
+  var row = document.querySelector('tr[data-service="' + name + '"]');
+  var installing = name !== 'iris-server' && row.dataset.installing === 'true';
+  fetch((installing ? '/install/' : '/service/') + name + '/status')
+    .then(function(r) { if (!r.ok) throw new Error('Service status unavailable'); return r.json(); })
     .then(function(data) {
-      var row = document.querySelector('tr[data-service="' + name + '"]');
-      if (name !== 'iris-server' && data.install_setup && row.dataset.runtime === 'true') {
+      if ((installing && !data.install_running) ||
+          (name !== 'iris-server' && data.install_setup && !data.install_running && row.dataset.runtime === 'true')) {
         location.reload();
         return;
       }
       if (!data.install_setup) row.dataset.runtime = 'true';
+      row.dataset.installing = data.install_running ? 'true' : 'false';
       if (name === 'iris-server') renderIrisInstallations(data);
       var statusCell = row.querySelector('.svc-status');
       var actionsCell = row.querySelector('.svc-actions');
       var state = data.state || (data.running ? 'running' : 'stopped');
       var label = data.status_label || (data.running ? '● running' : '○ stopped');
       var html = name === 'iris-server' && state === 'ready' ? '' : '<span class="' + esc(state) + '">' + esc(label) + '</span>';
+      if (data.install_running) html += installProgressHtml(data.install_progress);
       if (data.detail) {
         html += '<div class="svc-detail">' + esc(data.detail) + '</div>';
       }
@@ -389,7 +401,7 @@ function pollMemorize() {
 }
 
 setInterval(function() {
-  document.querySelectorAll('tr[data-service][data-runtime="true"]{% if not needs_setup %}, tr[data-service="iris-server"]{% endif %}').forEach(function(row) {
+  document.querySelectorAll('tr[data-service][data-runtime="true"], tr[data-service][data-installing="true"]{% if not needs_setup %}, tr[data-service="iris-server"]{% endif %}').forEach(function(row) {
     pollStatus(row.dataset.service);
   });
 }, 2000);

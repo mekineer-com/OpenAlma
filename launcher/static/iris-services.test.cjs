@@ -11,7 +11,7 @@ const installation = {
 };
 const ready = {
   running: false, installations: [installation], available_package: 'test-iris', available_version: '0.1.0',
-  setup: {enabled: true, ready: true, rows: []},
+  setup: {ready: true, rows: []},
 };
 
 test('Parent actions stay QR and Setup for every preparation and installer state', () => {
@@ -84,7 +84,7 @@ test('Services preserves rows and Rename drafts through outages, then restores c
   assert.equal(install.disabled, true);
   assert.equal(context.irisInstallDisabled({}), true);
   for (const patch of [{ready: false}, {starting: true}, {state: 'stopping'},
-                       {setup: {enabled: false, ready: true}}, {setup: {enabled: true, ready: false}}]) {
+                       {setup: {ready: false}}]) {
     assert.equal(context.irisInstallDisabled({...ready, ...patch}), true);
   }
   for (const preparation of [{ready: false, install_running: true},
@@ -170,7 +170,7 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
   assert.equal(cancelControls.hidden, true);
   for (const button of [stock, install, rename, forget]) assert.equal(Boolean(button.disabled), false);
   for (const block of [{blocked: true, detail: 'Free installer port 6789'},
-                       {setup: {enabled: true, ready: false, reason: 'Restart memU Server'}}]) {
+                       {setup: {ready: false, reason: 'Restart memU Server'}}]) {
     next = {...ready, ...block};
     await poll();
     assert.equal(stock.disabled, true);
@@ -185,7 +185,7 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
   assert.equal(retry.hidden, true);
   assert.equal(install.disabled, true);
   next = {...ready, ready: false, action_kind: 'install', action_label: 'Install',
-          setup: {enabled: true, ready: false, step: 'release', reason: 'Iris runtime needs preparation'}};
+          setup: {ready: false, step: 'release', reason: 'Iris runtime needs preparation'}};
   await poll();
   assert.equal(stock.disabled, false, 'First Stock Install can request preparation without a phone report');
   assert.equal(install.disabled, true, 'Known phone actions still require prepared tools');

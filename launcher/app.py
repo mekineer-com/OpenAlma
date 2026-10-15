@@ -55,15 +55,8 @@ def _prepare_iris_if_needed(stop: Event) -> None:
         return
     if (root / setup_install.RECOVERY_FILE).exists() or setup_install.core_issue(root, verify_runtime=False):
         return
-    try:
-        config = json.loads((root / "mcp-memu-server/config.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return
-    mentra_config = config.get("mentra") if isinstance(config, dict) else None
-    if not isinstance(mentra_config, dict) or not services._coerce_bool(mentra_config.get("enabled")):
-        return
     mentra = services._read_mentra_status(services.MEMU_SERVER_PORT)
-    if mentra.get("state") in {"unavailable", "disabled"}:
+    if mentra.get("state") == "unavailable":
         return
     fresh_phone = any(record.get("host_reporting") and
                       (record.get("host") or {}).get("host_package") == "com.mentra.mentra.openalma"
@@ -161,6 +154,47 @@ def _editable_configs(apps_root: Path | None) -> dict[str, Path]:
     return out
 
 
+def _ai_setup_message(root: Path | None) -> str:
+    if root is None:
+        return ""
+    try:
+        config = json.loads((root / "mcp-memu-server/config.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return ""
+    except (OSError, ValueError):
+        return "to correct the unreadable AI configuration."
+    if not isinstance(config, dict):
+        return "to correct the AI configuration: expected a JSON object."
+    llm = config.get("llm", {})
+    if not isinstance(llm, dict):
+        return "to correct the AI configuration: llm must be a JSON object."
+    embedding = llm.get("embedding", {})
+    if not isinstance(embedding, dict):
+        return "to correct the AI configuration: llm.embedding must be a JSON object."
+    required = [("embedding API key", embedding.get("api_key"))]
+    selectors = [llm.get(name, {}) for name in ("reply_models", "step_models")]
+    if not all(isinstance(rows, dict) for rows in selectors):
+        return "to correct the AI configuration: model selectors must be JSON objects."
+    # Leave advanced model validation to the server.
+    basic = not llm.get("step_context_window_tokens") and all(
+        row is None or row == "" or isinstance(row, dict) and row.get("source") == "config"
+        for rows in selectors for row in rows.values()
+    )
+    if not config.get("claude_code") and basic:
+        required.insert(0, ("chat model", llm.get("chat_model")))
+        if llm.get("api_key") != "":
+            required.insert(0, ("chat API key", llm.get("api_key")))
+    missing = [label for label, value in required
+               if not str(value or "").strip() or str(value).strip().startswith("YOUR_")]
+    capacity = config.get("claude_code_context_window_tokens") if config.get("claude_code") else llm.get("context_window_tokens")
+    if (config.get("claude_code") or basic) and (type(capacity) is not int or capacity <= 0):
+        missing.append("your model's context-window size")
+    if not missing:
+        return ""
+    fields = ", ".join(missing[:-1]) + ", and " + missing[-1] if len(missing) > 2 else " and ".join(missing)
+    return f"to enter {fields}."
+
+
 def _find_service(name: str) -> services.ServiceSpec:
     for s in services.all_services():
         if s.name == name and (name == "iris-server" or services.is_installed(s)):
@@ -210,11 +244,12 @@ def _setup_aware_status(spec: services.ServiceSpec, root: Path, *, verify_runtim
         issue = setup_install.core_issue(root, verify_runtime=verify_runtime)
         setup = setup_install.setup_status(root, verify_runtime=verify_runtime, known_issue=issue)
         release = setup_install.release_issue("memu-server", root)
-        return _row_with_setup(runtime, setup) if issue or setup_install.read_pending_release(root) or release else runtime
+        return _row_with_setup(runtime, setup) if setup.get("install_running") or issue or setup_install.read_pending_release(root) or release else runtime
     setup = setup_install.optional_setup_status(spec.name, root)
     if not setup["ready"]:
         row = _row_with_setup(runtime, setup)
-        return ({**runtime, **row, "ready": False, "install_running": bool(setup.get("install_running"))}
+        return ({**runtime, **row, "ready": False, "install_running": bool(setup.get("install_running")),
+                 "install_progress": setup.get("install_progress")}
                 if spec.name == "iris-server" else row)
     if setup["guidance"]:
         runtime["detail"] = "; ".join(filter(None, (runtime.get("detail"), setup["guidance"])))
@@ -240,14 +275,11 @@ def index(request: Request) -> HTMLResponse:
     specs = services.all_services() if apps_root else (
         services.services_for_root(setup_root) if setup_root else []
     )
-    install_in_progress = bool(setup_root) and any(
-        setup_install.operation_status(setup_root, spec.name)["state"] == "running" for spec in specs
-    )
     if apps_root is None:
         core = next((spec for spec in specs if spec.name == "memu-server"), None)
         rows = []
         not_installed = [
-            {"name": core.name, "label": core.label} | setup_install.setup_status(setup_root)
+            {"name": core.name, "label": core.label} | setup_install.setup_status(setup_root, verify_runtime=False)
         ] if core is not None else []
         not_installed += [
             {"name": spec.name, "label": spec.label, "install_enabled": False,
@@ -260,7 +292,7 @@ def index(request: Request) -> HTMLResponse:
         for spec in specs:
             if spec.name == "iris-server":
                 iris = {"name": spec.name, "label": spec.label} | _setup_aware_status(
-                    spec, setup_root, verify_runtime=not install_in_progress,
+                    spec, setup_root, verify_runtime=False,
                 )
                 installed = bool(iris.get("installations"))
                 (rows if installed else not_installed).append(iris)
@@ -268,12 +300,12 @@ def index(request: Request) -> HTMLResponse:
             if services.is_installed(spec):
                 rows.append(
                     {"name": spec.name, "label": spec.label} | _setup_aware_status(
-                        spec, setup_root, verify_runtime=not install_in_progress,
+                        spec, setup_root, verify_runtime=False,
                     )
                 )
                 continue
             if not services.is_installed(spec):
-                setup = (setup_install.setup_status(setup_root) if spec.name == "memu-server"
+                setup = (setup_install.setup_status(setup_root, verify_runtime=False) if spec.name == "memu-server"
                          else setup_install.optional_setup_status(spec.name, setup_root))
                 not_installed.append({"name": spec.name, "label": spec.label} | setup)
     owner_id: str | None = None
@@ -299,13 +331,13 @@ def index(request: Request) -> HTMLResponse:
             "services": rows,
             "echo_enabled": settings.read_paths().get("echo_enabled", False),
             "not_installed_services": not_installed,
-            "install_running": any(row.get("install_running") for row in rows + not_installed),
             "memorize": memorize,
             "soul_ids": soul_ids,
             "soul_error": soul_error,
             "apps_root": str(apps_root) if apps_root else "",
             "setup_root": str(setup_root) if setup_root else "",
             "needs_setup": apps_root is None,
+            "ai_setup_message": _ai_setup_message(apps_root),
             "owner_id": owner_id,
             "owner_error": owner_error,
             "launcher_update": setup_install.launcher_update(),
@@ -826,7 +858,7 @@ def install_service_status(service_name: str) -> dict:
     if root is None:
         return {"state": "unavailable"}
     if service_name == "memu-server":
-        return setup_install.setup_status(root)
+        return setup_install.setup_status(root, verify_runtime=False)
     try:
         return setup_install.optional_setup_status(service_name, root)
     except setup_install.SetupError as exc:

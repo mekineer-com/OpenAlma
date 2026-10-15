@@ -153,7 +153,7 @@ function irisInstallerBusy(data) {
 function irisInstallDisabled(data, prepare = false) {
   return Boolean(irisInstallerBusy(data) || data.blocked ||
     data.install_running || data.state === 'stopping' || (data.ready === false && !(prepare && data.action_kind === 'install')) ||
-    !Array.isArray(data.installations) || (data.setup && (!data.setup.enabled || (!data.setup.ready && !(prepare && data.setup.step === 'release')))));
+    !Array.isArray(data.installations) || (data.setup && !data.setup.ready && !(prepare && data.setup.step === 'release')));
 }
 
 async function irisMetadataAction(id, action, body) {

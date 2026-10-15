@@ -69,6 +69,9 @@ class InstallOperation:
     state: str = "running"
     step: str = "Starting"
     detail: str = ""
+    step_number: int = 0
+    total_steps: int = 0
+    started_at: float = field(default_factory=time.monotonic)
     thread: threading.Thread | None = field(default=None, repr=False)
     lock_handle: Any = field(default=None, repr=False)
 
@@ -567,7 +570,7 @@ def _recover_core(operation: InstallOperation) -> None:
     with log_path.open("a", encoding="utf-8") as log:
         log.write("\nRecovering previous core release\n")
         state, backup = _recovery_state(operation.root)
-        _set_operation(operation, step="Restoring soul databases")
+        _set_operation(operation, step="Restoring previous installation", total_steps=1)
         _restore_previous_core(operation.root, state, backup, log)
         (operation.root / RECOVERY_FILE).unlink()
         shutil.rmtree(backup)
@@ -586,6 +589,7 @@ def _update_core(
     if old_tag is None:
         raise SetupError("Installed core release is not recorded")
     entries = manifest["memu-server"]
+    _set_operation(operation, step="Backing up soul databases", total_steps=operation.step_number + len(entries) + 4)
     states = [_managed_checkout_state(entry, operation.root) for entry in entries]
     backup = _backup_databases(operation.root, old_tag, tag)
     recovery = operation.root / RECOVERY_FILE
@@ -609,6 +613,7 @@ def _update_core(
             [str(_venv_python(operation.root)), "migrate_release.py"],
             cwd=operation.root / "mcp-memu-server", log=log,
         )
+        _set_operation(operation, step="Verifying installation")
         issue = core_issue(operation.root)
         if issue:
             raise SetupError(issue)
@@ -628,6 +633,7 @@ def _update_core(
                 f"Core updated but final state cleanup failed; retry before starting: {update_error}"
             ) from update_error
         try:
+            _set_operation(operation, step="Restoring previous installation", total_steps=0)
             state, recovery_backup = _recovery_state(operation.root)
             _restore_previous_core(operation.root, state, recovery_backup, log, refresh_packages=refresh_started)
             recovery.unlink(missing_ok=True)
@@ -730,8 +736,10 @@ def install_log_path(service_name: str) -> Path:
     return Path.home() / ".cache" / "openalma-launcher" / f"{service_name}-install.log"
 
 
-def _set_operation(operation: InstallOperation, **values: str) -> None:
+def _set_operation(operation: InstallOperation, **values: Any) -> None:
     with _LOCK:
+        if "step" in values and values.get("state", operation.state) == "running":
+            operation.step_number += 1
         for key, value in values.items():
             setattr(operation, key, value)
 
@@ -760,6 +768,7 @@ def _install_core(operation: InstallOperation) -> None:
                 tag, manifest = discover_release(operation.root)
                 _write_recorded_release(operation.root, tag)
             settings.update_paths(apps_root=str(operation.root))
+            _set_operation(operation, total_steps=operation.step_number + len(manifest["memu-server"]) + 4)
 
             for entry in manifest["memu-server"]:
                 _set_operation(operation, step=f"Installing {entry['destination']}")
@@ -787,6 +796,7 @@ def _install_core(operation: InstallOperation) -> None:
             _set_operation(operation, step="Installing sqlite-vec")
             _run([python, "scripts/install-sqlite-vec.py"], cwd=operation.root / "memu", log=log)
             _write_config(operation.root)
+            _set_operation(operation, step="Verifying installation")
             issue = core_issue(operation.root)
             if issue:
                 raise SetupError(issue)
@@ -1082,6 +1092,10 @@ def _install_optional(operation: InstallOperation) -> None:
                 _optional_entries(operation.service_name, operation.root),
                 key=lambda entry: len(Path(entry["destination"]).parts),
             )
+            _set_operation(operation, total_steps=operation.step_number + len(entries)
+                           + len(_optional_commands(operation.service_name, operation.root)) + 1
+                           + (operation.service_name == "iris-server")
+                           + (operation.service_name == "atomic" and sys.platform == "win32"))
             existing_paths = {
                 _managed_checkout_state(entry, operation.root)[0]
                 for entry in entries if (operation.root / entry["destination"]).exists()
@@ -1119,6 +1133,7 @@ def _install_optional(operation: InstallOperation) -> None:
             if operation.service_name == "atomic" and sys.platform == "win32":
                 _set_operation(operation, step="Installing Atomic Windows server")
                 _install_atomic_windows(entries[0], operation.root, log)
+            _set_operation(operation, step="Verifying installation")
             issue = optional_issue(operation.service_name, operation.root)
             if issue and (operation.service_name != "atomic" or sys.platform == "win32"):
                 raise SetupError(issue)
@@ -1292,6 +1307,11 @@ def operation_status(root: Path, service_name: str = "memu-server") -> dict[str,
             status = {"state": "idle", "step": "", "detail": ""}
         else:
             status = {"state": operation.state, "step": operation.step, "detail": operation.detail}
+            if operation.state == "running":
+                status["progress"] = {
+                    "step_number": operation.step_number, "total_steps": operation.total_steps,
+                    "elapsed_seconds": int(time.monotonic() - operation.started_at),
+                }
     if status["state"] != "running" and _active_install_owner() == (service_name, str(root.resolve())):
         return {"state": "running", "step": "Installation running in another OpenAlma process", "detail": ""}
     return status
@@ -1306,6 +1326,7 @@ def setup_status(
             "state": "setup", "install_setup": True,
             "status_label": "Installing core", "detail": operation["step"],
             "startable": False, "install_running": True,
+            "install_progress": operation.get("progress"),
         }
     present = (root / "mcp-memu-server" / "run.py").exists()
     if (root / RECOVERY_FILE).exists():
@@ -1373,6 +1394,7 @@ def optional_setup_status(service_name: str, root: Path) -> dict[str, Any]:
         return {
             "ready": False, "state": "setup", "install_setup": True, "status_label": "Installing",
             "detail": operation["step"], "startable": False, "install_running": True,
+            "install_progress": operation.get("progress"),
         }
     if update_issue := release_issue(service_name, root):
         core_blocked = update_issue.startswith("Core update required")

@@ -90,6 +90,9 @@ def test_initial_and_polled_setup_actions_match():
         {"name": "iris-server", "install_running": True, "force_stoppable": True},
         {"name": "iris-server", "state": "stopping"},
         {"name": "channels-daemon", "startable": True},
+        {"name": "channels-daemon", "action_kind": "install", "action_label": "Install"},
+        {"name": "channels-daemon", "action_kind": "settings", "startable": False},
+        {"name": "memu-server", "action_kind": "recover"},
         {"name": "channels-daemon", "running": True, "stoppable": True, "pairing_required": True},
     ]
     script = r"""
@@ -105,11 +108,51 @@ console.log(JSON.stringify(JSON.parse(process.argv[2]).map(row=>actionHtml(row.n
     for row, dynamic in zip(cases, polled):
         initial = _render({}, services=[row]).split('<td class="svc-actions">', 1)[1].split("</td>", 1)[0]
         assert labels(initial) == labels(dynamic)
+        if row.get("action_kind") in {"install", "recover"} and row["name"] != "iris-server":
+            assert '<form class="inline"' in initial and '<form class="inline"' in dynamic
         if row["name"] == "iris-server":
             assert "Stock Install" not in initial + dynamic
             assert 'action="/iris/install"' not in initial + dynamic
     assert labels(polled[2]) == ["QR", "Setup"]
     assert 'href="/hermes?pair=1"' in polled[-1]
+
+
+def test_install_meter_is_in_status_and_matches_polled_rendering():
+    progress = {"step_number": 2, "total_steps": 5, "elapsed_seconds": 65}
+    html = _render({}, services=[{
+        "name": "channels-daemon", "install_running": True, "install_setup": True,
+        "install_progress": progress, "detail": "Installing dependencies",
+    }])
+    status = html.split('<td class="svc-status">', 1)[1].split('</td>', 1)[0]
+    actions = html.split('<td class="svc-actions">', 1)[1].split('</td>', 1)[0]
+    assert '<progress class="install-progress"' in status
+    assert 'max="5" value="1"' in status
+    assert 'Step 2 of 5' in status and '1:05 elapsed' in status
+    assert 'Installing dependencies' in status
+    assert 'spinner' not in actions and '>Setup</a>' in actions
+    path = Path(__file__).resolve().parents[1] / "launcher/static/launcher.js"
+    script = "const fs=require('fs'),vm=require('vm');vm.runInThisContext(fs.readFileSync(process.argv[1],'utf8'));console.log(installProgressHtml(JSON.parse(process.argv[2])));"
+    polled = subprocess.check_output(["node", "-e", script, str(path), json.dumps(progress)], text=True)
+    assert 'max="5" value="1"' in polled and 'Step 2 of 5' in polled and '1:05 elapsed' in polled
+    template = path.parent.parent / "templates/index.html"
+    polling = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+vm.runInThisContext(fs.readFileSync(process.argv[1],'utf8'));
+const text=fs.readFileSync(process.argv[2],'utf8'), start=text.indexOf('function pollStatus');
+vm.runInThisContext(text.slice(start,text.indexOf('\n{% for s',start)));
+const cells={'.svc-status':{},'.svc-actions':{}}, row={dataset:{runtime:'false',installing:'true'},querySelector:key=>cells[key]};
+global.document={querySelector:()=>row};global.pendingStarts={};global.pendingStops={};global.actionHtml=()=>'';
+let reloads=0,ok=true,url,payload={install_running:true,install_setup:true,install_progress:{step_number:2,total_steps:5,elapsed_seconds:65}};
+global.location={reload:()=>reloads++};global.fetch=async value=>{url=value;return {ok,json:async()=>payload};};
+async function poll(){pollStatus('atomic');await new Promise(setImmediate);}
+(async()=>{
+  await poll();assert.equal(url,'/install/atomic/status');assert.equal(reloads,0);
+  assert.ok(cells['.svc-status'].innerHTML.includes('Step 2 of 5'));
+  ok=false;await poll();assert.equal(reloads,0);
+  ok=true;payload={install_running:false};await poll();assert.equal(reloads,1);
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+    subprocess.run(["node", "-e", polling, str(path), str(template)], check=True)
 
 
 def test_memorize_gauge_over_threshold_shows_sleep_gap_badge():
@@ -138,7 +181,7 @@ def test_iris_setup_names_open_existing_rename_and_live_fallback_is_readonly():
     ]
     context = dict(
         iris={"installations": installations},
-        iris_setup={"enabled": True, "ready": True, "rows": []},
+        iris_setup={"ready": True, "rows": []},
         iris_connection={"base_url": "http://fixture.invalid"},
     )
     html = env.get_template("iris.html").render(**context, selected_installation=installations[0])
@@ -164,7 +207,7 @@ def test_iris_status_signature_ignores_json_key_order():
     function = template.split("function statusSignature(status) {", 1)[1].split("const initialSignature", 1)[0]
     script = "const selectedDevice = ''; function statusSignature(status) {" + function + r"""
 const assert = require('assert');
-const status = {setup: {enabled: true, ready: true, reason: 'Ready', step: 'ready',
+const status = {setup: {ready: true, reason: 'Ready', step: 'ready',
   rows: [{label: 'Server', state: 'ready', detail: 'Ready'}]}, installations: []};
 const sorted = JSON.parse(JSON.stringify(status, ['setup', 'installations', 'detail', 'enabled', 'label', 'ready', 'reason', 'rows', 'state', 'step']));
 assert.equal(statusSignature(status), statusSignature(sorted));

@@ -23,7 +23,7 @@ def iris_preparation(tmp_path, monkeypatch):
 
     config = tmp_path / "mcp-memu-server/config.json"
     config.parent.mkdir()
-    config.write_text(json.dumps({"mentra": {"enabled": True}}))
+    config.write_text(json.dumps({"mentra": {}}))
     status = {"state": "ready", "installations": [{"device_session_id": "fictional-phone",
               "host_reporting": True, "host": {"host_package": "com.mentra.mentra.openalma"}}]}
     calls = []
@@ -56,15 +56,13 @@ def test_connected_phone_prepares_once_without_installing_on_phone(iris_preparat
     assert app.setup_install.operation_status(root, "iris-server")["state"] == "running"
 
 
-@pytest.mark.parametrize("block", ["stale", "unavailable", "disabled", "core", "recovery", "ready", "shutdown"])
+@pytest.mark.parametrize("block", ["stale", "unavailable", "core", "recovery", "ready", "shutdown"])
 def test_iris_automatic_preparation_defers_when_not_eligible(iris_preparation, monkeypatch, block):
     app, root, config, status, calls, stop = iris_preparation
     if block == "stale":
         status["installations"][0]["host_reporting"] = False
     elif block == "unavailable":
         status["state"] = "unavailable"
-    elif block == "disabled":
-        config.write_text(json.dumps({"mentra": {"enabled": False}}))
     elif block == "core":
         monkeypatch.setattr(app.setup_install, "release_issue", lambda *_args: "Core update required first")
     elif block == "recovery":
@@ -73,7 +71,7 @@ def test_iris_automatic_preparation_defers_when_not_eligible(iris_preparation, m
         monkeypatch.setattr(app.setup_install, "optional_issue", lambda *_args: "")
     else:
         stop.set()
-    if block in {"stale", "unavailable", "disabled", "shutdown"}:
+    if block in {"stale", "unavailable", "shutdown"}:
         monkeypatch.setattr(app.setup_install, "release_issue", lambda *_args: pytest.fail("No release Git checks before an eligible phone"))
     app._prepare_iris_if_needed(stop)
     assert calls == [] and app.setup_install.operation_status(root, "iris-server")["state"] == "idle"
@@ -83,7 +81,7 @@ def test_opening_setup_does_not_prepare_without_a_reported_phone(iris_preparatio
     from fastapi.testclient import TestClient
     app, root, _config, status, calls, stop = iris_preparation
     status["installations"] = []
-    monkeypatch.setattr(app, "_setup_aware_status", lambda *_args, **_kwargs: {"installations": [], "setup": {"enabled": True, "ready": False, "rows": []}})
+    monkeypatch.setattr(app, "_setup_aware_status", lambda *_args, **_kwargs: {"installations": [], "setup": {"ready": False, "rows": []}})
     assert TestClient(app.app, base_url="http://127.0.0.1").get("/iris").status_code == 200
     app._prepare_iris_if_needed(stop)
     assert not calls
@@ -276,7 +274,7 @@ def test_iris_install_target_cleanup(tmp_path, monkeypatch, stage, host_package)
     target_path = tmp_path / "build/release-private-status.json"
     monkeypatch.setattr(launcher_app, "_find_service", lambda _name: spec)
     monkeypatch.setattr(launcher_app, "_require_startable_setup", lambda _name: None)
-    monkeypatch.setattr(services, "mentra_readiness", lambda: {"enabled": True, "ready": True})
+    monkeypatch.setattr(services, "mentra_readiness", lambda: {"ready": True})
     monkeypatch.setattr(services, "STATE_DIR", tmp_path)
     monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState())
     monkeypatch.setattr(services, "_iris_build_env", lambda *_args: {})
@@ -447,7 +445,7 @@ def test_iris_repair_installer_uses_selected_bundle_not_github(tmp_path, monkeyp
     row = services._iris_product_status(services.RuntimeState(), {
         "installed_package": services.IRIS_PACKAGE, "installed_version": "0.1.12",
         "host": {"host_package": "com.mentra.mentra.openalma"},
-    }, services.IRIS_PACKAGE, "", {"enabled": True, "ready": True})
+    }, services.IRIS_PACKAGE, "", {"ready": True})
     assert row["repair_available"] and row["action_label"] == "Repair"
 
 
@@ -531,7 +529,7 @@ def test_iris_address_save_refuses_invalid_config_without_rewriting_it(tmp_path,
             readiness_patch.setattr(services, "all_services", unexpected_probe)
             readiness = services._mentra_readiness_uncached(tmp_path)
         assert readiness == {
-            "enabled": True, "ready": False, "step": "config", "rows": [],
+            "ready": False, "step": "config", "rows": [],
             "reason": "Cannot read mcp config.json" if value == b"\xff" else "mcp config.json must be a JSON object",
         }
         assert services.all_services()[0].adopt_pid_path == path.parent / ".memu-server.pid"
@@ -563,7 +561,7 @@ def test_iris_install_rechecks_readiness_before_reserving_or_starting(tmp_path, 
 def test_iris_status_tracks_target_not_lock_and_preserves_rows_on_outage(tmp_path, monkeypatch):
     spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
     monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState())
-    monkeypatch.setattr(services, "mentra_readiness", lambda: {"enabled": True, "ready": True})
+    monkeypatch.setattr(services, "mentra_readiness", lambda: {"ready": True})
     mentra = {"state": "ready", "installations": [{"device_session_id": "stock-test"}]}
     monkeypatch.setattr(services, "_read_mentra_status", lambda *_args, **_kwargs: mentra)
     monkeypatch.setattr(services, "_iris_release_candidate", lambda _spec: (
@@ -1709,6 +1707,19 @@ def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monke
     )
 
     assert services._verified_pid_candidates(spec) == [41, 42]
+
+
+def test_channels_needs_soul_selection_before_start(tmp_path, monkeypatch):
+    monkeypatch.setattr(services, "_CHANNELS_HOME", tmp_path)
+    monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState())
+    monkeypatch.setattr(services, "_spawn_background", lambda *_args, **_kwargs: pytest.fail("Must not start before setup"))
+    spec = services.ServiceSpec("channels-daemon", "Hermes", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    status = services.status(spec)
+    assert status["action_kind"] == "settings" and not status["startable"]
+    with pytest.raises(ValueError, match="Choose a Soul in Setup"):
+        services.start(spec)
+    (tmp_path / "config.json").write_text(json.dumps({"soul_id": "Fictional Soul"}))
+    assert services.status(spec)["startable"]
 
 
 def test_channels_daemon_status_uses_bridge_and_web_source_health(tmp_path, monkeypatch):

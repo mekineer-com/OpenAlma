@@ -37,9 +37,9 @@
     details.not-installed summary { cursor: pointer; color: #aaa; }
     .services-table { table-layout: fixed; }
     .services-table th:nth-child(1) { width: 20%; }
-    .services-table th:nth-child(2) { width: 30%; }
-    .services-table th:nth-child(3) { width: 38%; }
-    .services-table th:nth-child(4) { width: 12%; }
+    .services-table th:nth-child(2) { width: 50%; }
+    .services-table th:nth-child(3) { width: 22%; }
+    .services-table th:nth-child(4) { width: 8%; }
     .services-table td { overflow-wrap: anywhere; }
     .services-table input[name="display_name"] { width: 100%; box-sizing: border-box; }
     .running, .healthy, .ready, .active { color: #4ade80; font-weight: 600; }
@@ -60,6 +60,8 @@
                    font: inherit; text-decoration: underline; cursor: pointer; }
     .config-link:focus-visible, .context-info button:focus-visible { outline: 2px solid #7cb7ff; outline-offset: 2px; }
     .svc-actions { white-space: nowrap; }
+    .svc-actions .btn { vertical-align: middle; }
+    .install-progress { display: block; width: 100%; max-width: 22rem; height: 0.65rem; margin-top: 0.3rem; accent-color: #6aa9ff; }
     .mentra-apk-link { display: block; text-align: right; margin-right: 0.8rem; white-space: nowrap; }
     .svc-actions + td { padding-left: 0.55rem; }
     select { font: inherit; padding: 0.15rem 0.25rem; background: #2a2a2a; color: #eee; border: 1px solid #444; }
@@ -67,14 +69,21 @@
     a:visited { color: #b18cd9; }
     code { background: #2a2a2a; color: #f0f0f0; padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
     .spinner {
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: calc(1.42em + 0.5rem + 2px);
+      height: calc(1.42em + 0.5rem + 2px);
+      vertical-align: middle;
+    }
+    .spinner::after {
+      content: '';
       width: 0.85em;
       height: 0.85em;
       border: 2px solid transparent;
       border-top-color: currentColor;
       border-radius: 50%;
       animation: spin 0.6s linear infinite;
-      vertical-align: -2px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     .banner { padding: 0.6rem 0.8rem; margin: 1rem 0; border-radius: 3px;

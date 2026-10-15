@@ -65,7 +65,7 @@ vm.runInThisContext(source.slice(source.indexOf('function pollStatus'), source.i
     const status = {}, actions = {};
     const row = {dataset:{runtime:'true'}, querySelector: key => key === '.svc-status' ? status : actions};
     global.document = {querySelector: () => row};
-    global.fetch = async () => ({json: async () => ({install_setup:pending === 'preparing', state:pending === 'error' ? 'unavailable' : pending === 'installing' ? 'installing' : 'ready', status_label:pending === 'error' ? 'Status unavailable' : pending === 'installing' ? 'Installing Iris' : 'Host ready'})});
+    global.fetch = async () => ({ok:true,json: async () => ({install_setup:pending === 'preparing', state:pending === 'error' ? 'unavailable' : pending === 'installing' ? 'installing' : 'ready', status_label:pending === 'error' ? 'Status unavailable' : pending === 'installing' ? 'Installing Iris' : 'Host ready'})});
     global.location = {reload: () => { throw new Error('Iris preparation must not reload Home'); }};
     pendingStops = pending === 'stop' ? {'iris-server':true} : {};
     pendingStarts = pending === 'start' ? {'iris-server':Date.now()+10000} : {};

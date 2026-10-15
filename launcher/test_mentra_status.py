@@ -47,16 +47,12 @@ class MentraStatusTest(TestCase):
         for address in ("https://127.example.com", "http://10.77.0.1", "http://[fd00::1]"):
             self.assertEqual(services._iris_base_url(address), address)
 
-    def test_blocked_installer_port_and_disabled_mentra_have_truthful_status(self) -> None:
+    def test_blocked_installer_port_has_truthful_status(self) -> None:
         blocked = services._iris_product_status(services.RuntimeState(port_blocked=True),
-            {"state": "ready"}, services.IRIS_PACKAGE, "0.1.12", {"enabled": True, "ready": True})
+            {"state": "ready"}, services.IRIS_PACKAGE, "0.1.12", {"ready": True})
         self.assertEqual(blocked["state"], "blocked")
         self.assertIn("6789", blocked["detail"])
         self.assertFalse(blocked["startable"])
-        disabled = services._iris_product_status(services.RuntimeState(),
-            {"state": "unavailable", "detail": "Server is stopped"}, services.IRIS_PACKAGE, "0.1.12",
-            {"enabled": False, "ready": False, "step": "disabled"})
-        self.assertEqual(disabled["state"], "disabled")
 
     def test_iris_candidate_uses_only_published_versions(self) -> None:
         with TemporaryDirectory() as directory:
@@ -83,7 +79,7 @@ class MentraStatusTest(TestCase):
                 self.assertEqual(status["state"], "ready")
                 uninstalled = services._iris_product_status(
                     services.RuntimeState(), {"state": "ready"}, package, version,
-                    {"enabled": True, "ready": True},
+                    {"ready": True},
                 )
                 self.assertEqual(uninstalled["status_label"], "Iris bundle unavailable")
                 self.assertIsNone(uninstalled["action_kind"])
@@ -290,7 +286,7 @@ class MentraStatusTest(TestCase):
             row = services._iris_product_status(
                 services.RuntimeState(), {"state": "ready"},
                 services.IRIS_PACKAGE if release else "", release,
-                {"enabled": True, "ready": True},
+                {"ready": True},
             )
             self.assertEqual(row["state"], "stopped" if release else "unavailable")
             self.assertEqual(row["action_kind"], "start" if release else None)
@@ -298,7 +294,7 @@ class MentraStatusTest(TestCase):
                 self.assertEqual(row["status_label"], "Iris bundle unavailable")
         from app import templates
         page = templates.get_template("iris.html").render(
-            iris_setup={"enabled": True, "ready": True, "rows": []},
+            iris_setup={"ready": True, "rows": []},
             iris={**openalma, "installations": [{**openalma, "device_session_id": "test-phone", "display_name": "Phone", "host_package": "com.mentra.mentra.openalma", "soul_id": "Fictional Soul"}]},
             selected_installation={**openalma, "device_session_id": "test-phone", "display_name": "Phone", "host_package": "com.mentra.mentra.openalma", "soul_id": "Fictional Soul"},
             iris_connection={},
@@ -330,7 +326,7 @@ class MentraStatusTest(TestCase):
             "seen_at": 101.0,
         }
         with (
-            patch.object(services, "mentra_readiness", return_value={"enabled": True, "ready": True}),
+            patch.object(services, "mentra_readiness", return_value={"ready": True}),
             patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True, port_pid=1)),
             patch.object(services, "_read_iris_release_status", return_value=release),
             patch.object(services, "_read_mentra_status", return_value={"state": "ready", "host": host}) as read,
@@ -346,7 +342,7 @@ class MentraStatusTest(TestCase):
     def test_app_rows_and_installer_stay_independent(self) -> None:
         spec = services.ServiceSpec("iris-server", "Iris", [], Path("."), Path("log"), Path("pid"))
         with (
-            patch.object(services, "mentra_readiness", return_value={"enabled": True, "ready": True}),
+            patch.object(services, "mentra_readiness", return_value={"ready": True}),
             patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=True)),
             patch.object(services, "_read_iris_release_status", return_value={"device_session_id": "stock-pending", "host_package": "com.mentra.mentra"}),
             patch.object(services, "_read_mentra_status", return_value={
@@ -400,7 +396,7 @@ class MentraStatusTest(TestCase):
                     app._start_iris_install(spec, "other", "com.mentra.mentra.openalma")
                 with (
                     patch.object(services, "_runtime_state", return_value=services.RuntimeState()),
-                    patch.object(services, "mentra_readiness", return_value={"enabled": True, "ready": True}),
+                    patch.object(services, "mentra_readiness", return_value={"ready": True}),
                     patch.object(services, "_read_mentra_status", return_value={"state": "ready", "installations": []}),
                     patch.object(services, "_iris_release_candidate", return_value=(services.IRIS_PACKAGE, "0.1.0", None, "available")),
                 ):
@@ -408,55 +404,12 @@ class MentraStatusTest(TestCase):
                     self.assertTrue(status["starting"])
                     self.assertEqual(status["release_device_session_id"], "stock-test")
 
-    def test_disabled_mentra_skips_all_live_probes(self) -> None:
-        root = Path(self._testMethodName)
-        config = root / "mcp-memu-server" / "config.json"
-        config.parent.mkdir(parents=True)
-        config.write_text(json.dumps({"mentra": {"enabled": False}}))
-        try:
-            with (
-                patch.object(services, "all_services", side_effect=AssertionError("service probe")),
-                patch.object(services, "_mentra_http_status", side_effect=AssertionError("network probe")),
-            ):
-                result = services.mentra_readiness(root)
-            self.assertFalse(result["enabled"])
-            self.assertEqual(result["step"], "disabled")
-            product = services._iris_product_status(
-                services.RuntimeState(),
-                {"state": "disabled"},
-                "com.openalma.mentra",
-                "0.1.0",
-                result,
-            )
-            self.assertEqual(product["state"], "disabled")
-            self.assertIsNone(product["action_kind"])
-            product = services._iris_product_status(
-                services.RuntimeState(running=True), {"state": "disabled"},
-                "com.openalma.mentra", "0.1.0", result,
-            )
-            self.assertEqual(product["action_label"], "Cancel")
-            from app import templates
-            template = templates.get_template("iris.html")
-            page = template.render(
-                iris_setup=result,
-                iris=product,
-                iris_connection={},
-                host_prerequisites={"rows": [{"label": "Fictional host check", "state": "ready", "detail": "Ready"}]},
-            )
-            self.assertIn("irisAction('stop', this)", page)
-            self.assertNotIn("Fictional host check", page)
-        finally:
-            config.unlink()
-            config.parent.rmdir()
-            root.rmdir()
-
     def test_missing_private_release_tool_blocks_iris_install(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
             config = root / "mcp-memu-server" / "config.json"
             config.parent.mkdir()
             config.write_text(json.dumps({"mentra": {
-                "enabled": True,
                 "public_base_url": "http://10.77.0.1",
                 "gemini_api_key": "fictional",
                 "model": "fictional-model",
@@ -472,7 +425,7 @@ class MentraStatusTest(TestCase):
         from app import templates
 
         page = templates.get_template("iris.html").render(
-            iris_setup={"enabled": True, "ready": True, "rows": []},
+            iris_setup={"ready": True, "rows": []},
             iris={
                 "running": True,
                 "release_uri": "miniapp://fictional",
@@ -498,7 +451,6 @@ class MentraStatusTest(TestCase):
         env_path.parent.mkdir(parents=True)
         config.write_text(json.dumps({
             "mentra": {
-                "enabled": True,
                 "public_base_url": "http://10.77.0.1",
                 "gemini_api_key": "fictional",
                 "model": "fictional-model",
@@ -600,7 +552,7 @@ class MentraStatusTest(TestCase):
             settings["mentra"]["public_base_url"] = "http://10.77.0.1"
             config.write_text(json.dumps(settings))
 
-            for responses, detail in (([0], "Cannot reach"), ([502], "HTTP 502"), ([404], "Restart memU Server"),
+            for responses, detail in (([0], "Cannot reach"), ([502], "HTTP 502"), ([404], "Check the private Mentra proxy"),
                                       ([200, 200], "exposes an unrelated path"), ([200, 0], "no connection")):
                 services._MENTRA_INGRESS_AUDIT_CACHE.clear()
                 with (
@@ -635,7 +587,7 @@ class MentraStatusTest(TestCase):
             {"active": True, "state": "active"},
             "com.openalma.mentra",
             "0.1.0",
-            {"enabled": True, "ready": False, "reason": "fictional failure"},
+            {"ready": False, "reason": "fictional failure"},
         )
         self.assertEqual(result["state"], "active")
         self.assertIsNone(result["action_kind"])
@@ -643,7 +595,7 @@ class MentraStatusTest(TestCase):
     def test_stopped_memu_does_not_direct_user_to_settings(self) -> None:
         result = services._iris_product_status(
             services.RuntimeState(), {"state": "unavailable", "detail": "Mentra status unreachable or invalid"}, "com.openalma.mentra", "0.1.0",
-            {"enabled": True, "ready": False, "step": "server", "reason": "Start memU Server"},
+            {"ready": False, "step": "server", "reason": "Start memU Server"},
         )
         self.assertIsNone(result["action_kind"])
         self.assertEqual(result["detail"], "Start memU Server in Services")
@@ -734,7 +686,7 @@ class MentraStatusTest(TestCase):
         spec = services.ServiceSpec("iris-server", "Iris", [], Path("."), Path("log"), Path("pid"))
         installed = {"installed_soul": "Installed Soul", "installed_package": "com.openalma.mentra", "installed_version": "0.1.0"}
         with (
-            patch.object(services, "mentra_readiness", return_value={"enabled": True, "ready": True, "soul_id": "Next Build", "device_session_id": "other-phone"}),
+            patch.object(services, "mentra_readiness", return_value={"ready": True, "soul_id": "Next Build", "device_session_id": "other-phone"}),
             patch.object(services, "_runtime_state", return_value=services.RuntimeState()),
             patch.object(services, "_read_channels_config", side_effect=AssertionError("Channels must not be consulted")),
             patch.object(services, "_read_mentra_status", return_value={**installed, "active": True, "state": "active"}) as status,
@@ -939,7 +891,7 @@ class MentraStatusTest(TestCase):
             self.addCleanup(start_issue_patch.stop)
             with (
                 patch.object(services, "all_services", return_value=[iris]),
-                patch.object(services, "mentra_readiness", return_value={"enabled": True, "ready": True, "rows": []}),
+                patch.object(services, "mentra_readiness", return_value={"ready": True, "rows": []}),
                 patch.object(services, "_read_mentra_status", return_value={"state": "ready", "busy": False, "installations": [
                     {"device_session_id": "test-phone", "display_name": "Phone"},
                     {"device_session_id": "other-phone", "display_name": "Other"},
@@ -963,7 +915,6 @@ class MentraStatusTest(TestCase):
                         services,
                         "mentra_readiness",
                         return_value={
-                            "enabled": True,
                             "ready": False,
                             "step": "server",
                             "reason": "Start memU Server",
@@ -1134,14 +1085,14 @@ class MentraStatusTest(TestCase):
             root = Path(directory)
             (root / "mcp-memu-server").mkdir()
             (root / "mcp-memu-server" / "config.json").write_text(json.dumps({"mentra": {
-                "enabled": True, "public_base_url": "http://10.77.0.1",
+                "public_base_url": "http://10.77.0.1",
             }}))
             spec = services.ServiceSpec("iris-server", "Iris", [], root, root / "log", root / "pid")
             env_path = root / ".env.local"
             env_path.write_text("MENTRA_PUBLIC_OPENALMA_BASE_URL=http://old.example\n")
             with (
                 patch.object(app, "_require_startable_setup"),
-                patch.object(services, "mentra_readiness", return_value={"enabled": True, "ready": True}),
+                patch.object(services, "mentra_readiness", return_value={"ready": True}),
                 patch.object(services, "_resolve_apps_root", return_value=root),
                 patch.object(services, "_read_mentra_status", return_value={
                     "installed_user": "Wrong User", "installed_soul": 'Fictional "Soul"', "installed_device": "test-phone",
@@ -1179,7 +1130,7 @@ class MentraStatusTest(TestCase):
                 original_env = env_path.read_text()
                 for address in ("http://127.0.0.1:8099", "http://[::1]:8099", "http://localhost:8099"):
                     (root / "mcp-memu-server" / "config.json").write_text(json.dumps({"mentra": {
-                        "enabled": True, "public_base_url": address,
+                        "public_base_url": address,
                     }}))
                     spawn.reset_mock()
                     download.reset_mock()
@@ -1189,5 +1140,5 @@ class MentraStatusTest(TestCase):
                     download.assert_not_called()
                     self.assertEqual(env_path.read_text(), original_env)
                 (root / "mcp-memu-server" / "config.json").write_text("{}")
-                with self.assertRaisesRegex(ValueError, "Enable Mentra"):
+                with self.assertRaisesRegex(ValueError, "Choose an Iris app installation"):
                     services._iris_build_env(spec, None)

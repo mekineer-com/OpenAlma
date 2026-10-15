@@ -58,7 +58,7 @@ def test_fresh_root_shows_core_install_without_runtime_status(tmp_path, monkeypa
     monkeypatch.setattr(app.policy, "list_whatsapp_chats", lambda: [])
     monkeypatch.setattr(app.policy, "read_channel_settings", lambda: {})
     monkeypatch.setattr(app.services, "status", lambda _spec: pytest.fail("runtime status must not run"))
-    monkeypatch.setattr(app.setup_install, "setup_status", lambda _root: {
+    monkeypatch.setattr(app.setup_install, "setup_status", lambda _root, **_kwargs: {
         "state": "setup", "status_label": "Not installed", "detail": "Missing core",
         "startable": False, "action_kind": "install", "action_label": "Install",
     })
@@ -73,7 +73,63 @@ def test_fresh_root_shows_core_install_without_runtime_status(tmp_path, monkeypa
     for spec in services.services_for_root(tmp_path):
         assert f'data-service="{spec.name}" data-installed="false"' in response.text
     assert 'data-service="atomic" data-installed="false" data-runtime="false"' in response.text
-    assert "querySelectorAll('tr[data-service][data-runtime=\"true\"]')" in response.text
+    assert 'tr[data-service][data-runtime="true"], tr[data-service][data-installing="true"]' in response.text
+
+
+def test_ai_setup_notice_lists_only_missing_values_and_clears_after_save(tmp_path, monkeypatch):
+    config_path = tmp_path / "mcp-memu-server/config.json"
+    config_path.parent.mkdir()
+    config = {"llm": {"api_key": "YOUR_API_KEY_HERE", "chat_model": "YOUR_CHAT_MODEL",
+                      "context_window_tokens": None, "embedding": {"api_key": "YOUR_GEMINI_API_KEY"}}}
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "all_services", lambda: [])
+    monkeypatch.setattr(app.services, "read_owner", lambda: None)
+    monkeypatch.setattr(app.services, "list_souls", lambda: [])
+    monkeypatch.setattr(app.setup_install, "launcher_update", lambda: None)
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    assert "AI setup needed." not in client.get("/").text
+
+    config_path.write_text(json.dumps(config))
+    html = client.get("/").text
+    assert "AI setup needed." in html
+    assert 'action="/edit/memu-server-config"' in html
+    assert "chat API key, chat model, embedding API key, and your model&#39;s context-window size" in html
+
+    config["llm"].update(api_key="fictional-key", chat_model="fictional-model", context_window_tokens=32000)
+    config_path.write_text(json.dumps(config))
+    assert app._ai_setup_message(tmp_path) == "to enter embedding API key."
+    config["llm"]["embedding"]["api_key"] = "fictional-embedding-key"
+    config_path.write_text(json.dumps(config))
+    assert "AI setup needed." not in client.get("/").text
+
+    config["llm"]["api_key"] = ""
+    config_path.write_text(json.dumps(config))
+    assert app._ai_setup_message(tmp_path) == ""
+    config["llm"].update(chat_model="", context_window_tokens=None,
+                         step_models={"memory_extract": {"source": "configured"}})
+    config_path.write_text(json.dumps(config))
+    assert app._ai_setup_message(tmp_path) == ""
+    config["llm"]["embedding"]["api_key"] = ""
+    config_path.write_text(json.dumps(config))
+    assert app._ai_setup_message(tmp_path) == "to enter embedding API key."
+    config["llm"]["embedding"]["api_key"] = "fictional-embedding-key"
+    config["llm"].update(step_models={}, step_context_window_tokens={"memory_extract": 32000})
+    config_path.write_text(json.dumps(config))
+    assert app._ai_setup_message(tmp_path) == ""
+
+    config["claude_code"] = True
+    config["llm"].update(api_key="", chat_model="")
+    config_path.write_text(json.dumps(config))
+    assert "context-window size" in app._ai_setup_message(tmp_path)
+    config["claude_code_context_window_tokens"] = 200000
+    config_path.write_text(json.dumps(config))
+    assert app._ai_setup_message(tmp_path) == ""
+
+    config_path.write_text("{broken")
+    assert "unreadable AI configuration" in client.get("/").text
+    for malformed in ({"llm": []}, {"llm": {"embedding": []}}, {"llm": {"step_models": []}}):
+        config_path.write_text(json.dumps(malformed))
+        assert "correct the AI configuration" in client.get("/").text
 
 
 def test_home_groups_iris_by_reported_phones_not_checkout(tmp_path, monkeypatch):
@@ -181,7 +237,7 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
         "release_device_session_id": "stock-test", "release_host_package": "com.mentra.mentra",
         "release_uri": "miniapp://fixture.invalid/stock", "status_label": "Stock installer active",
     })
-    monkeypatch.setattr(app.services, "mentra_readiness", lambda _root: {"enabled": True, "ready": True, "rows": []})
+    monkeypatch.setattr(app.services, "mentra_readiness", lambda _root: {"ready": True, "rows": []})
     monkeypatch.setattr(app.setup_install, "optional_setup_status", lambda *_args: {"ready": True, "guidance": ""})
     monkeypatch.setattr(app.services, "list_souls", lambda: ["TestSoul"])
     monkeypatch.setattr(app.soul, "CHANNELS_CONFIG_PATH", tmp_path / "missing-config.json")
@@ -221,8 +277,6 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
             assert 'id="mentra-apk-popup"' in visible
             assert 'Click Install beside your phone on the <a href="/">main page</a> to install Iris.' in steps
             assert 'or you open Setup' not in visible
-            assert 'automatically after OpenAlma Mentra reports your phone.' in visible
-            assert 'For Stock Mentra, clicking Install below prepares the tools first.' in visible
             stock = ""
             if page.endswith('=fork-test'):
                 assert 'id="iris-stock-installation"' not in visible
@@ -345,7 +399,7 @@ def test_iris_install_redirect_preserves_provided_target(tmp_path, monkeypatch, 
     assert started == [(spec, device_session_id, host_package)]
 
 
-@pytest.mark.parametrize("mentra", [None, {"enabled": True, "public_base_url": "http://10.77.0.1"}])
+@pytest.mark.parametrize("mentra", [None, {"public_base_url": "http://10.77.0.1"}])
 def test_iris_address_save_preserves_config_and_backs_up(tmp_path, monkeypatch, mentra):
     import json
     path = tmp_path / "mcp-memu-server/config.json"
@@ -392,7 +446,7 @@ def test_restart_quit_uses_the_shared_exit_handler(tmp_path, monkeypatch):
     import subprocess
     monkeypatch.setattr(app.settings, "apps_root", lambda: None)
     monkeypatch.setattr(app.settings, "setup_apps_root", lambda: tmp_path)
-    monkeypatch.setattr(app.setup_install, "setup_status", lambda _root: {
+    monkeypatch.setattr(app.setup_install, "setup_status", lambda _root, **_kwargs: {
         "state": "setup", "status_label": "Core prepared", "restart_required": True,
     })
     html = TestClient(app.app, base_url="http://127.0.0.1").get("/").text
@@ -516,7 +570,8 @@ def test_live_and_blocked_services_do_not_run_core_setup_checks(tmp_path, monkey
     assert verified == [False]
 
 
-def test_optional_install_refresh_skips_core_runtime_validation(tmp_path, monkeypatch):
+@pytest.mark.parametrize("install_state", ["running", "idle"])
+def test_home_refresh_skips_core_runtime_validation(tmp_path, monkeypatch, install_state):
     core = services.ServiceSpec("memu-server", "memU", [], tmp_path, tmp_path / "core.log", tmp_path / "core.pid")
     atomic = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "atomic.log", tmp_path / "atomic.pid")
     verified = []
@@ -526,7 +581,7 @@ def test_optional_install_refresh_skips_core_runtime_validation(tmp_path, monkey
     monkeypatch.setattr(app.services, "status", lambda _spec: {"state": "stopped", "running": False})
     monkeypatch.setattr(
         app.setup_install, "operation_status",
-        lambda _root, name="memu-server": {"state": "running" if name == "atomic" else "idle"},
+        lambda _root, name="memu-server": {"state": install_state if name == "atomic" else "idle"},
     )
     monkeypatch.setattr(
         app.setup_install, "core_issue",
@@ -569,7 +624,8 @@ def test_iris_runtime_setup_state_is_not_an_install_row(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("setup", [
-    {"ready": False, "status_label": "Installing", "install_running": True, "detail": "Dependencies"},
+    {"ready": False, "status_label": "Installing", "install_running": True, "detail": "Dependencies",
+     "install_progress": {"step_number": 2, "total_steps": 5, "elapsed_seconds": 65}},
     {"ready": False, "status_label": "Installation incomplete", "detail": "Missing dependencies"},
     {"ready": False, "status_label": "Preparation failed", "detail": "Download failed",
      "action_kind": "install", "action_label": "Retry"},
@@ -594,7 +650,7 @@ def test_iris_page_and_poll_share_setup_status(tmp_path, monkeypatch, setup, run
     monkeypatch.setattr(app.services, "status", lambda _spec: {
         "status_label": "Host ready", "installations": [row],
         "available_package": services.IRIS_PACKAGE, "available_version": "0.1.0",
-        "setup": {"enabled": True, "ready": True, "rows": []},
+        "setup": {"ready": True, "rows": []},
         **runtime,
     })
     monkeypatch.setattr(app.setup_install, "optional_setup_status", lambda *_args: setup)
@@ -603,6 +659,8 @@ def test_iris_page_and_poll_share_setup_status(tmp_path, monkeypatch, setup, run
         html = client.get(url).text
         initial = json.JSONDecoder().raw_decode(html.split("const initialStatus = ", 1)[1])[0]
         assert initial == client.get("/service/iris-server/status").json()
+        if setup.get("install_running"):
+            assert initial["install_progress"] == setup["install_progress"]
         retry = html.split('<form id="iris-preparation-retry"', 1)[1].split('</form>', 1)[0]
         show_retry = initial.get("ready") is False and not initial.get("install_running") and (
             initial.get("preparation_attempted") or initial.get("action_kind") == "install" and initial.get("action_label") == "Retry"
@@ -652,7 +710,7 @@ def test_iris_preparation_retry_uses_worker_failure(tmp_path, monkeypatch, ready
     status = {"ready": ready, "install_running": running,
               "action_kind": "install", "action_label": "Retry" if failed else "Continue Install", "installations": [],
               "available_package": services.IRIS_PACKAGE, "available_version": "0.1.12",
-              "setup": {"enabled": True, "ready": setup_ready, "step": 'release', "rows": []}}
+              "setup": {"ready": setup_ready, "step": 'release', "rows": []}}
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
     monkeypatch.setattr(app.services, "all_services", lambda: [spec])
     monkeypatch.setattr(app, "_setup_aware_status", lambda *_args, **_kwargs: status)
@@ -814,7 +872,7 @@ def test_runtime_to_install_poll_reloads_the_page():
     template = Path(__file__).resolve().parents[1] / "launcher/templates/index.html"
     text = template.read_text(encoding="utf-8")
 
-    assert "data.install_setup && row.dataset.runtime === 'true'" in text
+    assert "data.install_setup && !data.install_running && row.dataset.runtime === 'true'" in text
     assert "if (!data.install_setup) row.dataset.runtime = 'true'" in text
     assert "data.action_kind === 'install'" in text
     assert "location.reload();" in text

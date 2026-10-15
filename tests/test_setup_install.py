@@ -1063,6 +1063,8 @@ def test_optional_worker_uses_shared_clone_and_command_pipeline(tmp_path, monkey
         setup_install._install_optional(operation)
         assert commands == [["npm", "ci"], ["npm", "ci"]]
     assert operation.state == "ready"
+    if not dependency_failure:
+        assert operation.step_number == operation.total_steps == 5
 
 
 def test_status_probe_does_not_reject_a_local_install(tmp_path, monkeypatch):
@@ -1164,6 +1166,21 @@ def test_local_install_details_survive_external_status_probe(tmp_path, monkeypat
     assert setup_install.operation_status(tmp_path, "iris-server") == {
         "state": "error", "step": "Specific progress", "detail": "Detail",
     }
+
+
+def test_install_progress_counts_work_and_reports_elapsed_time(tmp_path, monkeypatch):
+    operation = setup_install.InstallOperation("atomic", tmp_path, started_at=10)
+    monkeypatch.setattr(setup_install, "_OPERATION", operation)
+    monkeypatch.setattr(setup_install.time, "monotonic", lambda: 75)
+    setup_install._set_operation(operation, step="Finding release", total_steps=3)
+    setup_install._set_operation(operation, step="Installing dependencies")
+    status = setup_install.optional_setup_status("atomic", tmp_path)
+    assert status["install_progress"] == {"step_number": 2, "total_steps": 3, "elapsed_seconds": 65}
+    assert status["detail"] == "Installing dependencies"
+    setup_install._set_operation(operation, state="error", step="Installation failed")
+    assert operation.step_number == 2
+    monkeypatch.setattr(setup_install, "_active_install_owner", lambda: None)
+    assert "progress" not in setup_install.operation_status(tmp_path, "atomic")
 
 
 def test_operation_worker_reports_early_failure_and_releases_lock(tmp_path, monkeypatch):
