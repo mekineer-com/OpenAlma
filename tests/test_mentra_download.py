@@ -47,6 +47,33 @@ def test_mentra_qr_url_uses_releases_page_when_release_missing(monkeypatch):
     assert client.get("/mentra/apk").json() == {"url": url}
 
 
+def test_install_forms_keep_launcher_on_error_and_ignore_duplicate_submit():
+    root = Path(__file__).resolve().parents[1] / "launcher"
+    script = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+const text=fs.readFileSync(process.argv[1]+'/templates/index.html','utf8');
+let submit,destination,calls,alerts=[];
+global.document={addEventListener:(_name,handler)=>{submit=handler;}};
+global.location={assign:value=>{destination=value;}};
+global.FormData=class {};
+global.alert=value=>alerts.push(value);
+vm.runInThisContext(fs.readFileSync(process.argv[1]+'/static/iris-services.js','utf8'));
+vm.runInThisContext(text.slice(text.indexOf("document.addEventListener('submit'"),text.indexOf('async function svcAction')));
+(async()=>{
+  for(const [action,ok,expected] of [['/install/memu-server',false,''],['/install/memu-server',true,'/'],['/iris/install',true,'/iris?device_session_id=fictional-phone']]) {
+    destination='';calls=0;alerts=[];
+    global.fetch=async()=>{calls++;return {ok,json:async()=>({detail:'Recovery required'})};};
+    const button={disabled:false},form={action,dataset:{},getAttribute:()=>action,elements:{device_session_id:{value:'fictional-phone'}}};
+    const event={target:form,submitter:button,preventDefault(){}};
+    await Promise.all([submit(event),submit(event)]);
+    assert.equal(calls,1);assert.equal(destination,expected);
+    if(!ok){assert.deepEqual(alerts,['Recovery required']);assert.equal(button.disabled,false);assert.equal(form.dataset.submitting,undefined);}
+  }
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+    subprocess.run(["node", "-e", script, str(root)], check=True)
+
+
 def test_mentra_download_controls_survive_status_poll_and_pending_actions():
     root = Path(__file__).resolve().parents[1] / "launcher"
     script = r"""
@@ -62,7 +89,7 @@ vm.runInThisContext(source.slice(source.indexOf('function pollStatus'), source.i
 (async () => {
   const results = [];
   for (const pending of ['none', 'stop', 'start', 'error', 'installing', 'preparing']) {
-    const status = {}, actions = {};
+    const status = {querySelector: () => null}, actions = {};
     const row = {dataset:{runtime:'true'}, querySelector: key => key === '.svc-status' ? status : actions};
     global.document = {querySelector: () => row};
     global.fetch = async () => ({ok:true,json: async () => ({install_setup:pending === 'preparing', state:pending === 'error' ? 'unavailable' : pending === 'installing' ? 'installing' : 'ready', status_label:pending === 'error' ? 'Status unavailable' : pending === 'installing' ? 'Installing Iris' : 'Host ready'})});
@@ -98,7 +125,7 @@ vm.runInThisContext(source.slice(source.indexOf('function pollStatus'), source.i
     for status, actions in rows[:6]:
         assert 'href="https://openalma.org/mentra"' not in status
         assert 'href="https://github.com/mekineer-com/MentraOS/releases"' in status
-        assert '>apk on github</a>' in status
+        assert '>apk on<br>github</a>' in status
         assert 'Host ready' not in status
         assert actions.index('>QR</button>') < actions.index('>Setup</a>')
         assert 'popovertarget="mentra-apk-popup"' in actions

@@ -838,12 +838,11 @@ def _npm_command(*arguments: str) -> list[str] | str:
     return _package_command("npm", *arguments)
 
 
-def _install_bun(root: Path, log: Any, *, destination: Path | None = None) -> None:
-    if destination is None:
-        binary = settings.bun_binary(root)
-        if version := settings.bun_version(binary):
-            log.write(f"Using existing Bun {version}: {binary}\n")
-            return
+def _install_bun(root: Path, log: Any) -> None:
+    binary = settings.bun_binary(root)
+    if (version := settings.bun_version(binary)) == BUN_VERSION:
+        log.write(f"Using existing Bun {version}: {binary}\n")
+        return
     system = {"win32": "windows", "linux": "linux", "darwin": "darwin"}.get(sys.platform)
     machine = platform.machine().lower()
     arch = {"x86_64": "x64", "amd64": "x64", "aarch64": "aarch64", "arm64": "aarch64"}.get(machine)
@@ -863,7 +862,7 @@ def _install_bun(root: Path, log: Any, *, destination: Path | None = None) -> No
     digest = asset.get("digest", "")
     if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
         raise SetupError("Bun package has no SHA256 digest")
-    binary = destination if destination is not None else root / ".tools" / ("bun.exe" if sys.platform == "win32" else "bun")
+    binary = root / ".tools" / ("bun.exe" if sys.platform == "win32" else "bun")
     binary.parent.mkdir(parents=True, exist_ok=True)
     log.write(f"Downloading {url}\n")
     log.flush()
@@ -931,7 +930,7 @@ def optional_issue(service_name: str, root: Path) -> str:
     for relative, label in repositories.get(service_name, ()):
         if not (root / relative).exists():
             return f"Missing {label}"
-    if service_name == "iris-server" and not settings.bun_version(settings.bun_binary(root)):
+    if service_name == "iris-server" and settings.bun_version(settings.bun_binary(root)) != BUN_VERSION:
         return "Iris runtime needs preparation"
     dependency_checks = {
         "channels-daemon": (
@@ -1270,6 +1269,9 @@ def _begin_operation(service_name: str, root: Path, target: Any) -> InstallOpera
 def begin_core_install(root: Path) -> dict[str, Any]:
     root = root.resolve()
     if (root / RECOVERY_FILE).exists():
+        operation = operation_status(root)
+        if operation["state"] == "running":
+            return operation
         raise SetupError("Core update recovery is required; view the installation log")
     issue = _prerequisite_issue(root)
     if issue:

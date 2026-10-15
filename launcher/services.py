@@ -55,6 +55,7 @@ _MENTRA_READINESS_CACHE: dict[str, tuple[float, dict]] = {}
 _MENTRA_INGRESS_AUDIT_CACHE: set[str] = set()
 _IRIS_RELEASE_CACHE: tuple[float, tuple[str, str, str] | None, str] | None = None
 _STOP_LOCK = threading.Lock()
+_PIDFILE_LOCK = threading.RLock()
 _IRIS_INSTALL_LOCK = threading.Lock()
 _IRIS_INSTALL_CANCELLED = threading.Event()
 _STOP_THREADS: dict[str, threading.Thread] = {}
@@ -219,24 +220,27 @@ def is_installed(spec: ServiceSpec) -> bool:
     return spec.install_marker is None or spec.install_marker.exists()
 
 
-def _read_pid(pid_path: Path) -> int | None:
+def has_iris_installations(root: Path) -> bool:
+    path = root / "openalma" / "mentra" / "installations.json"
     try:
-        return int(pid_path.read_text().strip())
-    except (OSError, ValueError):
-        return None
+        records = json.loads(path.read_text(encoding="utf-8")).get(IRIS_PACKAGE, {})
+    except FileNotFoundError:
+        return False
+    return any(record.get("package_name") or record.get("host") for record in records.values())
+
+
+def _read_pid(pid_path: Path) -> int | None:
+    with _PIDFILE_LOCK:
+        try:
+            return int(pid_path.read_text().strip())
+        except (OSError, ValueError):
+            return None
 
 
 def _read_adopt_pid(spec: ServiceSpec) -> int | None:
     if spec.adopt_pid_path is None:
         return None
-    try:
-        text = spec.adopt_pid_path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    try:
-        return int(text.strip())
-    except ValueError:
-        return None
+    return _read_pid(spec.adopt_pid_path)
 
 
 def _port_listener_pid(port: int) -> int | None:
@@ -426,19 +430,21 @@ def _verified_pid_candidates(spec: ServiceSpec) -> list[int]:
 
 
 def _remember_verified_pid(spec: ServiceSpec, pid: int) -> None:
-    spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
-    if _read_pid(spec.pid_path) == pid:
-        return
-    spec.pid_path.write_text(str(pid))
+    with _PIDFILE_LOCK:
+        spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
+        if _read_pid(spec.pid_path) == pid:
+            return
+        spec.pid_path.write_text(str(pid))
 
 
 def _clear_dead_pidfile(path: Path) -> None:
-    pid = _read_pid(path)
-    if pid is None or not _is_alive(pid):
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            pass
+    with _PIDFILE_LOCK:
+        pid = _read_pid(path)
+        if pid is None or not _is_alive(pid):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
 
 
 def _within_startup_grace(spec: ServiceSpec) -> bool:
@@ -1419,6 +1425,8 @@ def status(spec: ServiceSpec) -> dict:
                 scoped["installed_soul"] = session["soul_id"]
             row_runtime = runtime if release_device == device else RuntimeState()
             projection = _iris_product_status(row_runtime, scoped, package, version, readiness)
+            if readiness.get("step") == "server" and projection["state"] == "stopped":
+                projection["detail"] = _seen_age(record.get("seen_at"))
             if result["starting"] and release_device == device:
                 projection.update(state="starting", status_label="◐ preparing installer", action_kind=None, startable=False)
             installations.append({
@@ -1549,13 +1557,13 @@ def _stop_status(spec: ServiceSpec, result: dict) -> dict:
     if stopping:
         result.update(
             state="stopping",
-            status_label="Still finishing…" if elapsed else "◐ waiting for graceful shutdown",
+            status_label="Still finishing…" if elapsed else "◐ stopping",
             detail=(
                 f"Stop failed: {error}"
                 if error else
-                "Graceful shutdown is still running; Force Stop is available"
+                "Force Stop is available"
                 if elapsed else
-                "Unfinished work is being allowed to finish"
+                "Finishing active work"
             ),
             startable=False,
             stoppable=True,
@@ -1563,7 +1571,7 @@ def _stop_status(spec: ServiceSpec, result: dict) -> dict:
     elif error and has_target:
         result["detail"] = f"Stop failed: {error}"
     result["force_stoppable"] = has_target and bool(
-        error or elapsed or result.get("stuck") or result.get("orphaned")
+        elapsed if stopping else error or result.get("stuck") or result.get("orphaned")
     )
     return result
 
@@ -1625,8 +1633,9 @@ def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None, bu
             if runtime.running or runtime.stuck or runtime.orphaned or runtime.port_blocked:
                 return
             proc = _spawn_background(spec, env)
-            spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
-            spec.pid_path.write_text(str(proc.pid))
+            with _PIDFILE_LOCK:
+                spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
+                spec.pid_path.write_text(str(proc.pid))
     except Exception:
         if spec.name == "iris-server":
             temporary.unlink(missing_ok=True)
@@ -1822,7 +1831,8 @@ def force_stop(spec: ServiceSpec, *, timeout: float = 10.0) -> None:
 
 
 def _clear_pid(spec: ServiceSpec) -> None:
-    try:
-        spec.pid_path.unlink()
-    except FileNotFoundError:
-        pass
+    with _PIDFILE_LOCK:
+        try:
+            spec.pid_path.unlink()
+        except FileNotFoundError:
+            pass

@@ -129,6 +129,8 @@ def test_install_meter_is_in_status_and_matches_polled_rendering():
     assert 'max="5" value="1"' in status
     assert 'Step 2 of 5' in status and '1:05 elapsed' in status
     assert 'Installing dependencies' in status
+    assert 'id="info:service:channels-daemon"' in status
+    assert '<div class="svc-detail">Installing dependencies</div>' not in status
     assert 'spinner' not in actions and '>Setup</a>' in actions
     path = Path(__file__).resolve().parents[1] / "launcher/static/launcher.js"
     script = "const fs=require('fs'),vm=require('vm');vm.runInThisContext(fs.readFileSync(process.argv[1],'utf8'));console.log(installProgressHtml(JSON.parse(process.argv[2])));"
@@ -140,14 +142,20 @@ const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 vm.runInThisContext(fs.readFileSync(process.argv[1],'utf8'));
 const text=fs.readFileSync(process.argv[2],'utf8'), start=text.indexOf('function pollStatus');
 vm.runInThisContext(text.slice(start,text.indexOf('\n{% for s',start)));
-const cells={'.svc-status':{},'.svc-actions':{}}, row={dataset:{runtime:'false',installing:'true'},querySelector:key=>cells[key]};
+const cells={'.svc-status':{querySelector:()=>null},'.svc-actions':{}}, row={dataset:{runtime:'false',installing:'true'},querySelector:key=>cells[key]};
 global.document={querySelector:()=>row};global.pendingStarts={};global.pendingStops={};global.actionHtml=()=>'';
-let reloads=0,ok=true,url,payload={install_running:true,install_setup:true,install_progress:{step_number:2,total_steps:5,elapsed_seconds:65}};
+let reloads=0,ok=true,url,payload={install_running:true,install_setup:true,detail:'Installing dependencies',install_progress:{step_number:2,total_steps:5,elapsed_seconds:65}};
 global.location={reload:()=>reloads++};global.fetch=async value=>{url=value;return {ok,json:async()=>payload};};
 async function poll(){pollStatus('atomic');await new Promise(setImmediate);}
 (async()=>{
   await poll();assert.equal(url,'/install/atomic/status');assert.equal(reloads,0);
   assert.ok(cells['.svc-status'].innerHTML.includes('Step 2 of 5'));
+  assert.ok(cells['.svc-status'].innerHTML.includes('info:service:atomic'));
+  const shown=cells['.svc-status'].innerHTML;
+  cells['.svc-status'].querySelector=()=>({});
+  payload.detail='Changed while reading';await poll();
+  assert.equal(cells['.svc-status'].innerHTML,shown);
+  cells['.svc-status'].querySelector=()=>null;
   ok=false;await poll();assert.equal(reloads,0);
   ok=true;payload={install_running:false};await poll();assert.equal(reloads,1);
 })().catch(error=>{console.error(error);process.exitCode=1;});

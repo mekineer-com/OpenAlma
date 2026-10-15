@@ -70,19 +70,17 @@
       <tr data-service="{{ s.name }}" data-installed="{{ 'true' if s in services else 'false' }}" data-runtime="{{ 'false' if s.install_setup else 'true' }}" data-installing="{{ 'true' if s.install_running else 'false' }}">
         <td>{{ s.label }}</td>
         <td class="svc-status">
-          {% if s.name == 'iris-server' %}<a class="mentra-apk-link" href="https://github.com/mekineer-com/MentraOS/releases">apk on github</a>{% endif %}
+          <div class="svc-status-content">
+          {% if s.name == 'iris-server' %}<a class="mentra-apk-link" href="https://github.com/mekineer-com/MentraOS/releases">apk on<br>github</a>{% endif %}
+          <div>
           {% if s.name != 'iris-server' or s.state != 'ready' %}
           <span class="{{ s.state }}">{{ s.status_label }}</span>
           {% endif %}
+          {% set explanation %}{% if s.detail %}{{ s.detail }}{% endif %}{% for child in s.children|default([]) %} {{ child.name }}: {{ child.state }}{% if child.detail %} ({{ child.detail }}){% endif %};{% endfor %}{% endset %}
+          {% if explanation|trim %}{{ info(explanation|trim, 'service:' ~ s.name) }}{% endif %}
+          </div>
           {% if s.install_running %}{{ install_meter(s.install_progress) }}{% endif %}
-          {% if s.detail %}<div class="svc-detail">{{ s.detail }}</div>{% endif %}
-          {% if s.children %}
-            <div class="svc-children">
-              {% for child in s.children %}
-                {{ child.name }}: {{ child.state }}{% if child.detail %} ({{ child.detail }}){% endif %}{% if not loop.last %}; {% endif %}
-              {% endfor %}
-            </div>
-          {% endif %}
+          </div>
         </td>
         <td class="svc-actions">
           {% if s.name == 'iris-server' %}
@@ -132,7 +130,7 @@
       <tr id="echo-row" data-installed="{{ 'true' if echo_enabled else 'false' }}">
         <td>Echo Import</td>
         {% set imports = memorize|selectattr('import_running')|list %}
-        <td id="echo-activity" class="muted">{% if imports %}Processing: {{ imports|map(attribute='soul_id')|join(', ') }}{% else %}Ready{% endif %}</td>
+        <td class="muted"><div id="echo-activity" class="svc-status-content">{% if imports %}Processing: {{ imports|map(attribute='soul_id')|join(', ') }}{% else %}Ready{% endif %}</div></td>
         <td class="svc-actions">{% if not echo_enabled %}<form class="inline" method="post" action="/echo/enable"><button class="btn" type="submit">Install</button></form> {% endif %}<a class="btn" href="/echo">Setup</a></td>
         <td></td>
       </tr>
@@ -222,7 +220,8 @@ var pendingStops = {};
 
 document.addEventListener('submit', async function(event) {
   var form = event.target;
-  if (form.getAttribute('action') !== '/iris/install') return;
+  var action = form.getAttribute('action') || '';
+  if (action !== '/iris/install' && !action.startsWith('/install/')) return;
   event.preventDefault();
   if (form.dataset.submitting) return;
   form.dataset.submitting = 'true';
@@ -232,10 +231,11 @@ document.addEventListener('submit', async function(event) {
     var response = await fetch(form.action, {method: 'POST', body: new FormData(form)});
     if (!response.ok) {
       var result = await response.json();
-      throw new Error(irisErrorMessage(result, 'Iris install failed'));
+      throw new Error(irisErrorMessage(result, 'Installation failed'));
     }
-    var device = form.elements.device_session_id.value;
-    location.assign('/iris?device_session_id=' + encodeURIComponent(device));
+    location.assign(action === '/iris/install'
+      ? '/iris?device_session_id=' + encodeURIComponent(form.elements.device_session_id.value)
+      : '/');
   } catch (error) {
     alert(error.message);
     if (button) button.disabled = false;
@@ -251,7 +251,7 @@ async function svcAction(name, action, btn) {
   if (action === 'stop') pendingStops[name] = true;
   if (action === 'force-stop') delete pendingStops[name];
   actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Working"></span>';
-  statusCell.innerHTML = '<span class="muted">…</span>';
+  statusCell.innerHTML = '<div class="svc-status-content"><span class="muted">…</span></div>';
 
   try {
     var url = '/service/' + name + '/' + action;
@@ -348,26 +348,23 @@ function pollStatus(name) {
       var state = data.state || (data.running ? 'running' : 'stopped');
       var label = data.status_label || (data.running ? '● running' : '○ stopped');
       var html = name === 'iris-server' && state === 'ready' ? '' : '<span class="' + esc(state) + '">' + esc(label) + '</span>';
-      if (data.install_running) html += installProgressHtml(data.install_progress);
-      if (data.detail) {
-        html += '<div class="svc-detail">' + esc(data.detail) + '</div>';
-      }
+      var explanation = data.detail || '';
       if (data.children && data.children.length) {
-        html += '<div class="svc-children">';
-        html += data.children.map(function(child) {
-          var text = esc(child.name) + ': ' + esc(child.state);
-          if (child.detail) text += ' (' + esc(child.detail) + ')';
-          return '<span class="' + esc(child.state) + '">' + text + '</span>';
+        explanation += ' ' + data.children.map(function(child) {
+          return child.name + ': ' + child.state + (child.detail ? ' (' + child.detail + ')' : '');
         }).join('; ');
-        html += '</div>';
       }
-      var apkLink = name === 'iris-server' ? '<a class="mentra-apk-link" href="https://github.com/mekineer-com/MentraOS/releases">apk on github</a>' : '';
-      statusCell.innerHTML = apkLink + html;
+      html = '<div>' + html + (explanation ? ' ' + infoHtml(explanation, 'service:' + name) : '') + '</div>';
+      if (data.install_running) html += installProgressHtml(data.install_progress);
+      var apkLink = name === 'iris-server' ? '<a class="mentra-apk-link" href="https://github.com/mekineer-com/MentraOS/releases">apk on<br>github</a>' : '';
+      if (!statusCell.querySelector('.info-text:popover-open')) {
+        statusCell.innerHTML = '<div class="svc-status-content">' + apkLink + html + '</div>';
+      }
       var starting = pendingStarts[name] > Date.now() && !data.stoppable && data.startable !== false;
       if (name === 'iris-server') {
         actionsCell.innerHTML = irisParentActions();
       } else if (pendingStops[name]) {
-        statusCell.innerHTML = apkLink + '<span class="starting">◐ waiting for graceful shutdown</span>';
+        statusCell.innerHTML = '<div class="svc-status-content">' + apkLink + '<span class="starting">◐ stopping</span></div>';
         actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Stopping"></span>';
       } else if (starting) {
         actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Starting"></span>';

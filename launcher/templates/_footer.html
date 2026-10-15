@@ -2,9 +2,11 @@
 .community-footer { display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:.8rem; margin-top:2rem; padding:2rem 0 1rem; border-top:1px solid #333; color:#aaa; }
 .community-footer a { display:inline-flex; align-items:center; gap:.35rem; color:#aaa; text-decoration:none; }
 .community-footer a:hover { color:#eee; text-decoration:underline; }
+.community-footer .launcher-version { margin-right:auto; }
 .community-footer svg, .community-footer img { width:1.2rem; height:1.2rem; }
 </style>
 <footer class="community-footer" aria-label="OpenAlma community">
+  <span class="launcher-version">{{ launcher_version }}</span>
   <span>Visit us on:</span>
   <a href="https://openalma.org" target="_blank" rel="noopener noreferrer"><img src="/favicon.svg" alt="">OpenAlma</a>
   <a href="https://github.com/mekineer-com/OpenAlma" target="_blank" rel="noopener noreferrer">

@@ -83,7 +83,7 @@ The component manifest selects the matching prebuilt server package.
 
 ## Notes
 
-- Development sources prepare Iris's computer-side tools automatically after a
+- OpenAlma prepares Iris's computer-side tools automatically after a
   phone connects. The main row has APK/QR/Setup links only; installing Iris on a
   phone still requires its Install action. Stock's explicit Install prepares
   tools as needed. Preparation failures offer Retry in Setup.

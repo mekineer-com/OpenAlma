@@ -3,7 +3,8 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const {test} = require('node:test');
 
-const source = fs.readFileSync(__dirname + '/iris-services.js', 'utf8');
+const source = fs.readFileSync(__dirname + '/launcher.js', 'utf8') + '\n' +
+  fs.readFileSync(__dirname + '/iris-services.js', 'utf8');
 const installation = {
   device_session_id: 'disposable-phone', display_name: 'Test Phone', metadata_known: true,
   host_package: 'com.mentra.mentra.openalma', state: 'ready', status_label: 'Host ready',
@@ -33,7 +34,7 @@ test('Services preserves rows and Rename drafts through outages, then restores c
   const save = {disabled: false};
   const input = {value: 'Unsaved name'};
   const status = {};
-  const detail = {};
+  const detail = {querySelector: () => null};
   let install, forget;
   const actions = {
     set innerHTML(value) {
@@ -70,7 +71,7 @@ test('Services preserves rows and Rename drafts through outages, then restores c
   assert.equal(row.removed, undefined);
   assert.equal(input.value, 'Unsaved name');
   assert.equal(status.textContent, 'Status unavailable');
-  assert.equal(detail.textContent, 'MCP unavailable');
+  assert.equal(detail.textContent, '');
   for (const button of [name, save, install, forget]) assert.equal(button.disabled, true);
   rejectRequest(new Error('MCP unavailable'));
   await pendingForget;
@@ -80,6 +81,14 @@ test('Services preserves rows and Rename drafts through outages, then restores c
   for (const button of [name, save, install, forget]) assert.equal(button.disabled, false);
   assert.equal(input.value, 'Unsaved name');
   assert.equal(status.textContent, 'Host ready');
+  context.renderIrisInstallations({...ready, installations: [{...installation, detail: 'Phone explanation'}]});
+  assert.match(detail.innerHTML, /info:phone:disposable-phone/);
+  assert.match(detail.innerHTML, /Phone explanation/);
+  const shown = detail.innerHTML;
+  detail.querySelector = () => ({});
+  context.renderIrisInstallations({...ready, installations: [{...installation, detail: 'Changed explanation'}]});
+  assert.equal(detail.innerHTML, shown);
+  detail.querySelector = () => null;
   context.renderIrisInstallations({...ready, blocked: true});
   assert.equal(install.disabled, true);
   assert.equal(context.irisInstallDisabled({}), true);

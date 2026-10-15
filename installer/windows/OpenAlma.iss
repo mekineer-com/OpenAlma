@@ -28,9 +28,12 @@ UninstallDisplayIcon={app}\OpenAlma.ico
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: checkedonce
 
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\launcher\runtime\bun"
+
 [Files]
 Source: "..\..\launcher\windows_stop.py"; Flags: dontcopy
-Source: "..\..\launcher\*"; DestDir: "{app}\launcher"; Excludes: ".venv\*,__pycache__\*,*.pyc"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\launcher\*"; DestDir: "{app}\launcher"; Excludes: ".venv\*,__pycache__\*,*.pyc,runtime\bun\*"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\docs\favicon.svg"; DestDir: "{app}\docs"; Flags: ignoreversion
 Source: "..\..\release-components.json"; DestDir: "{app}"; Flags: ignoreversion; AfterInstall: PrepareLauncher
 Source: "OpenAlma.ico"; DestDir: "{app}"; Flags: ignoreversion
@@ -104,7 +107,6 @@ begin
   Winget := FindWinget();
   if Winget = '' then
   begin
-    MsgBox('Windows Package Manager (winget) is required to install missing prerequisites.', mbError, MB_OK);
     Result := False;
     Exit;
   end;
@@ -167,17 +169,17 @@ begin
   begin
     if MsgBox('OpenAlma requires Git to install its components. Install it now?', mbConfirmation, MB_YESNO) <> IDYES then
     begin
-      Result := 'Git is required.';
+      Result := 'Install Git from https://git-scm.com/download/win, then run OpenAlma Setup again.';
       Exit;
     end;
     if not InstallWithWinget('Git.Git', 'user') and not InstallWithWinget('Git.Git', '') then
     begin
-      Result := 'Git installation failed.';
+      Result := 'Git installation failed. Install it from https://git-scm.com/download/win, then run OpenAlma Setup again.';
       Exit;
     end;
     if FindGit() = '' then
     begin
-      Result := 'Git was installed but could not be found.';
+      Result := 'Git could not be found. Install it from https://git-scm.com/download/win, then run OpenAlma Setup again.';
       Exit;
     end;
   end;

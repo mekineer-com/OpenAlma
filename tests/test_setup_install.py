@@ -509,6 +509,7 @@ def test_begin_core_install_reuses_active_operation(tmp_path, monkeypatch):
     finish = threading.Event()
 
     def fake_install(_operation):
+        (tmp_path / setup_install.RECOVERY_FILE).write_text("{}")
         started.set()
         finish.wait(timeout=2)
 
@@ -1125,6 +1126,9 @@ finally:
     try:
         assert child.stdout.readline().strip() == "ready"
         assert setup_install.operation_status(tmp_path, service)["state"] == "running"
+        if service == "memu-server":
+            (tmp_path / setup_install.RECOVERY_FILE).write_text("{}")
+            assert setup_install.begin_core_install(tmp_path)["state"] == "running"
         status = (setup_install.setup_status(tmp_path) if service == "memu-server"
                   else setup_install.optional_setup_status(service, tmp_path))
         assert status["install_running"] and not status["startable"]
@@ -1186,18 +1190,16 @@ def test_operation_worker_reports_early_failure_and_releases_lock(tmp_path, monk
 
 @pytest.mark.parametrize("corrupt", [False, True])
 @pytest.mark.parametrize("reported_version", ["1.3.14", "wrong-version"])
-@pytest.mark.parametrize("explicit", [False, True])
-def test_private_bun_download_is_verified_and_reused(tmp_path, monkeypatch, corrupt, reported_version, explicit):
+@pytest.mark.parametrize("old_system_bun", [False, True])
+def test_private_bun_download_is_verified_and_reused(tmp_path, monkeypatch, corrupt, reported_version, old_system_bun):
     monkeypatch.setattr(setup_install.sys, "platform", "win32")
     monkeypatch.setattr(setup_install.platform, "machine", lambda: "AMD64")
-    binary = tmp_path / ("staged/bun.exe" if explicit else ".tools/bun.exe")
-    runner = tmp_path / "runner-bun.exe"
-    runner.write_bytes(b"unrelated working Bun")
-    monkeypatch.setattr(setup_install.settings, "bun_binary", lambda _root: runner if explicit else binary)
-    options = {"destination": binary} if explicit else {}
-    if explicit:
-        binary.parent.mkdir()
-        binary.write_bytes(b"previous staged Bun")
+    binary = tmp_path / ".tools/bun.exe"
+    system_bun = tmp_path / "system-bun.exe"
+    if old_system_bun:
+        system_bun.write_bytes(b"old system runtime")
+    selected = system_bun if old_system_bun else binary
+    monkeypatch.setattr(setup_install.settings, "bun_binary", lambda _root: binary if binary.exists() else selected)
     target = "bun-windows-x64-baseline"
     url = f"https://github.com/oven-sh/bun/releases/download/bun-v{setup_install.BUN_VERSION}/{target}.zip"
     zipped = BytesIO()
@@ -1216,27 +1218,27 @@ def test_private_bun_download_is_verified_and_reused(tmp_path, monkeypatch, corr
     monkeypatch.setattr(setup_install.urllib.request, "urlopen", download)
     def probe(path):
         probes.append(path)
-        if path == runner:
-            return "9.0.0"
+        if path == system_bun:
+            return "1.1.0"
         return reported_version if path.exists() else None
     monkeypatch.setattr(setup_install.settings, "bun_version", probe)
     if corrupt:
         with pytest.raises(setup_install.SetupError, match="SHA256 mismatch"):
-            setup_install._install_bun(tmp_path, StringIO(), **options)
-        assert probes == ([] if explicit else [binary])
+            setup_install._install_bun(tmp_path, StringIO())
+        assert probes == [selected]
     elif reported_version != setup_install.BUN_VERSION:
         with pytest.raises(setup_install.SetupError, match="expected version"):
-            setup_install._install_bun(tmp_path, StringIO(), **options)
+            setup_install._install_bun(tmp_path, StringIO())
     else:
-        setup_install._install_bun(tmp_path, StringIO(), **options)
+        setup_install._install_bun(tmp_path, StringIO())
         assert binary.read_bytes() == b"fictional runtime"
         assert probes[-1].name == "bun.exe"
-        if not explicit:
-            setup_install._install_bun(tmp_path, StringIO())
+        setup_install._install_bun(tmp_path, StringIO())
         assert requests == [url]
     if corrupt or reported_version != setup_install.BUN_VERSION:
-        assert binary.read_bytes() == b"previous staged Bun" if explicit else not binary.exists()
-    assert runner.read_bytes() == b"unrelated working Bun"
+        assert not binary.exists()
+    if old_system_bun:
+        assert system_bun.read_bytes() == b"old system runtime"
     assert not (tmp_path / "outside.txt").exists()
     assert not list(binary.parent.glob(".bun-install-*"))
 
@@ -1260,6 +1262,8 @@ def test_iris_readiness_requires_its_private_runtime_and_installer_cli(tmp_path,
     (cli / "package.json").touch()
     assert setup_install.optional_issue("iris-server", tmp_path) == ""
     assert setup_install._optional_commands("iris-server", tmp_path)[0][0] == [str(binary), "install", "--frozen-lockfile"]
+    monkeypatch.setattr(setup_install.settings, "bun_version", lambda _path: "1.1.0")
+    assert setup_install.optional_issue("iris-server", tmp_path) == "Iris runtime needs preparation"
 
 
 @pytest.mark.parametrize("block", ["branch", "workspace"])

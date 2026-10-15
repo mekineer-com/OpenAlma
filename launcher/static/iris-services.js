@@ -31,7 +31,7 @@ function renderIrisInstallations(data) {
       var status = row.querySelector('.iris-status');
       status.className = 'iris-status unavailable';
       status.textContent = 'Status unavailable';
-      row.querySelector('.iris-detail').textContent = data.detail || 'Iris app status is unavailable.';
+      row.querySelector('.iris-detail').textContent = '';
       row.querySelectorAll('.iris-name, button[type="submit"], [data-forget]').forEach(function(button) { button.disabled = true; });
       row.querySelector('.iris-actions').irisActionsHtml = null;
     });
@@ -47,8 +47,8 @@ function renderIrisInstallations(data) {
       row.innerHTML = '<td><span class="iris-name-view"><button class="iris-name" type="button"></button></span>' +
         '<form hidden><input name="display_name" aria-label="Display name" required> ' +
         '<button class="btn" type="submit">Save</button> <button class="btn" type="button">Cancel</button></form></td>' +
-        '<td><span class="iris-status"></span><div class="svc-detail iris-detail"></div>' +
-        '<div class="svc-detail iris-soul"></div></td><td class="iris-actions"></td><td></td>';
+        '<td><div class="svc-status-content"><div><span class="iris-status"></span> <span class="iris-detail"></span></div>' +
+        '<div class="svc-detail iris-soul"></div></div></td><td class="iris-actions"></td><td></td>';
       var view = row.querySelector('.iris-name-view');
       var form = row.querySelector('form');
       var input = form.elements.display_name;
@@ -103,7 +103,10 @@ function renderIrisInstallations(data) {
     var status = row.querySelector('.iris-status');
     status.className = 'iris-status ' + (installation.state || 'unknown');
     status.textContent = installation.status_label || 'Status unavailable';
-    row.querySelector('.iris-detail').textContent = installation.detail || '';
+    var detail = row.querySelector('.iris-detail');
+    if (!detail.querySelector('.info-text:popover-open')) {
+      detail.innerHTML = installation.detail ? infoHtml(installation.detail, 'phone:' + id) : '';
+    }
     row.querySelector('.iris-soul').textContent = 'Soul: ' + (installation.soul_id || 'Not chosen');
     var forgetBlocked = installation.active || installation.host_reporting ||
       (data.release_device_session_id === id && irisInstallerBusy(data));

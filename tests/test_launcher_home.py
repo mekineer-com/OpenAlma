@@ -142,10 +142,21 @@ def test_home_groups_iris_by_reported_phones_not_checkout(tmp_path, monkeypatch)
     monkeypatch.setattr(app.services, "status", lambda _spec: {"installations": [], "state": "ready"})
     client = TestClient(app.app, base_url="http://127.0.0.1")
     assert 'data-service="iris-server" data-installed="false"' in client.get("/").text
+    registry = tmp_path / "openalma/mentra/installations.json"
+    registry.parent.mkdir(parents=True)
+    registry.write_text(json.dumps({services.IRIS_PACKAGE: {"pending-ticket": {"installation_ticket": "pending-ticket"}}}))
+    assert 'data-service="iris-server" data-installed="false"' in client.get("/").text
+    registry.write_text(json.dumps({services.IRIS_PACKAGE: {"fictional-phone": {
+        "host": {"host_package": "com.mentra.mentra.openalma"},
+    }}}))
     monkeypatch.setattr(app.services, "status", lambda _spec: {
         "installations": [{"device_session_id": "fictional-phone", "host_reporting": True}], "state": "ready",
     })
     assert 'data-service="iris-server" data-installed="true"' in client.get("/").text
+    monkeypatch.setattr(app.services, "status", lambda _spec: {"state": "unavailable", "detail": "Server stopped"})
+    assert 'data-service="iris-server" data-installed="true"' in client.get("/").text
+    registry.write_text(json.dumps({services.IRIS_PACKAGE: {}}))
+    assert 'data-service="iris-server" data-installed="false"' in client.get("/").text
 
 
 def test_echo_install_is_one_time_and_shared_between_browsers(tmp_path, monkeypatch):
@@ -219,6 +230,7 @@ def test_launcher_mutations_reject_foreign_browser_origins(monkeypatch):
 
 
 def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, monkeypatch):
+    monkeypatch.setattr(app.setup_install, "read_packaged_release", lambda: "v0.1.18")
     spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
     installations = [
         {"device_session_id": "stock-test", "display_name": "Stock test",
@@ -257,6 +269,7 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
         for link in ("https://openalma.org", "https://github.com/mekineer-com/OpenAlma", "https://discord.gg/MyhGFhdN3b"):
             assert f'href="{link}"' in response.text
         assert 'aria-label="OpenAlma community"' in response.text
+        assert '<span class="launcher-version">v0.1.18</span>' in response.text
         if page.startswith("/iris"):
             visible = response.text.split('<script src="/static/vendor/qrcode.min.js">', 1)[0]
             assert "OpenAlma Mentra" in visible
@@ -521,7 +534,7 @@ def test_active_core_enables_optional_install_actions(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert 'action="/install/iris-server"' not in response.text
     parent = response.text.split('<tr data-service="iris-server"', 1)[1].split('</tr>', 1)[0]
-    assert '>apk on github</a>' in parent
+    assert '>apk on<br>github</a>' in parent
     assert '>QR</button>' in parent and '>Setup</a>' in parent
     assert '<form' not in parent and '>Install</button>' not in parent
     for name in ("atomic", "channels-daemon", "sillytavern"):

@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from types import SimpleNamespace
 import time
 import venv
@@ -14,6 +15,66 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "launcher"))
 
 import services  # noqa: E402
+
+
+@pytest.mark.parametrize("operation", ["read", "write"])
+def test_pid_cleanup_waits_for_file_handles(tmp_path, monkeypatch, operation):
+    spec = services.ServiceSpec("fixture", "Fixture", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    spec.pid_path.write_text("123")
+    opened, release, attempting, done = (threading.Event() for _ in range(4))
+    errors = []
+    method = "read_text" if operation == "read" else "write_text"
+    original = getattr(Path, method)
+
+    def held_io(path, *args, **kwargs):
+        opened.set()
+        assert release.wait(2)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, method, held_io)
+
+    def work():
+        try:
+            if operation == "read":
+                services._read_pid(spec.pid_path)
+            else:
+                services._remember_verified_pid(spec, 456)
+        except Exception as exc:
+            errors.append(exc)
+
+    def cleanup():
+        attempting.set()
+        try:
+            services._clear_pid(spec)
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            done.set()
+
+    worker, cleaner = threading.Thread(target=work), threading.Thread(target=cleanup)
+    worker.start()
+    try:
+        assert opened.wait(2)
+        cleaner.start()
+        assert attempting.wait(2)
+        assert not done.wait(0.05)
+    finally:
+        release.set()
+        worker.join(2)
+        if cleaner.ident is not None:
+            cleaner.join(2)
+    assert not worker.is_alive() and not cleaner.is_alive()
+    assert errors == []
+    assert not spec.pid_path.exists()
+
+
+def test_pid_cleanup_does_not_hide_permission_errors(tmp_path, monkeypatch):
+    def denied(_path):
+        raise PermissionError("Fixture file permission")
+
+    monkeypatch.setattr(Path, "unlink", denied)
+    with pytest.raises(PermissionError, match="Fixture file permission"):
+        services._clear_pid(SimpleNamespace(pid_path=tmp_path / "pid"))
 
 
 @pytest.fixture
@@ -614,6 +675,16 @@ def test_iris_status_tracks_target_not_lock_and_preserves_rows_on_outage(tmp_pat
     assert unavailable["state"] == "unavailable"
     assert unavailable["detail"] == "Fictional outage"
     assert "installations" not in unavailable
+
+    mentra = {"state": "stopped", "installations": [{"device_session_id": "stock-test",
+              "package_name": services.IRIS_PACKAGE}]}
+    monkeypatch.setattr(services, "mentra_readiness", lambda: {"ready": False, "step": "server"})
+    stopped = services.status(spec)
+    assert stopped["detail"] == "Start memU Server in Services"
+    assert stopped["installations"][0]["detail"] == ""
+    mentra["installations"][0]["seen_at"] = time.time() - 3600
+    assert services.status(spec)["installations"][0]["detail"].startswith("Last reached server")
+    monkeypatch.setattr(services, "mentra_readiness", lambda: {"ready": True})
 
     mentra = {"state": "ready"}
     assert services.status(spec)["installations"] == []
@@ -1367,11 +1438,15 @@ def test_stop_status_shows_force_only_with_failure_evidence(tmp_path, monkeypatc
         services._STOP_STARTED[spec.name] = services.time.monotonic()
     try:
         stuck = services._stop_status(spec, {"state": "stuck", "stuck": True})
+        with services._STOP_LOCK:
+            services._STOP_STARTED[spec.name] -= services.FORCE_STOP_RECOVERY_SECONDS
+        delayed = services._stop_status(spec, {"state": "stuck", "stuck": True})
     finally:
         with services._STOP_LOCK:
             services._STOP_THREADS.pop(spec.name, None)
             services._STOP_STARTED.pop(spec.name, None)
-    assert stuck["force_stoppable"] is True
+    assert stuck["force_stoppable"] is False
+    assert delayed["force_stoppable"] is True
 
 
 def test_stop_leaves_live_nonmatching_service_pidfile(tmp_path, monkeypatch):
@@ -1531,6 +1606,8 @@ def test_partial_windows_stop_keeps_waiting_without_resending(tmp_path, monkeypa
         services.stop(spec)
     services.stop(spec)
     assert calls == ["10", "20"]
+    assert not services._stop_status(spec, {"running": True})["force_stoppable"]
+    services._STOP_STARTED[spec.name] -= services.FORCE_STOP_RECOVERY_SECONDS
     assert services._stop_status(spec, {"running": True})["force_stoppable"]
 
 

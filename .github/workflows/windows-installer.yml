@@ -52,12 +52,6 @@ jobs:
           }
           if ($tag -notmatch '^v[A-Za-z0-9][A-Za-z0-9._-]{0,126}$') { throw "Invalid release tag: $tag" }
           "INSTALLER_VERSION=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Stage Bun and corresponding-source materials
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          python installer/windows/stage_bun.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build installer
         shell: pwsh
         run: |
@@ -80,10 +74,4 @@ jobs:
         with:
           name: OpenAlma-Windows-installer
           path: installer/windows/output/*.exe
-          if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        with:
-          name: OpenAlma-Bun-corresponding-source
-          path: installer/windows/output/bun-sources/
-          compression-level: 0
           if-no-files-found: error

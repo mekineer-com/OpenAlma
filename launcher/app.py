@@ -30,7 +30,10 @@ import soul
 ROOT = Path(__file__).resolve().parent
 LAUNCHER_ID = "openalma-launcher"
 _ECHO_CONFIRM_LOCKS: dict[str, Lock] = {}
-templates = Jinja2Templates(directory=str(ROOT / "templates"))
+templates = Jinja2Templates(
+    directory=str(ROOT / "templates"),
+    context_processors=[lambda _request: {"launcher_version": setup_install.read_packaged_release() or "Development"}],
+)
 
 CONFIG_LABELS: dict[str, str] = {
     "memu-server-config": "mcp-memu-server/config.json",
@@ -294,7 +297,7 @@ def index(request: Request) -> HTMLResponse:
                 iris = {"name": spec.name, "label": spec.label} | _setup_aware_status(
                     spec, setup_root, verify_runtime=False,
                 )
-                installed = bool(iris.get("installations"))
+                installed = services.has_iris_installations(setup_root)
                 (rows if installed else not_installed).append(iris)
                 continue
             if services.is_installed(spec):

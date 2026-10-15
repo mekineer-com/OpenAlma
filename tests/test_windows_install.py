@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "launcher"))
 
@@ -14,29 +15,25 @@ import windows_install  # noqa: E402
 import windows_remove  # noqa: E402
 
 
-@pytest.mark.parametrize("platform,version", [("win32", "1.3.14"), ("win32", None), ("linux", "1.3.14")])
-def test_bundled_bun_selection_preserves_source_fallbacks(tmp_path, monkeypatch, platform, version):
+@pytest.mark.parametrize("platform", ["win32", "linux", "darwin"])
+def test_bun_selection_prefers_private_then_system_then_home(tmp_path, monkeypatch, platform):
     monkeypatch.setattr(settings.sys, "platform", platform)
-    monkeypatch.setattr(settings, "LAUNCHER_DIR", tmp_path / "launcher")
-    monkeypatch.setattr(settings, "bun_version", lambda _path: version)
     monkeypatch.setattr(settings.shutil, "which", lambda _name: str(tmp_path / "system-bun"))
     monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / "home"))
     root = tmp_path / "apps"
     private = root / ".tools" / ("bun.exe" if platform == "win32" else "bun")
     private.parent.mkdir(parents=True)
     private.touch()
-    bundled = tmp_path / "launcher/runtime/bun/bun.exe"
-    expected = bundled if platform == "win32" and version else private
-    assert settings.bun_binary(root) == expected
+    assert settings.bun_binary(root) == private
     private.unlink()
-    expected = bundled if platform == "win32" and version else tmp_path / "system-bun"
-    assert settings.bun_binary(root) == expected
+    assert settings.bun_binary(root) == tmp_path / "system-bun"
     monkeypatch.setattr(settings.shutil, "which", lambda _name: None)
     home = tmp_path / "home/.bun/bin" / private.name
     home.parent.mkdir(parents=True)
     home.touch()
-    expected = bundled if platform == "win32" and version else home
-    assert settings.bun_binary(root) == expected
+    assert settings.bun_binary(root) == home
+    home.unlink()
+    assert settings.bun_binary(root) == private
 
 
 @pytest.mark.parametrize("failure", ["timeout", "nonzero", "empty"])
@@ -112,6 +109,9 @@ def test_windows_installer_uses_openalma_icon_everywhere():
     assert 'Type: filesandordirs; Name: "{app}\\launcher\\.venv"' in script
     assert 'Type: filesandordirs; Name: "{app}\\launcher\\__pycache__"' in script
     assert 'Type: files; Name: "{app}\\.openalma-version"' in script
+    install_delete = script.split('[InstallDelete]', 1)[1].split('[Files]', 1)[0]
+    assert install_delete.strip() == 'Type: filesandordirs; Name: "{app}\\launcher\\runtime\\bun"'
+    assert 'runtime\\bun\\*' in script.split('Excludes:', 1)[1].split(';', 1)[0]
     assert "{pf64}\\Git\\cmd\\git.exe" in script
     assert "Result := StopInstalledLauncher(True)" in script
     assert "Python := PythonLauncher" in script
@@ -139,6 +139,10 @@ def test_windows_installer_bootstraps_pinned_python_without_winget():
     assert "RunHidden(PythonLauncher, '-3.12 --version', ResultCode)" in verification
     assert "ResultCode <> 0" in verification
     assert "InstallWithWinget('Git.Git', 'user') and not InstallWithWinget('Git.Git', '')" in script
+    assert 'https://git-scm.com/download/win' in prerequisites
+    assert 'then run OpenAlma Setup again.' in prerequisites
+    winget = script.split('function InstallWithWinget(', 1)[1].split('function EnsurePrerequisites', 1)[0]
+    assert 'MsgBox' not in winget
 
 
 def test_windows_configuration_preserves_release_and_other_settings(tmp_path, monkeypatch):
@@ -357,3 +361,16 @@ def test_remove_everything_confirms_exact_root_with_no_as_default(tmp_path, monk
     assert len(prompts) == 1 and str(root.resolve()) in prompts[0][1]
     assert prompts[0][3] & 0x00000100  # MB_DEFBUTTON2 makes No the default.
     assert root.exists() is (answer != 6)
+
+
+def test_candidate_installer_version_uses_validated_environment_not_script_interpolation():
+    path = Path(__file__).resolve().parents[1] / ".github/workflows/windows-installer.yml"
+    job = yaml.safe_load(path.read_text())["jobs"]["build"]
+    select = next(step["run"] for step in job["steps"] if step.get("name") == "Select installer version")
+    build = next(step["run"] for step in job["steps"] if step.get("name") == "Build installer")
+    assert r"\Av[0-9]+\.[0-9]+\.[0-9]+\z" in select
+    assert '$env:BUILD_REF_NAME' in select and "'v0.0.0-dev'" in select
+    assert '"INSTALLER_VERSION=$tag"' in select
+    assert '$tag = $env:INSTALLER_VERSION' in build
+    assert '$env:BUILD_REF_TYPE -eq "tag" -or $env:CANDIDATE_VERSION' in build
+    assert '${{ inputs.' not in select + build and '${{ github.ref_' not in select + build
