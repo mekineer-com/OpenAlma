@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import urllib.request
 from pathlib import Path
 
@@ -21,6 +22,37 @@ import setup_install  # noqa: E402
 def download(url: str, target: Path) -> None:
     with urllib.request.urlopen(url, timeout=60) as response, target.open("wb") as output:
         shutil.copyfileobj(response, output)
+
+
+def stage_rust(packaging: Path, sources: Path, licenses) -> None:
+    # ponytail: frozen runtime inventory; rederive from Windows Cargo.lock when Bun is upgraded.
+    entries = json.loads((packaging / "bun-rust-sources.json").read_text(encoding="utf-8"))
+    if not entries:
+        return
+    with tempfile.TemporaryDirectory() as temporary, tarfile.open(
+        sources / "bun-lolhtml-runtime-source.tar.gz", "w:gz",
+    ) as bundle:
+        for entry in entries:
+            name = f"{entry['crate']}-{entry['version']}"
+            archive = Path(temporary) / f"{name}.crate"
+            url = f"https://static.crates.io/crates/{entry['crate']}/{archive.name}"
+            download(url, archive)
+            with archive.open("rb") as content:
+                if hashlib.file_digest(content, "sha256").hexdigest() != entry["checksum"]:
+                    raise RuntimeError(f"Rust source checksum mismatch: {name}")
+            with tarfile.open(archive, "r:gz") as package:
+                for path in entry["licenses"]:
+                    try:
+                        member = package.getmember(f"{name}/{path}")
+                    except KeyError as exc:
+                        raise RuntimeError(f"Missing Rust license material: {name}/{path}") from exc
+                    if not member.isfile() or not member.size:
+                        raise RuntimeError(f"Empty Rust license material: {name}/{path}")
+                    text = package.extractfile(member).read().decode("utf-8")
+                    if not text.strip():
+                        raise RuntimeError(f"Empty Rust license material: {name}/{path}")
+                    licenses.write(f"\n{'=' * 72}\n{url}#{path}\n{'=' * 72}\n{text}\n")
+            bundle.add(archive, arcname=archive.name)
 
 
 def stage(root: Path) -> None:
@@ -62,7 +94,8 @@ def stage(root: Path) -> None:
                             required.discard(member.name.partition("/")[2])
                 if required:
                     raise RuntimeError(f"Incomplete source archive: {archive.name}")
-    for name in ("bun-sources.json", "BUN-REBUILD.md"):
+        stage_rust(packaging, sources, licenses)
+    for name in ("bun-sources.json", "bun-rust-sources.json", "BUN-REBUILD.md"):
         shutil.copyfile(packaging / name, sources / name)
     notice = (
         f"OpenAlma includes the official unmodified Bun {revision} as a separate executable.\n"
@@ -71,7 +104,8 @@ def stage(root: Path) -> None:
         "This software is based in part on the work of the Independent JPEG Group.\n"
         "You may modify/rebuild/relink Bun with modified LGPL components under their licenses;\n"
         "OpenAlma imposes no additional restriction on those rights.\n"
-        "The matching source archives, bun-sources.json and BUN-REBUILD.md must accompany\n"
+        "The matching source archives, bun-sources.json, bun-rust-sources.json and\n"
+        "BUN-REBUILD.md must accompany\n"
         "the installer at https://github.com/mekineer-com/OpenAlma/releases .\n"
         "They are separate downloads, not prerequisites for installing or running OpenAlma.\n"
     )

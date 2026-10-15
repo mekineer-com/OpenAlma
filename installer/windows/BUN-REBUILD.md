@@ -8,12 +8,28 @@ separate downloads for developers who want to inspect, modify or relink Bun.
 ## Corresponding Sources
 
 `bun-sources.json` records immutable source revisions and notice paths. The
-three accompanying `*-source.tar.gz` files contain the complete upstream Bun,
-patched WebKit and TinyCC trees, including their build scripts and licenses.
+four Git-source `*-source.tar.gz` files contain the complete upstream Bun,
+patched WebKit, TinyCC and pinned lol-html trees, including their build scripts
+and licenses. The fifth archive, `bun-lolhtml-runtime-source.tar.gz`, contains
+the original `.crate` archives
+listed in `bun-rust-sources.json`, with versions and archive SHA256 checksums
+from the pinned lol-html `c-api/Cargo.lock`. Its 29 registry crates are the
+Windows x64 normal dependency closure, excluding build/dev dependencies and
+proc-macro branches. Notice paths are relative to each archive's
+`<crate>-<version>/` directory; their contents are included in `BUN-LICENSES.txt`.
+`selectors` supplies its MPL notice in `lib.rs`, not a standalone license file;
+the full MPL-2.0 text is included from `cssparser` and `dtoa-short`. `siphasher`
+supplies its attribution and MIT/Apache choice in `COPYING`; full standard
+license texts are also included from other crates.
+
+The registry archives do not replace the matching lol-html Git source at the
+revision in `bun-sources.json`: its `lol_html` and `lol_html_c_api` path packages
+are not crates.io artifacts. Their matching tree is in the lol-html Git-source
+archive, separate from the registry bundle.
 `BUN-SHA256SUMS` records the staged files' SHA256 hashes. Other dependency pins
-and patches are in Bun's `scripts/build/deps/`, `patches/` and lockfiles; its
-build tools retrieve those dependencies, including Rust and npm dependencies.
-This is not an offline build kit.
+and patches are in Bun's `scripts/build/deps/`, `patches/` and dependency
+lockfiles; its build tools retrieve the remaining Rust, npm and other build
+dependencies. This is not an offline build kit or a Cargo vendor directory.
 
 The Bun source revision is `0d9b296af33f2b851fcbf4df3e9ec89751734ba4`;
 WebKit is `5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b`; TinyCC is
@@ -31,10 +47,19 @@ Zig and other build dependencies. Local WebKit additionally needs its documented
 Make/Cygwin tools. This is a substantial developer build, never an installer step.
 
 Extract Bun, and place the extracted matching WebKit tree at `vendor/WebKit`
-inside it, or set `BUN_WEBKIT_PATH` to that tree. Keep Bun's TinyCC patch in
-`patches/tinycc/tcc.h.patch`; the build scripts apply it to their pinned source.
-Modify the library sources as desired. From Bun's source directory, load its
-Visual Studio shell and use the local-WebKit build profile:
+inside it, or set `BUN_WEBKIT_PATH` to that tree. Modify that local WebKit tree
+as desired.
+
+For TinyCC, retain Bun's `patches/tinycc/tcc.h.patch`. Make your changes against
+the matching TinyCC source with that patch applied, save them as an additional
+patch, and register its path after the existing patch in the `patches` array
+of `scripts/build/deps/tinycc.ts`. Do not keep your only edits in
+`vendor/tinycc`: the managed fetch deletes and re-extracts that directory when
+its `.ref` stamp is absent or the source/patch identity changes. Registered
+patches are reapplied to the fetched source.
+
+From Bun's source directory, load its Visual Studio shell and use the
+local-WebKit build profile:
 
 ```powershell
 .\scripts\vs-shell.ps1

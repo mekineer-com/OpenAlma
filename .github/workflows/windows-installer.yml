@@ -7,6 +7,12 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      candidate_version:
+        description: Optional numeric version for pre-tag candidate testing (for example v0.1.16)
+        required: false
+        default: ""
+        type: string
 
 jobs:
   build:
@@ -14,6 +20,10 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
+    env:
+      BUILD_REF_TYPE: ${{ github.ref_type }}
+      BUILD_REF_NAME: ${{ github.ref_name }}
+      CANDIDATE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_version || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -29,6 +39,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
+      - name: Select installer version
+        shell: pwsh
+        run: |
+          if ($env:BUILD_REF_TYPE -eq "tag") {
+            $tag = $env:BUILD_REF_NAME
+          } elseif ($env:CANDIDATE_VERSION) {
+            if ($env:CANDIDATE_VERSION -cnotmatch '\Av[0-9]+\.[0-9]+\.[0-9]+\z') { throw 'Use a numeric candidate version such as v0.1.16' }
+            $tag = $env:CANDIDATE_VERSION
+          } else {
+            $tag = 'v0.0.0-dev'
+          }
+          if ($tag -notmatch '^v[A-Za-z0-9][A-Za-z0-9._-]{0,126}$') { throw "Invalid release tag: $tag" }
+          "INSTALLER_VERSION=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Stage Bun and corresponding-source materials
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -38,9 +61,8 @@ jobs:
       - name: Build installer
         shell: pwsh
         run: |
-          $tag = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "v0.0.0-dev" }
-          if ($tag -notmatch '^v[A-Za-z0-9][A-Za-z0-9._-]{0,126}$') { throw "Invalid release tag: $tag" }
-          if ("${{ github.ref_type }}" -eq "tag") {
+          $tag = $env:INSTALLER_VERSION
+          if ($env:BUILD_REF_TYPE -eq "tag" -or $env:CANDIDATE_VERSION) {
             $manifest = Get-Content release-components.json | ConvertFrom-Json
             $repositories = $manifest.services.psobject.Properties |
               ForEach-Object { $_.Value.repositories }

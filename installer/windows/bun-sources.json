@@ -13,7 +13,7 @@
   {"name":"libspng","repository":"randy408/libspng","revision":"fb768002d4288590083a476af628e51c3f1d47cd","licenses":["LICENSE"]},
   {"name":"libuv","repository":"oven-sh/libuv","revision":"4dcfac4780d394e0dc2d3fb30335ca01b553eb46","licenses":["LICENSE","LICENSE-extra"]},
   {"name":"libwebp","repository":"webmproject/libwebp","revision":"b7e29b9d75bd31422b00c2a446d49d7af06c328d","licenses":["COPYING","PATENTS"]},
-  {"name":"lolhtml","repository":"cloudflare/lol-html","revision":"77127cd2b8545998756e8d64e36ee2313c4bb312","licenses":["LICENSE"]},
+  {"name":"lolhtml","repository":"cloudflare/lol-html","revision":"77127cd2b8545998756e8d64e36ee2313c4bb312","source":true,"licenses":["LICENSE"]},
   {"name":"lshpack","repository":"litespeedtech/ls-hpack","revision":"8905c024b6d052f083a3d11d0a169b3c2735c8a1","licenses":["LICENSE"]},
   {"name":"lsqpack","repository":"litespeedtech/ls-qpack","revision":"1e9c5b8e59f8161c54f168a570c8bfdc59ded0c3","licenses":["LICENSE"]},
   {"name":"lsquic","repository":"litespeedtech/lsquic","revision":"3181911301b1aa4f54c1ed690901abc674ee08fb","licenses":["LICENSE","LICENSE.chrome"]},
