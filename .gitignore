@@ -2,3 +2,5 @@ __pycache__/
 .pytest_cache/
 /mentra/
 imports/*.db*
+/launcher/runtime/
+/installer/windows/output/

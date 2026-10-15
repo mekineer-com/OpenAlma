@@ -817,11 +817,12 @@ def _npm_command(*arguments: str) -> list[str] | str:
     return _package_command("npm", *arguments)
 
 
-def _install_bun(root: Path, log: Any) -> None:
-    binary = settings.bun_binary(root)
-    if version := settings.bun_version(binary):
-        log.write(f"Using existing Bun {version}: {binary}\n")
-        return
+def _install_bun(root: Path, log: Any, *, destination: Path | None = None) -> None:
+    if destination is None:
+        binary = settings.bun_binary(root)
+        if version := settings.bun_version(binary):
+            log.write(f"Using existing Bun {version}: {binary}\n")
+            return
     system = {"win32": "windows", "linux": "linux", "darwin": "darwin"}.get(sys.platform)
     machine = platform.machine().lower()
     arch = {"x86_64": "x64", "amd64": "x64", "aarch64": "aarch64", "arm64": "aarch64"}.get(machine)
@@ -841,7 +842,7 @@ def _install_bun(root: Path, log: Any) -> None:
     digest = asset.get("digest", "")
     if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
         raise SetupError("Bun package has no SHA256 digest")
-    binary = root / ".tools" / ("bun.exe" if sys.platform == "win32" else "bun")
+    binary = destination if destination is not None else root / ".tools" / ("bun.exe" if sys.platform == "win32" else "bun")
     binary.parent.mkdir(parents=True, exist_ok=True)
     log.write(f"Downloading {url}\n")
     log.flush()

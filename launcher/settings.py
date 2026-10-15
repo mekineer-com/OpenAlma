@@ -133,6 +133,9 @@ def atomic_server_binary(root: Path) -> Path:
 
 def bun_binary(root: Path) -> Path:
     filename = "bun.exe" if sys.platform == "win32" else "bun"
+    bundled = LAUNCHER_DIR / "runtime" / "bun" / filename
+    if sys.platform == "win32" and bun_version(bundled):
+        return bundled
     private = root / ".tools" / filename
     if private.exists():
         return private

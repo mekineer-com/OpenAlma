@@ -13,6 +13,31 @@ import windows_install  # noqa: E402
 import windows_remove  # noqa: E402
 
 
+@pytest.mark.parametrize("platform,version", [("win32", "1.3.14"), ("win32", None), ("linux", "1.3.14")])
+def test_bundled_bun_selection_preserves_source_fallbacks(tmp_path, monkeypatch, platform, version):
+    monkeypatch.setattr(settings.sys, "platform", platform)
+    monkeypatch.setattr(settings, "LAUNCHER_DIR", tmp_path / "launcher")
+    monkeypatch.setattr(settings, "bun_version", lambda _path: version)
+    monkeypatch.setattr(settings.shutil, "which", lambda _name: str(tmp_path / "system-bun"))
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / "home"))
+    root = tmp_path / "apps"
+    private = root / ".tools" / ("bun.exe" if platform == "win32" else "bun")
+    private.parent.mkdir(parents=True)
+    private.touch()
+    bundled = tmp_path / "launcher/runtime/bun/bun.exe"
+    expected = bundled if platform == "win32" and version else private
+    assert settings.bun_binary(root) == expected
+    private.unlink()
+    expected = bundled if platform == "win32" and version else tmp_path / "system-bun"
+    assert settings.bun_binary(root) == expected
+    monkeypatch.setattr(settings.shutil, "which", lambda _name: None)
+    home = tmp_path / "home/.bun/bin" / private.name
+    home.parent.mkdir(parents=True)
+    home.touch()
+    expected = bundled if platform == "win32" and version else home
+    assert settings.bun_binary(root) == expected
+
+
 @pytest.fixture(autouse=True)
 def _packaged_manifest(tmp_path, monkeypatch):
     manifest = tmp_path / "release-components.json"

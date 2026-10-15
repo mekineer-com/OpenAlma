@@ -11,6 +11,9 @@ on:
 jobs:
   build:
     runs-on: windows-2022
+    timeout-minutes: 45
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -26,6 +29,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
+      - name: Stage Bun and corresponding-source materials
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python installer/windows/stage_bun.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build installer
         shell: pwsh
         run: |
@@ -44,7 +53,15 @@ jobs:
           $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe" | Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $iscc) { throw "ISCC.exe was not installed" }
           & $iscc.FullName "/DMyAppVersion=$tag" installer/windows/OpenAlma.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
           name: OpenAlma-Windows-installer
           path: installer/windows/output/*.exe
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenAlma-Bun-corresponding-source
+          path: installer/windows/output/bun-sources/
+          compression-level: 0
+          if-no-files-found: error

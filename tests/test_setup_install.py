@@ -1028,11 +1028,18 @@ def test_operation_worker_reports_early_failure_and_releases_lock(tmp_path, monk
 
 @pytest.mark.parametrize("corrupt", [False, True])
 @pytest.mark.parametrize("reported_version", ["1.3.14", "wrong-version"])
-def test_private_bun_download_is_verified_and_reused(tmp_path, monkeypatch, corrupt, reported_version):
+@pytest.mark.parametrize("explicit", [False, True])
+def test_private_bun_download_is_verified_and_reused(tmp_path, monkeypatch, corrupt, reported_version, explicit):
     monkeypatch.setattr(setup_install.sys, "platform", "win32")
     monkeypatch.setattr(setup_install.platform, "machine", lambda: "AMD64")
-    binary = tmp_path / ".tools/bun.exe"
-    monkeypatch.setattr(setup_install.settings, "bun_binary", lambda _root: binary)
+    binary = tmp_path / ("staged/bun.exe" if explicit else ".tools/bun.exe")
+    runner = tmp_path / "runner-bun.exe"
+    runner.write_bytes(b"unrelated working Bun")
+    monkeypatch.setattr(setup_install.settings, "bun_binary", lambda _root: runner if explicit else binary)
+    options = {"destination": binary} if explicit else {}
+    if explicit:
+        binary.parent.mkdir()
+        binary.write_bytes(b"previous staged Bun")
     target = "bun-windows-x64-baseline"
     url = f"https://github.com/oven-sh/bun/releases/download/bun-v{setup_install.BUN_VERSION}/{target}.zip"
     zipped = BytesIO()
@@ -1051,22 +1058,27 @@ def test_private_bun_download_is_verified_and_reused(tmp_path, monkeypatch, corr
     monkeypatch.setattr(setup_install.urllib.request, "urlopen", download)
     def probe(path):
         probes.append(path)
+        if path == runner:
+            return "9.0.0"
         return reported_version if path.exists() else None
     monkeypatch.setattr(setup_install.settings, "bun_version", probe)
     if corrupt:
         with pytest.raises(setup_install.SetupError, match="SHA256 mismatch"):
-            setup_install._install_bun(tmp_path, StringIO())
-        assert not binary.exists() and probes == [binary]
+            setup_install._install_bun(tmp_path, StringIO(), **options)
+        assert probes == ([] if explicit else [binary])
     elif reported_version != setup_install.BUN_VERSION:
         with pytest.raises(setup_install.SetupError, match="expected version"):
-            setup_install._install_bun(tmp_path, StringIO())
-        assert not binary.exists()
+            setup_install._install_bun(tmp_path, StringIO(), **options)
     else:
-        setup_install._install_bun(tmp_path, StringIO())
+        setup_install._install_bun(tmp_path, StringIO(), **options)
         assert binary.read_bytes() == b"fictional runtime"
         assert probes[-1].name == "bun.exe"
-        setup_install._install_bun(tmp_path, StringIO())
+        if not explicit:
+            setup_install._install_bun(tmp_path, StringIO())
         assert requests == [url]
+    if corrupt or reported_version != setup_install.BUN_VERSION:
+        assert binary.read_bytes() == b"previous staged Bun" if explicit else not binary.exists()
+    assert runner.read_bytes() == b"unrelated working Bun"
     assert not (tmp_path / "outside.txt").exists()
     assert not list(binary.parent.glob(".bun-install-*"))
 
