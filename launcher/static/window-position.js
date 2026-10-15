@@ -10,7 +10,9 @@
   function reportWindowPosition() {
     var state = {
       x: Math.round(window.screenX),
-      y: Math.round(window.screenY)
+      y: Math.round(window.screenY),
+      width: Math.round(window.outerWidth),
+      height: Math.round(window.outerHeight)
     };
     var body = JSON.stringify(state);
     if (body === previous) return;

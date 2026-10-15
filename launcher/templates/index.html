@@ -102,7 +102,7 @@
           {% elif s.action_kind == "recover" %}
             <form method="post" action="/install/memu-server/recover"><button class="btn" type="submit">Recover</button></form>
           {% elif s.restart_required %}
-            <form method="post" action="/launcher/quit"><button class="btn" type="submit">Quit launcher</button></form>
+            <button class="btn" onclick="quitLauncher(this)">Quit launcher</button>
           {% elif s.action_kind is defined %}
           {% elif s.stoppable %}
             <button class="btn" onclick="svcAction('{{ s.name }}','stop',this)">Stop</button>
@@ -290,6 +290,7 @@ function actionHtml(name, data) {
     return stop + '<button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'force-stop\',this)">Force Stop</button>' + open + setup;
   }
   if (data.action_kind === 'settings') return setup;
+  if (data.restart_required) return '<button class="btn" onclick="quitLauncher(this)">Quit launcher</button>' + setup;
   if (data.action_kind === 'install') {
     var start = data.startable ? ' <button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'start\',this)">Start</button>' : '';
     return '<form class="inline" method="post" action="/install/' + esc(name) + '"><button class="btn" type="submit">' +

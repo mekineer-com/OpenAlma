@@ -15,7 +15,7 @@ from pathlib import Path
 from threading import Event, Lock, Thread
 from typing import Annotated, Literal
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -145,8 +145,11 @@ def launcher_update_readiness() -> dict[str, object]:
 
 
 @app.post("/launcher/window-position", include_in_schema=False)
-def launcher_window_position(x: int, y: int) -> dict[str, bool]:
-    settings.update_paths(window_position={"x": x, "y": y})
+def launcher_window_position(x: int, y: int, width: int | None = Query(default=None, gt=0), height: int | None = Query(default=None, gt=0)) -> dict[str, bool]:
+    changes = {"window_position": {"x": x, "y": y}}
+    if width is not None and height is not None:
+        changes["window_size"] = {"width": width, "height": height}
+    settings.update_paths(**changes)
     return {"ok": True}
 
 

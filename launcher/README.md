@@ -58,9 +58,12 @@ Flags:
 ## Start menu shortcut (Linux)
 
 ```sh
-cp memu-stack.desktop ~/.local/share/applications/
-update-desktop-database ~/.local/share/applications/ 2>/dev/null || true
+python3.12 run.py --install-shortcut
 ```
+
+This creates your application-menu entry with this checkout's actual paths.
+Run it again after moving the checkout. Startup failures open an error page;
+running `python3.12 run.py` in a terminal also shows installation diagnostics.
 
 ## Windows
 

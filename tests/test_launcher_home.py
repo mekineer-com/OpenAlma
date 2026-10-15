@@ -379,10 +379,32 @@ def test_policy_save_returns_to_hermes(monkeypatch):
 def test_launcher_saves_window_position(tmp_path, monkeypatch):
     monkeypatch.setattr(app.settings, "SETTINGS_PATH", tmp_path / "paths.json")
 
-    response = TestClient(app.app, base_url="http://127.0.0.1").post("/launcher/window-position?x=321&y=123")
+    response = TestClient(app.app, base_url="http://127.0.0.1").post("/launcher/window-position?x=321&y=123&width=552&height=661")
 
     assert response.json() == {"ok": True}
     assert app.settings.read_paths()["window_position"] == {"x": 321, "y": 123}
+    assert app.settings.read_paths()["window_size"] == {"width": 552, "height": 661}
+    assert TestClient(app.app, base_url="http://127.0.0.1").post("/launcher/window-position?x=10&y=20").status_code == 200
+    assert app.settings.read_paths()["window_size"] == {"width": 552, "height": 661}
+
+
+def test_restart_quit_uses_the_shared_exit_handler(tmp_path, monkeypatch):
+    import subprocess
+    monkeypatch.setattr(app.settings, "apps_root", lambda: None)
+    monkeypatch.setattr(app.settings, "setup_apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.setup_install, "setup_status", lambda _root: {
+        "state": "setup", "status_label": "Core prepared", "restart_required": True,
+    })
+    html = TestClient(app.app, base_url="http://127.0.0.1").get("/").text
+    assert 'onclick="quitLauncher(this)">Quit launcher</button>' in html
+    assert 'action="/launcher/quit"' not in html
+    script = r'''
+const fs=require('fs'), assert=require('assert');
+const source=fs.readFileSync(process.argv[1],'utf8');
+eval(source.slice(source.indexOf('function actionHtml'),source.indexOf('async function openService')));
+assert.equal(actionHtml('memu-server',{restart_required:true}), '<button class="btn" onclick="quitLauncher(this)">Quit launcher</button>');
+'''
+    subprocess.run(["node", "-e", script, str(Path(__file__).resolve().parents[1] / "launcher/templates/index.html")], check=True, timeout=10)
 
 
 @pytest.mark.parametrize("contents", ['{"apps_root":"/fictional/stack",}', '[]'])

@@ -7,7 +7,7 @@
 
 # OpenAlma
 
-_Last updated: 2026-10-14 (v0.1.14 Beta)_
+_Last updated: 2026-10-14 (v0.1.15 Beta; later source fixes are not yet released)_
 
 **OpenAlma, by Team GhostMaker**
 
@@ -61,13 +61,13 @@ Memory extraction happens during **sleep gaps** — when you close a conversatio
 
 ## Status
 
-**OpenAlma v0.1.14 Beta** is a normal release on the launcher's **Stable** channel. Beta describes its maturity, not its update channel.
+**OpenAlma v0.1.15 Beta** is a normal release on the launcher's **Stable** channel. Beta describes its maturity, not its update channel.
 
 Back up your data before upgrades. Launcher-managed core updates include database backups, supported migrations and recovery; compatibility with every historical database is not guaranteed. Start with a test companion before importing irreplaceable conversations.
 
 Use the launcher to install the matching repositories from the release manifest. This launcher-only patch keeps the compatible `v0.1.12` component tags; updating the launcher does not require updating matching services. Iris's source checkout follows the manifest, while phone installation uses its newest supported ZIP release. The Mentra phone app keeps its separate 3.2.1 version line.
 
-Windows users can download the [v0.1.14 installer](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.14). This fixes premature launcher shutdown when Edge replaces its starting process. Launcher tests and startup have been checked on Windows; full Windows component-install acceptance remains separate. Atomic's compatible prebuilt Windows server ZIP remains in the [v0.1.12 release](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.12); follow its `INSTALL.txt` for the beta's Node 24 setup workaround. Other platforms still need a manually built Rust server binary.
+Windows users can download the [v0.1.15 installer](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.15). It includes the Edge startup-handoff fix and downloads Atomic's compatible Windows server during Install, without Rust or Visual Studio. Launcher tests and startup have been checked on Windows; full Windows component-install acceptance remains separate. Atomic's server package remains on v0.1.12. Other platforms still need a manually built Rust server binary.
 
 ### Release tags
 
@@ -86,6 +86,7 @@ Windows users can download the [v0.1.14 installer](https://github.com/mekineer-c
 | `v0.1.12` | OpenAlma Beta on Stable: Windows launcher installer, private Python environments with tested dependency pins, Iris installation/Repair controls, three-stage reflection, and memory/identity recovery fixes |
 | `v0.1.13` | Launcher-only patch: optional hiding of uninstalled service rows, one-time Echo activation, unchanged v0.1.12 component compatibility |
 | `v0.1.14` | Launcher-only fix: keep the server running through Edge process handoffs; unchanged v0.1.12 component compatibility |
+| `v0.1.15` | Install the compatible Atomic Windows server automatically; unchanged v0.1.12 component compatibility |
 
 ---
 

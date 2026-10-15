@@ -1,5 +1,9 @@
 import json
+import os
+import socket
+import subprocess
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,6 +13,86 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "launcher"))
 
 import browser  # noqa: E402
 import run  # noqa: E402
+
+
+def test_simultaneous_launches_reuse_the_winning_server(tmp_path):
+    script = '''
+import sys, types
+from fastapi import FastAPI
+import run
+app = FastAPI()
+run.launcher_app = types.SimpleNamespace(app=app, LAUNCHER_ID="openalma-launcher")
+@app.get("/launcher/identity")
+def identity():
+    return {"application": "openalma-launcher", "protocol": 1}
+@app.post("/launcher/quit")
+def quit():
+    app.state.request_shutdown()
+    return {"ok": True}
+existing = run._existing_launcher
+checked = False
+def gate(host, port):
+    global checked
+    value = existing(host, port)
+    if not checked:
+        checked = True
+        assert not value
+        print("ready", flush=True)
+        sys.stdin.readline()
+    return value
+run._existing_launcher = gate
+sys.argv = ["run.py", "--port", sys.argv[1], "--no-browser"]
+run.main()
+'''
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    processes = []
+    try:
+        for _ in range(2):
+            processes.append(subprocess.Popen([sys.executable, "-u", "-c", script, str(port)],
+                cwd=Path(run.__file__).parent, env={**os.environ, "HOME": str(tmp_path), "USERPROFILE": str(tmp_path)},
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True))
+        for process in processes:
+            assert process.stdout.readline().strip() == "ready"
+        for process in processes:
+            process.stdin.write("\n")
+            process.stdin.flush()
+        deadline = time.monotonic() + 10
+        while all(process.poll() is None for process in processes) and time.monotonic() < deadline:
+            time.sleep(0.02)
+        failures = [process.stderr.read() for process in processes if process.poll() not in (None, 0)]
+        assert sum(process.poll() == 0 for process in processes) == 1, failures
+        assert sum(process.poll() is None for process in processes) == 1
+        with run.urllib.request.urlopen(f"http://127.0.0.1:{port}/launcher/identity") as response:
+            assert json.load(response) == {"application": "openalma-launcher", "protocol": 1}
+        request = run.urllib.request.Request(f"http://127.0.0.1:{port}/launcher/quit", data=b"", method="POST")
+        run.urllib.request.urlopen(request, timeout=2).close()
+        for process in processes:
+            assert process.wait(timeout=5) == 0
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                process.terminate()
+            process.communicate(timeout=5)
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux application-menu entry")
+def test_linux_shortcut_uses_real_paths_and_desktop_escaping(tmp_path, monkeypatch):
+    root = tmp_path / 'fictional "user" $50%'
+    root.mkdir()
+    root.joinpath("openalma.desktop").write_bytes(Path(run.__file__).with_name("openalma.desktop").read_bytes())
+    monkeypatch.setattr(run, "__file__", str(root / "run.py"))
+    monkeypatch.setattr(run.sys, "executable", str(root / ".venv/bin/python"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    target = run._install_shortcut()
+    entry = target.read_text()
+    assert target == tmp_path / "data/applications/openalma.desktop"
+    assert "@EXEC@" not in entry and "/home/marcos" not in entry
+    assert "50%%" in entry and r'\\$' in entry and r'\\"' in entry
+    validator = run.browser.shutil.which("desktop-file-validate")
+    if validator:
+        subprocess.run([validator, str(target)], check=True)
 
 
 def test_chromium_profile_persists_after_browser_exit(tmp_path, monkeypatch):

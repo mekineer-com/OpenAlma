@@ -14,20 +14,19 @@ The complete OpenAlma stack has been tested on Alpine Linux 3.23 x86-64. Some co
 | Component | Tested on | Other platforms |
 |---|---|---|
 | memU | Alpine Linux 3.23 x86-64 | The installer includes sqlite-vec for Linux (glibc) x86-64/ARM64, macOS Intel/Apple Silicon, and Windows x86-64, but complete OpenAlma setups on those platforms have not been tested. |
-| mcp-memu-server | Alpine Linux 3.23 x86-64 | The included start/stop runner currently requires Linux. |
-| OpenAlma launcher | Alpine Linux 3.23 x86-64 | Linux only for now. |
+| mcp-memu-server | Alpine Linux 3.23 x86-64; Windows installation fixtures | Full Windows stack acceptance remains separate. |
+| OpenAlma launcher | Alpine Linux and Windows startup/tests | Windows has an installer; source setup uses Python 3.12. |
 | Iris MiniApp | Mentra on Android | Mentra also supports iOS, but Iris has not yet been tested there. |
 | OpenAlma Mentra app | Android | Android only. On iOS, stock Mentra is expected to work. |
 | Hermes Channels | Alpine Linux 3.23 x86-64 | Other operating systems have not yet been tested. |
-| SillyTavern integration | Stock SillyTavern on Linux | The plugin and extension may work anywhere SillyTavern does, but OpenAlma's service controls currently require Linux. |
-| Atomic integration | Alpine Linux x86-64 | Atomic is available for Linux, macOS, and Windows; its OpenAlma integration has only been tested on Linux. |
+| SillyTavern integration | Stock SillyTavern on Linux | Other platforms remain subject to client installation and shutdown qualification. |
+| Atomic integration | Alpine Linux; packaged Windows server | Windows Install downloads the server. Linux/macOS server builds remain manual. |
 
-OpenAlma does not install system packages, alter your firewall, or create VPN services automatically. Install the prerequisites for your operating system before installing.
+OpenAlma does not alter your firewall or create VPN services automatically. The Windows installer can install Python and Git; install other system prerequisites for the clients you choose.
 
 **You'll need**
 
-- Python 3.12
-- Node.js — for SillyTavern, WhatsApp, the Atomic build, and the Iris installer
+- Git, Python 3.12, and Node.js/npm for the clients you choose. The Windows installer bootstraps Git and Python; Debian/Ubuntu source setup also needs `python3.12-venv`.
 - An API key for an LLM provider — OpenAI, NanoGPT, or any compatible endpoint
 - A Gemini API key for embeddings, stored in `llm.embedding.api_key`
 
@@ -41,19 +40,44 @@ available in Settings.
 
 **Recommended layout**
 
-Clone repos as siblings under one parent directory:
+Start with only OpenAlma; the launcher installs the matching components as siblings:
 
 ```
 ~/stack/                          # any name; this is the "apps root"
 ├── mcp-memu-server/
-├── memU/                         # cloned as "memu/" or "memU/" — engine
+├── memu/                         # memory engine
 ├── hermes-channels/              # optional; only if using WhatsApp
+├── atomic/                       # optional memory browser
+├── sillytavern/SillyTavern/       # optional typing client
+├── mentra-os/miniapps/openalma/   # Iris computer-side installer tools
 └── OpenAlma/                     # this repo (docs + launcher)
 ```
 
 The Stack launcher walks up from its own directory to find this layout automatically, so no path configuration is needed when the repos sit side-by-side. If your layout differs, the launcher's `/settings` page lets you point at the parent directory explicitly.
 
-SillyTavern lives elsewhere (it's a full app, not a sibling). The plugin and extension get installed *inside* the SillyTavern tree.
+The launcher-managed SillyTavern plugin and extension live inside its SillyTavern tree.
+
+## Install OpenAlma
+
+On Windows, run the [v0.1.15 Beta installer](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.15), then open OpenAlma from the Start menu. Beta is on the Stable update channel.
+
+On Linux, clone this repo into your chosen apps root and run:
+
+```sh
+git clone https://github.com/mekineer-com/OpenAlma.git
+cd OpenAlma/launcher
+python3.12 run.py
+```
+
+The first run creates a private Python environment. In the launcher, install
+**memU Server**, set your model/key in Settings, start it, and confirm your name and
+first Soul. Install whichever clients you want from Services. You do not need
+to clone every repository or create their Python environments yourself.
+
+For current Linux source checkouts, add an application-menu shortcut with
+`python3.12 run.py --install-shortcut`. Run that again if you move the checkout.
+If a shortcut fails, run `python3.12 run.py` in a terminal to see the error.
+Source fixes may precede the next published Windows installer.
 
 **Core settings in `config.json`:**
 
@@ -74,9 +98,9 @@ different models for individual memory steps, give their capacities in
 
 ## Core (required)
 
-1. **[mcp-memu-server](https://github.com/mekineer-com/mcp-memu-server)** — start here. This is the local service everything else talks to. Copy `config.example.json` → `config.json`, set your API key, and start it. Runs on port 8099.
+1. **[mcp-memu-server](https://github.com/mekineer-com/mcp-memu-server)** — the local service everything talks to, on port 8099. The launcher's memU Server Install prepares its configuration; set your API key and model through Settings.
 
-2. **[memU](https://github.com/mekineer-com/memU)** — the memory engine. Clone it and point `mcp-memu-server`'s config at it (the `memu.path` setting).
+2. **[memU](https://github.com/mekineer-com/memU)** — the memory engine, installed and configured with memU Server.
 
 ## Clients — pick at least one
 
@@ -84,11 +108,11 @@ The soul needs somewhere to meet you. Each client is independent; combine as man
 
 ### SillyTavern (typing)
 
-[SillyTavern](https://github.com/SillyTavern/SillyTavern) is a popular platform for AI roleplay and companionship. Install it separately (stock — no fork or patches needed), then add:
+[SillyTavern](https://github.com/SillyTavern/SillyTavern) is a popular platform for AI roleplay and companionship. Its launcher Install uses stock SillyTavern and adds:
 
-3. **[memu-sillytavern-plugin](https://github.com/mekineer-com/memu-sillytavern-plugin)** — clone into SillyTavern's `plugins/` folder. Enable `enableServerPlugins: true` in SillyTavern's `config.yaml`, then restart SillyTavern.
+3. **[memu-sillytavern-plugin](https://github.com/mekineer-com/memu-sillytavern-plugin)** — installed in SillyTavern's `plugins/` folder. Enable `enableServerPlugins: true` in SillyTavern's `config.yaml`, then Stop and Start SillyTavern.
 
-4. **[memu-sillytavern-extension](https://github.com/mekineer-com/memu-sillytavern-extension)** — clone into SillyTavern's `data/default-user/extensions/` folder. This adds the memU panel.
+4. **[memu-sillytavern-extension](https://github.com/mekineer-com/memu-sillytavern-extension)** — installed in SillyTavern's `data/default-user/extensions/` folder. This adds the memU panel.
 
 After setup, open the memU extension panel in SillyTavern and set **Server URL** to `http://127.0.0.1:8099`. Full walkthrough: [SillyTavern](sillytavern.md).
 
@@ -98,11 +122,11 @@ After setup, open the memU extension panel in SillyTavern and set **Server URL**
 
 ### Atomic Mind Map (her memory, opened up)
 
-6. **[Atomic](https://github.com/mekineer-com/atomic)** — clone as another sibling. It's source, so it needs a one-time build: Node.js for the UI and a Rust toolchain for the server. After that, the Stack Launcher starts and stops it from the Services panel. It's how you see inside her memory — see [Atomic](#atomic-mind-map) below. (A one-click Install through the launcher comes with the first stable release.)
+6. **[Atomic](https://github.com/mekineer-com/atomic)** — use Install in Services. Windows downloads the compatible server; Linux/macOS still need a one-time Rust server build. Node.js/npm prepares the UI. It's how you see inside her memory — see [Atomic](#atomic-mind-map) below.
 
 ### Iris (voice and camera)
 
-7. **Iris** — nothing to clone for this one. Iris runs through Mentra on your phone (the Android app; on iOS, stock Mentra is expected to work), plus Node.js on the host for the installer. With smartglasses she sees and hears through them; without glasses, the phone's camera and microphone do the job. Install Iris from the launcher's Iris row; the phone accepts with one tap, and her connection profile stays on the phone. Full walkthrough: [Iris](iris.md).
+7. **Iris** — voice and camera through Mentra on your phone, with optional smartglasses. Use APK/QR/Setup beside Mentra Iris to set up Mentra and a private connection first; install Iris from the known phone's row. The computer-side installer uses Bun, prepared automatically in current source. The connection profile stays on the phone. Full walkthrough: [Iris](iris.md).
 
 ## Stack Launcher
 
@@ -110,16 +134,14 @@ After setup, open the memU extension panel in SillyTavern and set **Server URL**
 
    ```sh
    cd OpenAlma/launcher
-   python3 -m venv .venv
-   .venv/bin/pip install -r requirements.txt
-   .venv/bin/python run.py
+   python3.12 run.py
    ```
 
-   Opens at `http://127.0.0.1:8765`. To add a start-menu shortcut on Linux: `cp memu-stack.desktop ~/.local/share/applications/`.
+   Opens at `http://127.0.0.1:8765`. Linux source shortcut: `python3.12 run.py --install-shortcut`.
 
    What's inside:
 
-   - **Services panel** — start, stop, and restart local services (memU Server, Atomic Mind Map, Hermes Channels, SillyTavern), plus a permanent Iris row for phone status and installation. View live logs for each. No terminal juggling needed.
+   - **Services panel** — install, start and stop local services (memU Server, Atomic Mind Map, Hermes Channels, SillyTavern), plus a permanent Iris row for phone status and installation. View live logs for each. Stop then Start when you need to restart a client.
    - **Settings** — edit `config.json` for the server. If your repo layout differs from the default siblings arrangement, set the parent directory here. Pair WhatsApp on the Hermes page, reached from Services → Hermes Channels → Setup.
    - **Memorize-pressure gauge** (home page) — how many unmemorized tokens are queued across all conversations vs the 8,000-token threshold, and whether a sleep gap has been detected. Useful for knowing if memorize is about to fire or is just waiting.
    - **WhatsApp Channel Policy** — tell the soul which conversations matter: whether she can respond to, only listen to, or ignore each chat, and whether it feeds memory. Detailed under [WhatsApp](#whatsapp-hermes-channels).
@@ -185,4 +207,4 @@ Full guide: [The mind map](mind-map.md).
 
 **Two background passes — don't confuse them.**
 - **APImw** runs every few turns, not every turn — the cadence is `retrieve.apimw_cadence` in `config.json` (default 5). It does multi-step retrieval and context curation, so she comes back richer on the turns that follow — and sometimes surfaces a subconscious thought.
-- **Consolidation** runs on real time, not turn count — gated by `consolidation_interval_days` (default 7) since the last run; if you don't talk to her for two weeks, the next memorize fires it immediately. It's two passes: first she revises the categories that have fallen out of date, then she rewrites her self-model, manages her intentions, creates memory connections, and writes a reflection.
+- **Consolidation** runs on real time, not turn count — gated by `consolidation_interval_days` (default 7) since the last run; after a long gap, the next normal Memorize makes it due. It has three stages: dossier revision, anchor/self-model maintenance, then weekly reflection with intentions and memory connections.

@@ -15,6 +15,18 @@ import urllib.request
 from pathlib import Path
 
 
+def _show_startup_error(exc: BaseException) -> None:
+    if sys.platform != "linux" or "--no-browser" in sys.argv:
+        return
+    import html
+    import tempfile
+    import webbrowser
+
+    with tempfile.NamedTemporaryFile(mode="w", prefix="openalma-startup-", suffix=".html", encoding="utf-8", delete=False) as page:
+        page.write(f"<!doctype html><title>OpenAlma</title><h1>OpenAlma could not start</h1><pre>{html.escape(str(exc))}</pre><p>Run python3.12 run.py in a terminal for details.</p>")
+    webbrowser.open(Path(page.name).as_uri())
+
+
 def _bootstrap() -> None:
     if sys.version_info[:2] != (3, 12):
         raise SystemExit("OpenAlma requires Python 3.12; run this file with python3.12")
@@ -40,26 +52,23 @@ def _bootstrap() -> None:
 
 
 if __name__ == "__main__" and sys.platform == "linux":
-    _bootstrap()
-
-import uvicorn
-import psutil
-from websockets.exceptions import WebSocketException
-from websockets.sync.client import connect
-
-import browser
-import settings
+    try:
+        _bootstrap()
+    except (Exception, SystemExit) as exc:
+        _show_startup_error(exc)
+        raise
 
 try:
-    import app as launcher_app
-except (OSError, ValueError) as exc:
-    if settings.os.name != "nt":
-        import html
-        import tempfile
+    import uvicorn
+    import psutil
+    from websockets.exceptions import WebSocketException
+    from websockets.sync.client import connect
 
-        with tempfile.NamedTemporaryFile(mode="w", prefix="openalma-startup-", suffix=".html", encoding="utf-8", delete=False) as page:
-            page.write(f"<!doctype html><title>OpenAlma</title><h1>OpenAlma could not start</h1><pre>{html.escape(str(exc))}</pre>")
-        browser.open_app(Path(page.name).as_uri())
+    import browser
+    import settings
+    import app as launcher_app
+except Exception as exc:
+    _show_startup_error(exc)
     raise
 
 
@@ -120,13 +129,9 @@ def prepare_update(host: str = "127.0.0.1", port: int = 8765) -> None:
 def _wait_for_port(host: str, port: int, timeout: float = 30.0) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        with socket.socket() as s:
-            s.settimeout(0.2)
-            try:
-                s.connect((host, port))
-                return True
-            except OSError:
-                time.sleep(0.1)
+        if _port_open(host, port):
+            return True
+        time.sleep(0.1)
     return False
 
 
@@ -258,17 +263,44 @@ def _open_existing_launcher(url: str) -> None:
         chrome.wait()
 
 
+def _install_shortcut() -> Path:
+    def quote(value: Path) -> str:
+        # Desktop entries unescape strings before parsing Exec; this is not shell quoting.
+        text = str(value).replace("%", "%%")
+        for char in ('\\', '"', '`', '$'):
+            text = text.replace(char, "\\" + char)
+        return '"' + text.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + '"'
+
+    root = Path(__file__).resolve().parent
+    entry = root.joinpath("openalma.desktop").read_text(encoding="utf-8")
+    entry = entry.replace("@EXEC@", f"{quote(Path(sys.executable))} {quote(root / 'run.py')}")
+    icon = str(root / "memu-icon.png").replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+    entry = entry.replace("@ICON@", icon)
+    target = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "applications/openalma.desktop"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(entry, encoding="utf-8")
+    return target
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="OpenAlma launcher")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--install-shortcut", action="store_true", help="Install the Linux application-menu shortcut")
     args = parser.parse_args()
+
+    if args.install_shortcut:
+        if sys.platform != "linux":
+            parser.error("--install-shortcut is for Linux; Windows uses its installer shortcut")
+        print(_install_shortcut())
+        return
 
     url = f"http://{args.host}:{args.port}"
 
     if _existing_launcher(args.host, args.port):
-        _open_existing_launcher(url)
+        if not args.no_browser:
+            _open_existing_launcher(url)
         return
 
     launcher_app.app.state.launcher_host = args.host
@@ -278,15 +310,33 @@ def main() -> None:
     server = uvicorn.Server(config)
     launcher_app.app.state.request_shutdown = lambda: setattr(server, "should_exit", True)
 
-    if not args.no_browser:
-        threading.Thread(
-            target=_open_browser_when_ready,
-            args=(args.host, args.port, url, server),
-            daemon=True,
-        ).start()
-
-    server.run()
+    family = socket.AF_INET6 if ":" in args.host else socket.AF_INET
+    with socket.socket(family) as listener:
+        # Windows reuse permits competing listeners; reserve this launcher's port.
+        option = socket.SO_EXCLUSIVEADDRUSE if os.name == "nt" else socket.SO_REUSEADDR
+        listener.setsockopt(socket.SOL_SOCKET, option, 1)
+        try:
+            listener.bind((args.host, args.port))
+            listener.listen(config.backlog)
+        except OSError:
+            if not _wait_for_port(args.host, args.port) or not _existing_launcher(args.host, args.port):
+                raise
+            if not args.no_browser:
+                _open_existing_launcher(url)
+            return
+        if not args.no_browser:
+            threading.Thread(
+                target=_open_browser_when_ready,
+                args=(args.host, args.port, url, server),
+                daemon=True,
+            ).start()
+        server.run(sockets=[listener])
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (Exception, SystemExit) as exc:
+        if not isinstance(exc, SystemExit) or exc.code not in (None, 0):
+            _show_startup_error(exc)
+        raise

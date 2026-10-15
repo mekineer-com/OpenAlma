@@ -126,7 +126,7 @@ from pathlib import Path
 Path.home = classmethod(lambda cls: Path(sys.argv[1]))
 tempfile.gettempdir = lambda: sys.argv[1]
 opened = []
-sys.modules["browser"] = types.SimpleNamespace(open_app=lambda url: opened.append(url))
+sys.modules["webbrowser"] = types.SimpleNamespace(open=lambda url: opened.append(url))
 try:
     import run
 except ValueError:
