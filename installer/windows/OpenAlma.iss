@@ -300,9 +300,12 @@ var
 begin
   LauncherDir := ExpandConstant('{app}\launcher');
   AppsRoot := ExpandConstant('{localappdata}\OpenAlma');
-  WizardForm.StatusLabel.Caption := 'Creating the OpenAlma Python environment...';
-  RunChecked(PythonLauncher, '-3.12 -m venv "' + LauncherDir + '\.venv"', 'Could not create the OpenAlma Python environment.');
   VenvPython := LauncherDir + '\.venv\Scripts\python.exe';
+  if not FileExists(VenvPython) then
+  begin
+    WizardForm.StatusLabel.Caption := 'Creating the OpenAlma Python environment...';
+    RunChecked(PythonLauncher, '-3.12 -m venv "' + LauncherDir + '\.venv"', 'Could not create the OpenAlma Python environment.');
+  end;
   WizardForm.StatusLabel.Caption := 'Installing OpenAlma launcher dependencies...';
   RunChecked(VenvPython, '-m pip install --disable-pip-version-check -r "' + LauncherDir + '\requirements.txt"', 'Could not install OpenAlma launcher dependencies.');
   WizardForm.StatusLabel.Caption := 'Configuring OpenAlma...';

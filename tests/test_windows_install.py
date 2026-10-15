@@ -123,6 +123,11 @@ def test_windows_installer_uses_openalma_icon_everywhere():
     assert "else if ResultCode = 14 then" in script
     assert "and DirExists(ExpandConstant('{app}')) and not FileExists(Script)" not in script
     assert 'Source: "..\\..\\release-components.json"; DestDir: "{app}"; Flags: ignoreversion; AfterInstall: PrepareLauncher' in script
+    preparation = script.split('procedure PrepareLauncher();', 1)[1].split('function InitializeUninstall', 1)[0]
+    creation = preparation.split('if not FileExists(VenvPython) then', 1)[1].split('end;', 1)[0]
+    assert '-3.12 -m venv' in creation
+    assert preparation.count('-3.12 -m venv') == 1
+    assert preparation.index('end;') < preparation.index('-m pip install')
 
 
 def test_windows_installer_bootstraps_pinned_python_without_winget():
