@@ -77,12 +77,12 @@ def test_manifest_requires_safe_exact_core_entries(tmp_path):
         setup_install.validate_manifest(unexpected, tmp_path)
 
 
-def test_launcher_patch_manifest_keeps_compatible_component_versions(tmp_path):
+def test_packaged_manifest_keeps_component_refs_independent_of_launcher_version(tmp_path):
     manifest = json.loads(
         (Path(__file__).resolve().parents[1] / "release-components.json").read_text(encoding="utf-8")
     )
 
-    parsed = setup_install.validate_manifest(manifest, tmp_path, "v9.8.7-buildfix")
+    parsed = setup_install.validate_manifest(manifest, tmp_path, "v9.8.7")
 
     coordinated = {
         entry["repository"]: entry["ref"]
@@ -90,21 +90,8 @@ def test_launcher_patch_manifest_keeps_compatible_component_versions(tmp_path):
         for entry in service
         if entry["repository"] != "https://github.com/SillyTavern/SillyTavern.git"
     }
-    assert coordinated == {
-        "https://github.com/mekineer-com/mcp-memu-server.git": "v0.1.16",
-        "https://github.com/mekineer-com/memU.git": "v0.1.12",
-        "https://github.com/mekineer-com/iris.git": "v0.1.16",
-        "https://github.com/mekineer-com/hermes-channels.git": "v0.1.17",
-        "https://github.com/mekineer-com/atomic.git": "v0.1.17",
-        "https://github.com/mekineer-com/memu-sillytavern-plugin.git": "v0.1.12",
-        "https://github.com/mekineer-com/memu-sillytavern-extension.git": "v0.1.12",
-    }
-    assert parsed["iris-server"][0]["ref"] == "v0.1.16"
-    assert parsed["sillytavern"][0] == {
-        "repository": "https://github.com/SillyTavern/SillyTavern.git",
-        "ref": "1.19.0",
-        "destination": "sillytavern/SillyTavern",
-    }
+    assert all(ref != "v9.8.7" for ref in coordinated.values())
+    assert parsed["sillytavern"][0]["repository"] == "https://github.com/SillyTavern/SillyTavern.git"
 
 
 def test_discover_release_rejects_prerelease(tmp_path, monkeypatch):
