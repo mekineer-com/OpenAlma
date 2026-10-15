@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+from types import SimpleNamespace
 import time
 import venv
 from io import BytesIO
@@ -1287,6 +1288,56 @@ def test_start_reports_active_stop_cleanup(tmp_path, monkeypatch):
             services._STOP_THREADS.pop(spec.name, None)
 
 
+@pytest.mark.parametrize("name", ["atomic", "iris-server"])
+def test_start_rechecks_stop_reservation_before_spawn(tmp_path, monkeypatch, name):
+    spec = services.ServiceSpec(name, name, [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(services, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(services, "_STOP_LOCK", services.threading.Lock())
+    monkeypatch.setattr(services, "_STOP_THREADS", {})
+    monkeypatch.setattr(services, "_STOP_STARTED", {})
+    monkeypatch.setattr(services, "_STOP_ERRORS", {})
+    monkeypatch.setattr(services, "_IRIS_INSTALL_CANCELLED", services.threading.Event())
+    prepared = []
+    spawned = []
+
+    def runtime(_spec):
+        assert not services._STOP_LOCK.locked()
+        # Stop wins admission after Start's initial guard and runtime snapshot.
+        with services._STOP_LOCK:
+            services._STOP_STARTED[name] = services.time.monotonic()
+        return services.RuntimeState()
+
+    def build_env(*_args):
+        assert not services._STOP_LOCK.locked()
+        prepared.append("env")
+        return {}
+
+    def download(*_args):
+        assert not services._STOP_LOCK.locked()
+        assert (tmp_path / "build/release-private-status.json").exists()
+        prepared.append("download")
+        return tmp_path / "fixture.zip"
+
+    monkeypatch.setattr(services, "_runtime_state", runtime)
+    monkeypatch.setattr(services, "_iris_build_env", build_env)
+    monkeypatch.setattr(services, "_iris_release_candidate", lambda _spec: (
+        services.IRIS_PACKAGE, "0.1.0", "https://example.invalid/fixture.zip", "available",
+    ))
+    monkeypatch.setattr(services, "_download_iris_release", download)
+    monkeypatch.setattr(services, "_spawn_background", lambda *_args: (
+        spawned.append(True) or SimpleNamespace(pid=4242)
+    ))
+
+    with pytest.raises(services.ServiceStoppingError, match="still stopping"):
+        services.start(spec, install_target={"device_session_id": "fixture-phone"})
+
+    assert not spawned
+    assert not spec.pid_path.exists()
+    assert prepared == (["env", "download"] if name == "iris-server" else [])
+    assert not (tmp_path / "build/release-private-status.json").exists()
+    assert not (tmp_path / "build/release-private-status.tmp").exists()
+
+
 def test_stop_status_shows_force_only_with_failure_evidence(tmp_path, monkeypatch):
     monkeypatch.setattr(services.os, "name", "posix")
     spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
@@ -1400,10 +1451,125 @@ def test_stop_refuses_fake_graceful_shutdown_on_windows(tmp_path, monkeypatch):
         lambda _spec: services.RuntimeState(verified_pids=(20,), service_pids=(20,), running=True),
     )
     monkeypatch.setattr(services.os, "name", "nt")
+    monkeypatch.setattr(services, "_request_windows_shutdown", lambda *_args: (_ for _ in ()).throw(RuntimeError("No private console")))
 
-    with pytest.raises(RuntimeError, match="no graceful Windows shutdown"):
+    with pytest.raises(RuntimeError, match="No private console"):
         services.stop(spec)
     assert services._stop_status(spec, {"running": True, "stuck": False})["force_stoppable"] is True
+
+
+@pytest.mark.parametrize("name", ["atomic", "channels-daemon", "sillytavern", "iris-server"])
+def test_windows_stop_dispatch_is_not_repeated_or_forced(tmp_path, monkeypatch, name):
+    monkeypatch.setattr(services, "_STOP_THREADS", {})
+    monkeypatch.setattr(services, "_STOP_STARTED", {})
+    spec = services.ServiceSpec(name, name, [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState(
+        verified_pids=(100,), service_pids=(100,), running=True,
+    ))
+    monkeypatch.setattr(services.os, "name", "nt")
+    calls = []
+
+    def request(_spec, pids):
+        calls.append(pids)
+        services.stop(spec)
+
+    monkeypatch.setattr(services, "_request_windows_shutdown", request)
+    monkeypatch.setattr(services, "_start_stop_waiter", lambda _spec: calls.append("wait"))
+    monkeypatch.setattr(services, "_kill_process_tree", lambda *_args: pytest.fail("Ordinary Stop must not kill"))
+    services.stop(spec)
+    assert calls == [(100,), "wait"]
+    assert name in services._STOP_STARTED
+
+
+def test_windows_shutdown_requests_only_outer_verified_supervisors(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("channels-daemon", "Channels", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    root = SimpleNamespace(pid=100, parents=lambda: [], create_time=lambda: 12.5)
+    child = SimpleNamespace(pid=101, parents=lambda: [root], create_time=lambda: 13)
+    monkeypatch.setattr(services.psutil, "Process", lambda pid: {100: root, 101: child}[pid])
+    monkeypatch.setattr(services, "_matches_service_process", lambda *_args: True)
+    calls = []
+    monkeypatch.setattr(services.subprocess, "run", lambda command, **_kwargs: (
+        calls.append(command) or SimpleNamespace(returncode=0, stderr=""),
+    )[0])
+    services._request_windows_shutdown(spec, (101, 100))
+    assert len(calls) == 1 and calls[0][-2:] == ["100", "12.5"]
+
+
+def test_partial_windows_stop_keeps_waiting_without_resending(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(services, "_STOP_THREADS", {})
+    monkeypatch.setattr(services, "_STOP_STARTED", {})
+    monkeypatch.setattr(services, "_STOP_ERRORS", {})
+    monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState(
+        verified_pids=(10, 20), service_pids=(10, 20), running=True,
+    ))
+    monkeypatch.setattr(services.psutil, "Process", lambda pid: SimpleNamespace(
+        pid=pid, parents=lambda: [], create_time=lambda: 1, is_running=lambda: True,
+    ))
+    monkeypatch.setattr(services, "_matches_service_process", lambda *_args: True)
+    monkeypatch.setattr(services, "hidden_process_kwargs", lambda: {})
+    calls = []
+
+    def dispatch(command, **_kwargs):
+        calls.append(command[-2])
+        return SimpleNamespace(returncode=int(command[-2] == "20"), stderr="Fixture refusal")
+
+    monkeypatch.setattr(services.subprocess, "run", dispatch)
+    monkeypatch.setattr(services.os, "name", "nt")
+    monkeypatch.setattr(services, "_start_stop_waiter", lambda _spec: services._STOP_THREADS.update(
+        {spec.name: services.threading.current_thread()},
+    ))
+    with pytest.raises(services.PartialStopError, match="Fixture refusal"):
+        services.stop(spec)
+    services.stop(spec)
+    assert calls == ["10", "20"]
+    assert services._stop_status(spec, {"running": True})["force_stoppable"]
+
+
+def test_stop_handoff_cannot_clear_a_later_reservation(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(services, "_STOP_THREADS", {})
+    monkeypatch.setattr(services, "_STOP_STARTED", {})
+    monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState(
+        verified_pids=(10,), service_pids=(10,), running=True,
+    ))
+    monkeypatch.setattr(services.os, "name", "nt")
+    monkeypatch.setattr(services, "_request_windows_shutdown", lambda *_args: None)
+    monkeypatch.setattr(services, "_start_stop_waiter", lambda _spec: services._STOP_STARTED.update(
+        {spec.name: 12345},
+    ))
+    services.stop(spec)
+    assert services._STOP_STARTED[spec.name] == 12345
+
+
+def test_sent_stop_is_not_repeated_if_waiter_thread_cannot_start(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(services, "_STOP_THREADS", {})
+    monkeypatch.setattr(services, "_STOP_STARTED", {})
+    monkeypatch.setattr(services, "_STOP_ERRORS", {})
+    monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState(
+        verified_pids=(10,), service_pids=(10,), running=True,
+    ))
+    monkeypatch.setattr(services.os, "name", "nt")
+    sent = []
+    monkeypatch.setattr(services, "_request_windows_shutdown", lambda *_args: sent.append(True))
+
+    class BrokenThread:
+        def __init__(self, **_kwargs):
+            pass
+
+        def start(self):
+            raise RuntimeError("Fixture thread unavailable")
+
+    monkeypatch.setattr(services.threading, "Thread", BrokenThread)
+    with pytest.raises(RuntimeError, match="thread unavailable"):
+        services.stop(spec)
+    services.stop(spec)
+    assert sent == [True] and spec.name in services._STOP_STARTED
+    assert spec.name not in services._STOP_THREADS
+    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [])
+    services.force_stop(spec)
+    assert spec.name not in services._STOP_STARTED
 
 
 @pytest.mark.parametrize("first_request_fails", [False, True])

@@ -12,7 +12,9 @@ relative to the launcher's own directory, otherwise None.
 from __future__ import annotations
 
 import ipaddress
+import ctypes
 import json
+import logging
 import ntpath
 import os
 import platform
@@ -70,6 +72,10 @@ class StopConfirmationRequired(Exception):
 
 
 class ServiceStoppingError(Exception):
+    pass
+
+
+class PartialStopError(RuntimeError):
     pass
 
 
@@ -442,10 +448,18 @@ def _within_startup_grace(spec: ServiceSpec) -> bool:
 def _spawn_background(spec: ServiceSpec, env: dict[str, str]) -> subprocess.Popen[bytes]:
     log = spec.log_path.open("ab")
     try:
+        flags = hidden_process_kwargs()
+        if os.name == "nt" and spec.name != "memu-server":
+            if not ctypes.windll.kernel32.SetConsoleCtrlHandler(None, False):
+                raise ctypes.WinError()
+            startup = subprocess.STARTUPINFO()
+            startup.dwFlags = subprocess.STARTF_USESHOWWINDOW
+            startup.wShowWindow = subprocess.SW_HIDE
+            flags = {"creationflags": subprocess.CREATE_NEW_CONSOLE, "startupinfo": startup}
         return subprocess.Popen(
             spec.cmd, cwd=str(spec.cwd), env=env,
             stdout=log, stderr=log, start_new_session=True,
-            **hidden_process_kwargs(),
+            **flags,
         )
     finally:
         log.close()
@@ -1525,7 +1539,7 @@ def status(spec: ServiceSpec) -> dict:
 
 def _stop_status(spec: ServiceSpec, result: dict) -> dict:
     with _STOP_LOCK:
-        stopping = spec.name in _STOP_THREADS
+        stopping = spec.name in _STOP_THREADS or spec.name in _STOP_STARTED
         error = _STOP_ERRORS.get(spec.name)
         started = _STOP_STARTED.get(spec.name)
     elapsed = bool(
@@ -1538,7 +1552,7 @@ def _stop_status(spec: ServiceSpec, result: dict) -> dict:
             state="stopping",
             status_label="Still finishing…" if elapsed else "◐ waiting for graceful shutdown",
             detail=(
-                f"Force Stop failed: {error}"
+                f"Stop failed: {error}"
                 if error else
                 "Graceful shutdown is still running; Force Stop is available"
                 if elapsed else
@@ -1556,7 +1570,7 @@ def _stop_status(spec: ServiceSpec, result: dict) -> dict:
 
 
 def _raise_if_stopping_locked(spec: ServiceSpec) -> None:
-    if spec.name in _STOP_THREADS:
+    if spec.name in _STOP_THREADS or spec.name in _STOP_STARTED:
         raise ServiceStoppingError(f"{spec.label} is still stopping")
 
 
@@ -1588,10 +1602,10 @@ def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None, bu
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     spec.log_path.parent.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, **spec.env}
-    if spec.name == "iris-server":
-        target_path = spec.cwd / "build" / "release-private-status.json"
-        temporary = target_path.with_suffix(".tmp")
-        try:
+    try:
+        if spec.name == "iris-server":
+            target_path = spec.cwd / "build" / "release-private-status.json"
+            temporary = target_path.with_suffix(".tmp")
             env.update(_iris_build_env(spec, install_target))
             target_path.parent.mkdir(parents=True, exist_ok=True)
             temporary.write_text(json.dumps(install_target))
@@ -1602,17 +1616,21 @@ def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None, bu
                     raise ValueError("Published Iris bundle unavailable; use Repair for a local build")
                 bundle_path = _download_iris_release(url, package, version)
             env["MENTRA_RELEASE_BUNDLE"] = str(bundle_path)
-            if _IRIS_INSTALL_CANCELLED.is_set():
+        with _STOP_LOCK:
+            _raise_if_stopping_locked(spec)
+            if spec.name == "iris-server" and _IRIS_INSTALL_CANCELLED.is_set():
                 raise ServiceStoppingError("Iris installation cancelled")
+            runtime = _runtime_state(spec)
+            if runtime.running or runtime.stuck or runtime.orphaned or runtime.port_blocked:
+                return
             proc = _spawn_background(spec, env)
-        except Exception:
+            spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
+            spec.pid_path.write_text(str(proc.pid))
+    except Exception:
+        if spec.name == "iris-server":
             temporary.unlink(missing_ok=True)
             target_path.unlink(missing_ok=True)
-            raise
-    else:
-        proc = _spawn_background(spec, env)
-    spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
-    spec.pid_path.write_text(str(proc.pid))
+        raise
     _clear_port_cache(spec)
 
 
@@ -1678,10 +1696,41 @@ def _start_stop_waiter(spec: ServiceSpec) -> None:
     with _STOP_LOCK:
         if spec.name in _STOP_THREADS:
             return
-        _STOP_STARTED[spec.name] = time.monotonic()
+        _STOP_STARTED.setdefault(spec.name, time.monotonic())
         thread = threading.Thread(target=_finish_graceful_stop, args=(spec,), daemon=True)
         _STOP_THREADS[spec.name] = thread
-        thread.start()
+        try:
+            thread.start()
+        except Exception:
+            _STOP_THREADS.pop(spec.name, None)
+            raise
+
+
+def _request_windows_shutdown(spec: ServiceSpec, pids: tuple[int, ...]) -> None:
+    dispatched = False
+    for pid in pids:
+        try:
+            process = psutil.Process(pid)
+            if any(parent.pid in pids for parent in process.parents()):
+                continue
+            created = process.create_time()
+            if not _matches_service_process(spec, pid):
+                raise RuntimeError("Service identity changed before shutdown")
+            result = subprocess.run(
+                [os.path.join(os.path.dirname(sys.executable), "python.exe"),
+                 os.path.join(os.path.dirname(__file__), "windows_console.py"), str(pid), str(created)],
+                capture_output=True, text=True, timeout=10, **hidden_process_kwargs(),
+            )
+            if result.returncode and process.is_running():
+                logging.getLogger(__name__).error("Windows shutdown request failed for %s: %s", spec.name, result.stderr.strip())
+                raise RuntimeError(result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "Windows shutdown request failed")
+            dispatched = dispatched or result.returncode == 0
+        except psutil.NoSuchProcess:
+            pass
+        except Exception as exc:
+            if dispatched:
+                raise PartialStopError(str(exc)) from exc
+            raise
 
 
 def stop(spec: ServiceSpec, *, confirm_unknown: bool = False) -> None:
@@ -1689,41 +1738,59 @@ def stop(spec: ServiceSpec, *, confirm_unknown: bool = False) -> None:
         _IRIS_INSTALL_CANCELLED.set()
     _clear_port_cache(spec)
     with _STOP_LOCK:
-        if spec.name in _STOP_THREADS:
+        if spec.name in _STOP_THREADS or spec.name in _STOP_STARTED:
             return
         _STOP_ERRORS.pop(spec.name, None)
-    runtime = _runtime_state(spec)
-    pids = list(runtime.verified_pids)
-    if not pids:
-        _clear_pid(spec)
-        if spec.adopt_pid_path is not None:
-            _clear_dead_pidfile(spec.adopt_pid_path)
-        return
-    if spec.name == "memu-server":
-        mentra = _read_mentra_status(MEMU_SERVER_PORT)
-        if mentra.get("busy") is True:
-            raise PermissionError("Stop the Iris conversation on the phone first")
-        if mentra.get("busy") is not False and not confirm_unknown:
-            raise StopConfirmationRequired("Iris activity cannot be checked. Stopping may interrupt a conversation or lose pending work. Stop anyway?")
+        _STOP_STARTED[spec.name] = time.monotonic()
+    shutdown_requested = False
     try:
+        runtime = _runtime_state(spec)
+        if not runtime.verified_pids:
+            _clear_pid(spec)
+            if spec.adopt_pid_path is not None:
+                _clear_dead_pidfile(spec.adopt_pid_path)
+            return
+        if spec.name == "memu-server":
+            mentra = _read_mentra_status(MEMU_SERVER_PORT)
+            if mentra.get("busy") is True:
+                raise PermissionError("Stop the Iris conversation on the phone first")
+            if mentra.get("busy") is not False and not confirm_unknown:
+                raise StopConfirmationRequired("Iris activity cannot be checked. Stopping may interrupt a conversation or lose pending work. Stop anyway?")
+        elif not runtime.service_pids:
+            raise RuntimeError(f"{spec.label} supervisor is not running; use Force Stop")
         if spec.name == "memu-server":
             if not _request_memu_shutdown():
                 raise RuntimeError("memU Server shutdown was not confirmed; retry Stop, or use Force Stop if necessary")
+            shutdown_requested = True
+        elif os.name == "nt":
+            _request_windows_shutdown(spec, runtime.service_pids)
+            shutdown_requested = True
         else:
-            if os.name == "nt":
-                raise RuntimeError(f"{spec.label} has no graceful Windows shutdown; use Force Stop")
-            if not runtime.service_pids:
-                raise RuntimeError(f"{spec.label} supervisor is not running; use Force Stop")
             for pid in runtime.service_pids:
                 try:
                     os.kill(pid, signal.SIGTERM)
+                    shutdown_requested = True
                 except ProcessLookupError:
                     pass
+        _start_stop_waiter(spec)
+    except StopConfirmationRequired:
+        raise
+    except PermissionError as exc:
+        if spec.name != "memu-server":
+            with _STOP_LOCK:
+                _STOP_ERRORS[spec.name] = str(exc)
+        raise
     except Exception as exc:
         with _STOP_LOCK:
             _STOP_ERRORS[spec.name] = str(exc)
+        if isinstance(exc, PartialStopError):
+            shutdown_requested = True
+            _start_stop_waiter(spec)
         raise
-    _start_stop_waiter(spec)
+    finally:
+        with _STOP_LOCK:
+            if not shutdown_requested:
+                _STOP_STARTED.pop(spec.name, None)
 
 
 def force_stop(spec: ServiceSpec, *, timeout: float = 10.0) -> None:
@@ -1745,6 +1812,8 @@ def force_stop(spec: ServiceSpec, *, timeout: float = 10.0) -> None:
         raise
     with _STOP_LOCK:
         _STOP_ERRORS.pop(spec.name, None)
+        if spec.name not in _STOP_THREADS:
+            _STOP_STARTED.pop(spec.name, None)
     _clear_pid(spec)
     if spec.adopt_pid_path is not None:
         _clear_dead_pidfile(spec.adopt_pid_path)
