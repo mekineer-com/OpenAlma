@@ -11,12 +11,6 @@ import settings
 from setup_install import LAUNCHER_UPDATE_DIR, _clear_readonly_and_retry
 
 
-def _retry_delete(function, path, error) -> None:
-    if Path(path).is_symlink() or Path(path).is_junction():
-        raise error
-    _clear_readonly_and_retry(function, path, error)
-
-
 def remove_everything(*, confirm: bool = False) -> None:
     preferences = settings.read_paths()
     raw = preferences.get("apps_root")
@@ -51,18 +45,15 @@ def remove_everything(*, confirm: bool = False) -> None:
                  if re.fullmatch(r"OpenAlma-v[0-9]+\.[0-9]+\.[0-9]+(?:[-.][A-Za-z0-9][A-Za-z0-9._-]*)?-Windows\.exe(?:\.part)?", path.name)
                  and (path.is_file() or path.is_symlink()))
     try:
-        shutil.rmtree(root, onexc=_retry_delete)
+        shutil.rmtree(root, onexc=_clear_readonly_and_retry)
         profile = settings.BROWSER_PROFILE_PATH
         if not profile.is_relative_to(root):
-            if profile.is_symlink():
-                files.add(profile)
-            elif profile.exists():
-                shutil.rmtree(profile, onexc=_retry_delete)
+            shutil.rmtree(profile, ignore_errors=True)
         for path in files:
             try:
                 path.unlink(missing_ok=True)
             except PermissionError as exc:
-                _retry_delete(Path.unlink, path, exc)
+                _clear_readonly_and_retry(Path.unlink, path, exc)
     except OSError:
         # Restore only the validated retry controls, never partially deleted data.
         root.mkdir(parents=True, exist_ok=True)

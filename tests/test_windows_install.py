@@ -477,7 +477,7 @@ def test_remove_everything_accepts_utf8_recorded_root(tmp_path, monkeypatch):
     assert not (state_dir / "launcher.log").exists()
 
 
-@pytest.mark.parametrize("failure", ["child", "directory", "external-log", "profile"])
+@pytest.mark.parametrize("failure", ["child", "directory", "external-log"])
 def test_remove_everything_can_retry_partial_deletion(tmp_path, monkeypatch, failure):
     root = settings.SETTINGS_ROOT if failure in {"child", "directory"} else tmp_path / "apps"
     assert setup_install._write_root_marker(root)
@@ -487,17 +487,13 @@ def test_remove_everything_can_retry_partial_deletion(tmp_path, monkeypatch, fai
     settings.LAUNCHER_LOG_PATH.write_text("fixture log")
     marker = root / windows_install.OWNER_FILE
     locked = True
-    if failure in {"child", "profile"}:
-        if failure == "profile":
-            settings.BROWSER_PROFILE_PATH.mkdir()
+    if failure == "child":
         real_rmtree = windows_remove.shutil.rmtree
 
         def remove(path, *args, **kwargs):
-            target = root if failure == "child" else settings.BROWSER_PROFILE_PATH
-            if Path(path) == target and locked:
-                if failure == "child":
-                    marker.unlink()
-                    settings.SETTINGS_PATH.unlink()
+            if Path(path) == root and locked:
+                marker.unlink()
+                settings.SETTINGS_PATH.unlink()
                 raise PermissionError("fixture locked child")
             return real_rmtree(path, *args, **kwargs)
 
@@ -582,10 +578,35 @@ def test_remove_everything_cleans_only_known_external_files(tmp_path, monkeypatc
     assert (workspace / "fictional-work.txt").read_text() == "keep external workspace"
 
 
-@pytest.mark.parametrize("location", ["root", "profile"])
-def test_remove_everything_does_not_chmod_external_link_targets(tmp_path, monkeypatch, location):
-    # Match Windows' rmtree backend rather than POSIX's nested fd callbacks.
-    monkeypatch.setattr(windows_remove.shutil, "_use_fd_functions", False)
+def test_remove_everything_keeps_external_profile_cleanup_best_effort(tmp_path, monkeypatch):
+    root = tmp_path / "apps"
+    assert setup_install._write_root_marker(root)
+    settings.write_paths({"apps_root": str(root)})
+    settings.LAUNCHER_LOG_PATH.write_text("old log")
+    settings.BROWSER_PROFILE_PATH.mkdir()
+    locked_file = settings.BROWSER_PROFILE_PATH / "locked-cache-file"
+    locked_file.write_text("browser still running")
+    cache = windows_remove.LAUNCHER_UPDATE_DIR
+    cache.mkdir()
+    installer = cache / "OpenAlma-v0.1.22-Windows.exe"
+    installer.write_text("fictional cached installer")
+    real_unlink = windows_remove.os.unlink
+    locked = True
+
+    def unlink(path, *args, **kwargs):
+        if Path(path).name == locked_file.name and locked:
+            raise PermissionError("fixture browser still running")
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(windows_remove.os, "unlink", unlink)
+    windows_remove.remove_everything()
+    assert not root.exists() and not settings.SETTINGS_PATH.exists()
+    assert not settings.LAUNCHER_LOG_PATH.exists() and not installer.exists()
+    assert locked_file.read_text() == "browser still running"
+    locked = False
+
+
+def test_remove_everything_preserves_external_profile_link_target(tmp_path):
     root = tmp_path / "apps"
     assert setup_install._write_root_marker(root)
     settings.write_paths({"apps_root": str(root)})
@@ -593,26 +614,12 @@ def test_remove_everything_does_not_chmod_external_link_targets(tmp_path, monkey
     workspace.mkdir()
     (workspace / "keep.txt").write_text("keep external work")
     mode = workspace.stat().st_mode
-    link = root / "workspace-link" if location == "root" else settings.BROWSER_PROFILE_PATH
     try:
-        link.symlink_to(workspace, target_is_directory=True)
+        settings.BROWSER_PROFILE_PATH.symlink_to(workspace, target_is_directory=True)
     except OSError:
         pytest.skip("This environment cannot create a directory symlink")
-    real_unlink = windows_remove.os.unlink
-    locked = True
-
-    def unlink(path, *args, **kwargs):
-        if Path(path).name == link.name and locked:
-            raise PermissionError("fixture locked symlink")
-        return real_unlink(path, *args, **kwargs)
-
-    monkeypatch.setattr(windows_remove.os, "unlink", unlink)
-    with pytest.raises(PermissionError, match="fixture locked symlink"):
-        windows_remove.remove_everything()
-    assert workspace.stat().st_mode == mode
-    assert (workspace / "keep.txt").read_text() == "keep external work"
-    locked = False
     windows_remove.remove_everything()
+    assert not root.exists() and not settings.SETTINGS_PATH.exists()
     assert workspace.stat().st_mode == mode
     assert (workspace / "keep.txt").read_text() == "keep external work"
 
