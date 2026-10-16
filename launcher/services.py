@@ -206,6 +206,7 @@ def services_for_root(root: Path) -> list[ServiceSpec]:
                 "SILLYTAVERN_ENABLESERVERPLUGINS": "true",
                 "SILLYTAVERN_ENABLESERVERPLUGINSAUTOUPDATE": "false",
                 "MEMU_SERVER_PATH": str(root / "mcp-memu-server"),
+                "MEMU_SERVER_MANAGED": "launcher",
             },
             install_marker=root / "sillytavern" / "SillyTavern" / "server.js",
         ),

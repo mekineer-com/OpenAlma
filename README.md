@@ -7,7 +7,7 @@
 
 # OpenAlma
 
-_Last updated: 2026-10-15 (v0.1.21 Beta)_
+_Last updated: 2026-10-16_
 
 **OpenAlma, by Team GhostMaker**
 
@@ -57,21 +57,21 @@ The core of OpenAlma is two services that run on your machine: **mcp-memu-server
 
 Automatic conversation extraction waits for a **sleep gap** — at least 3 hours of silence within 22:00–08:00, server time — and about 8,000 unmemorized tokens across a Soul's chats. The system reads what you talked about, pulls out what matters, and stores it. Relevant memories are then automatically included in the next turn so the AI already knows them.
 
-You can also trigger extraction manually without waiting. Deleting a SillyTavern chat can trigger extraction once the token threshold is met. Iris photos are filed as memories right away, without either threshold.
+You can also trigger extraction manually without waiting. Iris photos are filed as memories right away, without either threshold.
 
 ---
 
 ## Status
 
-**OpenAlma v0.1.21 Beta** is a normal release on the launcher's **Stable** channel. Beta describes its maturity, not its update channel.
+**OpenAlma Beta** is a normal release on the launcher's **Stable** channel. Beta describes its maturity, not its update channel.
 
 Back up your data before upgrades. Launcher-managed core updates include database backups, supported migrations and recovery; compatibility with every historical database is not guaranteed. Start with a test companion before importing irreplaceable conversations.
 
-Use the launcher to install matching components and follow any component Update buttons after upgrading the launcher. Unchanged components keep their compatible versions: memU and the SillyTavern integrations v0.1.12, Iris v0.1.16, Atomic and Hermes v0.1.17, and official SillyTavern 1.19.0. The Mentra phone app keeps its separate 3.2.1 version line.
+Use the launcher to install matching components and follow any component Update buttons after upgrading the launcher. The [component manifest](release-components.json) pins compatible versions; unchanged components keep their earlier versions. The Mentra phone app keeps its separate version line.
 
 Windows users can download the [latest Beta installer](https://github.com/mekineer-com/OpenAlma/releases/latest). The launcher shows installation steps and elapsed time, missing basic AI settings, and Hermes Setup before a Soul is selected. Page display no longer repeats heavy Python validation. Windows launcher installation and upgrades have been tested; full Windows component-install acceptance remains separate. Atomic's compatible Windows server is downloaded during Install, without Rust or Visual Studio. Other platforms still need a manually built Rust server binary.
 
-### Release tags
+### Selected release tags
 
 | Tag | Headline |
 |-----|----------|

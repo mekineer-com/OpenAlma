@@ -281,6 +281,7 @@ def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch)
         "SILLYTAVERN_ENABLESERVERPLUGINS": "true",
         "SILLYTAVERN_ENABLESERVERPLUGINSAUTOUPDATE": "false",
         "MEMU_SERVER_PATH": str(root / "mcp-memu-server"),
+        "MEMU_SERVER_MANAGED": "launcher",
     }
 
 

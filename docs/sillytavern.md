@@ -33,7 +33,7 @@ Turning memU off restores plain ST replies, without deleting the Soul or changin
 |--------|---------|------|
 | **Override Summarizer** | on | If on, replace SillyTavern's summary message with memU's. If off, memU's renders alongside it. |
 | **Import Lorebooks** | on | Publishes memU categories as SillyTavern lorebooks named `memU - <Character> - <Category>`, so the soul's knowledge shows up in ST's world info. Unchecking deletes any existing ones for this character. |
-| **Mental Health Addon** | off, per character | When the conversation touches a relevant theme, she can draw on one of 15 curated coping entries (rumination, grief, panic, self-criticism, loneliness, etc.). WhatsApp follows the server setting `retrieve.mental_health_query`, which is on by default. |
+| **Mental Health Addon** | off, per character | When the conversation touches a relevant theme, she can draw on one of 15 curated coping entries (rumination, grief, panic, self-criticism, loneliness, etc.). WhatsApp follows the server setting `retrieve.mental_health_query`; it is off when that setting is absent, including new launcher installs. |
 
 ## Relationships
 

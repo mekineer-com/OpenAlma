@@ -5,7 +5,7 @@
       "repositories": [
         {
           "repository": "https://github.com/mekineer-com/mcp-memu-server.git",
-          "ref": "v0.1.19",
+          "ref": "v0.1.22",
           "destination": "mcp-memu-server"
         },
         {
@@ -19,7 +19,7 @@
       "repositories": [
         {
           "repository": "https://github.com/mekineer-com/iris.git",
-          "ref": "v0.1.16",
+          "ref": "v0.1.22",
           "destination": "mentra-os/miniapps/openalma"
         }
       ]
@@ -51,12 +51,12 @@
         },
         {
           "repository": "https://github.com/mekineer-com/memu-sillytavern-plugin.git",
-          "ref": "v0.1.12",
+          "ref": "v0.1.22",
           "destination": "sillytavern/SillyTavern/plugins/memu-plugin"
         },
         {
           "repository": "https://github.com/mekineer-com/memu-sillytavern-extension.git",
-          "ref": "v0.1.12",
+          "ref": "v0.1.22",
           "destination": "sillytavern/SillyTavern/data/default-user/extensions/memu-extension"
         }
       ]

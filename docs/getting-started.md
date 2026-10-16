@@ -116,7 +116,7 @@ The soul needs somewhere to meet you. Each client is independent; combine as man
 
 4. **[memu-sillytavern-extension](https://github.com/mekineer-com/memu-sillytavern-extension)** — installed in SillyTavern's `data/default-user/extensions/` folder. This adds the memU panel.
 
-Launcher-managed installs supply **Server path** in SillyTavern's memU panel. For a manual installation, set it to your `mcp-memu-server` folder. The plugin reads the server address from that folder's `config.json`. Full walkthrough: [SillyTavern](sillytavern.md).
+New launcher-managed installs supply **Server path** in SillyTavern's memU panel. Existing saved paths are kept; change the field if it points to an old installation. For a manual installation, set it to your `mcp-memu-server` folder. The plugin reads the server address from that folder's `config.json`. Start memU Server from OpenAlma when using launcher-managed SillyTavern. Full walkthrough: [SillyTavern](sillytavern.md).
 
 ### Hermes Channels (messaging)
 
