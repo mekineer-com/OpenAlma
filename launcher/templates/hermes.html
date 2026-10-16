@@ -194,7 +194,7 @@ function syncMemorize(chatId, policy) {
           clearInterval(pairTimer);
           pairTimer = null;
         } else if (!data.websource.qr && !data.bridge.qr) {
-          pairStatus.textContent = "Start Hermes Channels, then try again.";
+          pairStatus.textContent = "Waiting for WhatsApp QR codes...";
         } else {
           pairStatus.innerHTML = "Scan <strong>both</strong> QR codes; both are needed.";
         }
@@ -203,11 +203,22 @@ function syncMemorize(chatId, policy) {
       }
     }
 
-    pairButton.addEventListener("click", () => {
+    pairButton.addEventListener("click", async () => {
+      pairButton.disabled = true;
       pairPanel.hidden = false;
-      refreshPairing();
       clearInterval(pairTimer);
-      pairTimer = setInterval(refreshPairing, 3000);
+      pairStatus.textContent = "Starting Hermes Channels...";
+      try {
+        const response = await fetch("/service/channels-daemon/start", { method: "POST" });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Could not start Hermes Channels.");
+        pairTimer = setInterval(refreshPairing, 3000);
+        await refreshPairing();
+      } catch (error) {
+        pairStatus.textContent = error.message;
+      } finally {
+        pairButton.disabled = false;
+      }
     });
     if (new URLSearchParams(window.location.search).get("pair") === "1") {
       pairButton.click();

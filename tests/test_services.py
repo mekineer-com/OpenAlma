@@ -1888,6 +1888,22 @@ def test_channels_needs_soul_selection_before_start(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="Choose a Soul in Setup"):
         services.start(spec)
     (tmp_path / "config.json").write_text(json.dumps({"soul_id": "Fictional Soul"}))
+    status = services.status(spec)
+    assert status["action_kind"] == "settings" and not status["startable"]
+    monkeypatch.setattr(services, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(services, "_spawn_background", lambda *_args: SimpleNamespace(pid=123))
+    services.start(spec)  # Pair WhatsApp must be able to start before sessions exist.
+    assert spec.pid_path.read_text() == "123"
+    session = tmp_path / "whatsapp" / "session"
+    session.mkdir(parents=True)
+    (session / "creds.json").write_text(json.dumps({"me": {"id": "fictional-account"}}))
+    (tmp_path / "whatsapp" / "wwebjs_auth").mkdir()
+    web_status = tmp_path / "whatsapp" / "web_source_status.json"
+    web_status.write_text(json.dumps({"state": "pairing", "qr": "fixture-qr"}))
+    assert not services.status(spec)["startable"]
+    web_status.write_text(json.dumps({"state": "ready", "qr": None}))
+    assert services.status(spec)["startable"]
+    web_status.write_text(json.dumps({"state": "stopping", "qr": None}))
     assert services.status(spec)["startable"]
 
 

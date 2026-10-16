@@ -589,6 +589,23 @@ def _read_channels_web_source_status() -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _channels_pairing_saved() -> bool:
+    try:
+        creds = json.loads((_CHANNELS_HOME / "whatsapp" / "session" / "creds.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(creds, dict) or not creds.get("me"):
+        return False
+    if not _coerce_bool(_read_channels_config().get("web_source_enabled"), True):
+        return True
+    web_source = _read_channels_web_source_status()
+    return (
+        web_source.get("qr", "") is None
+        and web_source.get("state") not in {"auth_failure", "disconnected"}
+        and (_CHANNELS_HOME / "whatsapp" / "wwebjs_auth").is_dir()
+    )
+
+
 def whatsapp_pair_status() -> dict:
     config = _read_channels_config()
     bridge = _channels_bridge_health(config)
@@ -1552,6 +1569,8 @@ def status(spec: ServiceSpec) -> dict:
     })
     if spec.name == "channels-daemon" and result["startable"] and (issue := channels_setup_issue()):
         result.update(startable=False, state="setup", status_label="Setup needed", detail=issue, action_kind="settings")
+    elif spec.name == "channels-daemon" and result["startable"] and not _channels_pairing_saved():
+        result.update(startable=False, state="setup", status_label="Setup needed", detail="Pair WhatsApp in Setup", action_kind="settings")
     return result
 
 
