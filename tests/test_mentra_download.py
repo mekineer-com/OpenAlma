@@ -80,6 +80,7 @@ def test_mentra_download_controls_survive_status_poll_and_pending_actions():
 const fs = require('fs'), vm = require('vm');
 global.esc = value => String(value || '');
 global.actionHtml = (_name, data) => irisParentActions(data);
+global.setActionHtml = (cell, html) => {cell.innerHTML = html;};
 global.pendingStops = {};
 global.pendingStarts = {};
 global.reloading = false;

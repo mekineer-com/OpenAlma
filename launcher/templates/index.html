@@ -348,6 +348,16 @@ async function openService(name) {
   }
 }
 
+function setActionHtml(cell, html) {
+  var template = document.createElement('template');
+  template.innerHTML = html;
+  var current = Array.from(cell.children);
+  var next = template.content.children;
+  if (current.length !== next.length || current.some(function(node, i) { return !node.isEqualNode(next[i]); })) {
+    cell.replaceChildren(template.content);
+  }
+}
+
 function pollStatus(name) {
   if (reloading) return;
   var row = document.querySelector('tr[data-service="' + name + '"]');
@@ -388,15 +398,15 @@ function pollStatus(name) {
       }
       var starting = pendingStarts[name] > Date.now() && !data.stoppable && data.startable !== false;
       if (name === 'iris-server') {
-        actionsCell.innerHTML = irisParentActions();
+        setActionHtml(actionsCell, irisParentActions());
       } else if (pendingStops[name]) {
         statusCell.innerHTML = '<div class="svc-status-content">' + apkLink + '<span class="starting">◐ stopping</span></div>';
-        actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Stopping"></span>';
+        setActionHtml(actionsCell, '<span class="spinner" role="status" aria-label="Stopping"></span>');
       } else if (starting) {
-        actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Starting"></span>';
+        setActionHtml(actionsCell, '<span class="spinner" role="status" aria-label="Starting"></span>');
       } else {
         delete pendingStarts[name];
-        actionsCell.innerHTML = actionHtml(name, data);
+        setActionHtml(actionsCell, actionHtml(name, data));
       }
     })
     .catch(function() {});

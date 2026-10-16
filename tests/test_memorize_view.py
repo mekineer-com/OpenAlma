@@ -166,6 +166,25 @@ console.log(JSON.stringify(JSON.parse(process.argv[2]).map(row=>actionHtml(row.n
     assert 'href="/hermes?pair=1"' in polled[-1]
 
 
+def test_status_poll_preserves_unchanged_action_elements():
+    path = Path(__file__).resolve().parents[1] / "launcher/templates/index.html"
+    subprocess.run(["node", "-e", r'''
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync(process.argv[1],'utf8');
+vm.runInThisContext(source.slice(source.indexOf('function setActionHtml('),source.indexOf('function pollStatus(')));
+let equal=true,replacements=0;
+const next={}, current={isEqualNode(node){assert.equal(node,next);return equal;}};
+const fragment={children:[next]}, template={content:fragment};
+global.document={createElement(tag){assert.equal(tag,'template');return template;}};
+const cell={children:[current],replaceChildren(value){assert.equal(value,fragment);replacements++;}};
+setActionHtml(cell,'<button>Start</button>');assert.equal(replacements,0,'An unchanged button must retain its pointer/focus target');
+equal=false;
+setActionHtml(cell,'<button>Stop</button>');assert.equal(replacements,1);
+cell.children=[];
+setActionHtml(cell,'<button>Start</button>');assert.equal(replacements,2);
+''', str(path)], text=True, check=True, timeout=15)
+
+
 def test_install_meter_is_in_status_and_matches_polled_rendering():
     progress = {"step_number": 2, "total_steps": 5, "elapsed_seconds": 65}
     html = _render({}, services=[{
@@ -195,6 +214,7 @@ vm.runInThisContext(text.slice(start,text.indexOf('\n{% for s',start)));
 const cells={'.svc-status':{querySelector:()=>null},'.svc-actions':{}}, row={dataset:{runtime:'false',installing:'true'},querySelector:key=>cells[key]};
 const download={hidden:true}, notice={hidden:false}, other={dataset:{updateActive:'true'}};
 global.document={getElementById:id=>id==='update-download'?download:notice,querySelector:selector=>selector.includes('data-update-active')?[row,other].find(r=>r.dataset.updateActive==='true'):row};global.actionHtml=()=>'';
+global.setActionHtml=(cell, html)=>{cell.innerHTML=html;};
 let reloads=0,ok=true,url,payload={install_running:true,install_setup:true,detail:'Installing dependencies',install_progress:{step_number:2,total_steps:5,elapsed_seconds:65}};
 global.location={reload:()=>reloads++};global.fetch=async value=>{url=value;return {ok,json:async()=>payload};};
 async function poll(){pollStatus('atomic');await new Promise(setImmediate);}
