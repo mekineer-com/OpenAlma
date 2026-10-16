@@ -82,6 +82,7 @@ global.esc = value => String(value || '');
 global.actionHtml = (_name, data) => irisParentActions(data);
 global.pendingStops = {};
 global.pendingStarts = {};
+global.reloading = false;
 vm.runInThisContext(fs.readFileSync(process.argv[1] + '/static/iris-services.js', 'utf8'));
 global.renderIrisInstallations = () => {};
 const source = fs.readFileSync(process.argv[1] + '/templates/index.html', 'utf8');

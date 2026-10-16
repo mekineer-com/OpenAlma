@@ -63,7 +63,7 @@
     .config-link:focus-visible, .context-info button:focus-visible { outline: 2px solid #7cb7ff; outline-offset: 2px; }
     .svc-actions { white-space: nowrap; }
     .svc-actions .btn { vertical-align: middle; }
-    .svc-actions .spinner { display: flex; }
+    .svc-actions .spinner:not([aria-label="Starting"]) { display: flex; }
     .install-progress { display: block; width: 100%; max-width: 22rem; height: 0.65rem; margin-top: 0.3rem; accent-color: #6aa9ff; }
     .svc-status:has(.mentra-apk-link) { position: relative; padding-right: 4rem; }
     .mentra-apk-link { position: absolute; right: 0.2rem; top: 50%; transform: translateY(-50%); text-align: right; white-space: nowrap; }

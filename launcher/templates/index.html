@@ -217,6 +217,7 @@
   <script>
 var pendingStarts = {};
 var pendingStops = {};
+var reloading = false;
 
 document.addEventListener('submit', async function(event) {
   var form = event.target;
@@ -330,13 +331,16 @@ async function openService(name) {
 }
 
 function pollStatus(name) {
+  if (reloading) return;
   var row = document.querySelector('tr[data-service="' + name + '"]');
   var installing = name !== 'iris-server' && row.dataset.installing === 'true';
   fetch((installing ? '/install/' : '/service/') + name + '/status')
     .then(function(r) { if (!r.ok) throw new Error('Service status unavailable'); return r.json(); })
     .then(function(data) {
+      if (reloading) return;
       if ((installing && !data.install_running) ||
           (name !== 'iris-server' && data.install_setup && !data.install_running && row.dataset.runtime === 'true')) {
+        reloading = true;
         location.reload();
         return;
       }
@@ -404,8 +408,12 @@ setInterval(function() {
 }, 2000);
 {% if owner_error or soul_error %}
 setInterval(function() {
+  if (reloading) return;
   fetch('{% if owner_error %}/owner{% else %}/souls{% endif %}', { cache: 'no-store' }).then(function(response) {
-    if (response.ok) location.reload();
+    if (response.ok && !reloading) {
+      reloading = true;
+      location.reload();
+    }
   }).catch(function() {});
 }, 2000);
 {% endif %}

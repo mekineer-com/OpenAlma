@@ -141,9 +141,10 @@ def test_install_meter_is_in_status_and_matches_polled_rendering():
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 vm.runInThisContext(fs.readFileSync(process.argv[1],'utf8'));
 const text=fs.readFileSync(process.argv[2],'utf8'), start=text.indexOf('function pollStatus');
+vm.runInThisContext(text.slice(text.indexOf('var pendingStarts'),text.indexOf("document.addEventListener('submit'")));
 vm.runInThisContext(text.slice(start,text.indexOf('\n{% for s',start)));
 const cells={'.svc-status':{querySelector:()=>null},'.svc-actions':{}}, row={dataset:{runtime:'false',installing:'true'},querySelector:key=>cells[key]};
-global.document={querySelector:()=>row};global.pendingStarts={};global.pendingStops={};global.actionHtml=()=>'';
+global.document={querySelector:()=>row};global.actionHtml=()=>'';
 let reloads=0,ok=true,url,payload={install_running:true,install_setup:true,detail:'Installing dependencies',install_progress:{step_number:2,total_steps:5,elapsed_seconds:65}};
 global.location={reload:()=>reloads++};global.fetch=async value=>{url=value;return {ok,json:async()=>payload};};
 async function poll(){pollStatus('atomic');await new Promise(setImmediate);}
@@ -157,7 +158,21 @@ async function poll(){pollStatus('atomic');await new Promise(setImmediate);}
   assert.equal(cells['.svc-status'].innerHTML,shown);
   cells['.svc-status'].querySelector=()=>null;
   ok=false;await poll();assert.equal(reloads,0);
-  ok=true;payload={install_running:false};await poll();assert.equal(reloads,1);
+  ok=true;payload={install_running:false};await Promise.all([poll(),poll()]);assert.equal(reloads,1);
+  let blockedFetches=0;
+  global.fetch=()=>{blockedFetches++;return Promise.reject(new Error('Polled while navigation was pending'));};await poll();
+  let ownerPoll;
+  global.setInterval=callback=>{ownerPoll=callback;};
+  const ownerStart=text.indexOf('{% if owner_error or soul_error %}');
+  vm.runInThisContext(text.slice(text.indexOf('setInterval',ownerStart),text.indexOf('\n{% endif %}',ownerStart)));
+  ownerPoll();
+  assert.equal(blockedFetches,0);
+  reloading=false;
+  global.fetch=async()=>({ok:true});
+  ownerPoll();ownerPoll();await new Promise(setImmediate);
+  assert.equal(reloads,2);assert.equal(reloading,true);
+  global.fetch=()=>{blockedFetches++;return Promise.reject(new Error('Polled while navigation was pending'));};ownerPoll();await poll();
+  assert.equal(blockedFetches,0);
 })().catch(error=>{console.error(error);process.exitCode=1;});
 """
     subprocess.run(["node", "-e", polling, str(path), str(template)], check=True)
