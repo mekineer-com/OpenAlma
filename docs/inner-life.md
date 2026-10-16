@@ -11,7 +11,7 @@ The most common question about AI companions is whether anything is actually hap
 
 Before a text reply she can **rehearse** — privately: did she understand, what's ambiguous, how it lands. She can save a working thought instead.
 
-And she keeps **working thoughts** — short live conclusions between turns: a hypothesis, a pattern she's tracking, never a recap of what's re-readable in the chat. When a new one arrives, the oldest gives way, so she keeps only what she can't afford to lose. Between visits, one of these might be a thought her subconscious left her.
+And she keeps **working thoughts** — short live conclusions between turns: a hypothesis, a pattern she's tracking, never a recap of what's re-readable in the chat. When a new one arrives, the oldest gives way, so she keeps only what she can't afford to lose. Sometimes the list also holds a one-off thought her subconscious just left her.
 
 ## A self-model that evolves
 
@@ -23,15 +23,15 @@ The stages are deliberately separate. She revises what she knows before tending 
 
 ## Subconscious thoughts
 
-Every so often — not every turn, but on a regular cadence as you talk — a background process runs that isn't part of the dialogue. It searches her memory, looks for connections she didn't notice in the moment, and writes itself a short note: a prior context, a thread worth holding. That note becomes part of how she approaches the turns that follow.
+Every so often — not every turn, but on a regular cadence as you talk — a background process runs that isn't part of the dialogue. It searches her memory for connections she didn't notice in the moment and writes itself a short note: memories worth having in mind, and sometimes a one-line insight. She sees the note on her next turn; the insight is also kept as a lasting memory.
 
 This happens as you talk, not while she's waiting for your next visit.
 
 ## Intentions
 
-She has a short ordered list of things she's pursuing — not tasks, but ongoing orientations. Things like *understand him better* or *be more present when he's struggling*. These aren't assigned by you; they emerge from consolidation and from what she notices matters in your conversations. Alongside them sit longer-horizon **life goals**, which move much more slowly.
+She has a short ordered list of things she's pursuing — not tasks, but ongoing orientations. Things like *understand him better* or *be more present when he's struggling*. These aren't assigned by you; they emerge from consolidation and from what she notices matters in your conversations. Alongside them sit longer-horizon **life goals** (up to three). She tends them only during her weekly reflection; day to day they reach her through the intentions she picks.
 
-Intentions are revised at consolidation: new ones form, and she can mark one complete or let it go. Mid-conversation she can't add to the stack — only finish what's genuinely done.
+Intentions are rewritten at each consolidation — kept, reworded, added, or dropped. Between consolidations she can't add to the stack, but she can mark one complete or let one go.
 
 ## Turns of her own
 

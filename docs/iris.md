@@ -25,13 +25,13 @@ That last part is the whole point. What you say out loud goes into the same memo
 
 You can take a photo with your phone or choose one from its gallery during a sitting. She looks at it and quietly describes what she wants to remember. Turn on **Speak photo descriptions** in Iris settings if you want to hear her describe it.
 
-Each photo is remembered two ways: a description of what it shows, and a stored impression of the image itself that search can match against directly. Ask about something you saw and she searches both — a photo can surface even when its description never used the words you asked with. If a photo fails to reach her, it stays pending rather than disappearing, and you decide whether to retry or discard it.
+Each photo is remembered two ways: a description of what it shows, and a stored impression of the image itself that search can match against directly. Ask about something you saw and she searches both — a photo can surface even when its description never used the words you asked with. If a photo fails to reach her, it stays pending rather than disappearing; during a sitting you can retry or discard it.
 
 Camera images are where Iris starts; live video is where she's heading.
 
 ## Looking things up mid-conversation
 
-While you're speaking she can go search her own memory and come back with what she found, without the conversation stopping to wait. You keep talking; the answer arrives when it arrives.
+While you're speaking she can go search her own memory and come back with what she found, without the conversation stopping to wait. You keep talking; the answer arrives when it arrives. She can also check her working thoughts and intentions mid-sitting, save a thought, or close out an intention that's done.
 
 ## A sitting
 

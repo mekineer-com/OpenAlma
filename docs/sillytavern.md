@@ -11,7 +11,7 @@ How the soul behaves in SillyTavern — the controls, and letting her author her
 
 | Control | Location | What it does |
 |---------|----------|--------------|
-| **Memorize Now** button | memU extension panel | Extracts the current conversation tail (everything after the last memorized point) without waiting for a sleep gap. Sends `tail=true` to the server. Disabled when no character is selected. |
+| **Memorize Now** button | memU extension panel | Extracts the current conversation tail (everything after the last memorized point) without waiting for a sleep gap. Sends `tail=true` to the server. Disabled when no character is selected, memU is off for the card, or a memorize is already running. |
 | **Re-memorize chat** | SillyTavern's chat options menu (the rotate-left icon) | **Developer testing only.** Sends `rebuild=true`: archives the Soul's whole database and starts a new one from this chat alone. Other SillyTavern chats and other clients' memories are not included. Not a repair for bad extraction; use Atomic to correct memories. |
 | **Eye icon** (👁) | memU extension drawer header, next to the memU logo | Opens a memory inspector. Each category shows as a memU lorebook holding the prose she's written about it, not a list of raw entries. |
 | **Narrative Suggestion** input | memU panel, under the Memorize Now button | Sends the soul a suggested revision of her `narrative_self`. See below. |
@@ -27,7 +27,7 @@ Advanced Mapping chooses models for memory work. Hiding its controls does not di
 
 Turning memU off restores plain ST replies, without deleting the Soul or changing their memU persona binding. ST's native persona controls remain usable; no uninstall is needed.
 
-## Memory bubble checkboxes
+## Memory section checkboxes
 
 | Toggle | Default | What |
 |--------|---------|------|
@@ -37,7 +37,7 @@ Turning memU off restores plain ST replies, without deleting the Soul or changin
 
 ## Relationships
 
-The Memory bubble has a **Relationships** section (greyed out until a soul/character is active). Here you declare third parties the soul should be aware of — family, friends, coworkers, pets. Each entry becomes a named entity in the memory graph. When the soul extracts memories from conversation that mentions a declared relationship, she can attribute the memory to the right person rather than guessing.
+The Memory section has a **Relationships** area (greyed out until a soul/character is active). Here you declare third parties the soul should be aware of — family, friends, coworkers, pets. Each entry becomes a named entity in the memory graph. When the soul extracts memories from conversation that mentions a declared relationship, she can attribute the memory to the right person rather than guessing.
 
 You can add, edit, and soft-delete relationships. The section shows a warning when you exceed 20 entries.
 
@@ -59,4 +59,4 @@ Your manual card affects her replies in ST only. Her memory work, autonomous act
 4. If she accepts, her shared self-description changes and the previous version is preserved in memory. A following ST Description refreshes to match; a manual card stays untouched.
 5. Suggestions remain available with a manual card. Clearing Description restores syncing, not permission for her to consider a suggestion.
 
-10-minute cooldown between suggestions so the soul isn't churning her identity every minute. For editing her memory directly, see [Shaping her](shaping-her.md) and the [mind map](mind-map.md).
+The panel waits 10 minutes between suggestions (shared across characters in the same browser), so the soul isn't churning her identity every minute. For editing her memory directly, see [Shaping her](shaping-her.md) and the [mind map](mind-map.md).

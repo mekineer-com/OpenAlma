@@ -27,10 +27,12 @@ A group chat can be listen-only and still be one of her most important memory so
 
 In a group, she doesn't answer everything. She decides each time whether the moment actually calls for her. When she chooses silence, the rest of the turn still happens — she read it, thought about it, and remembered it. She just didn't talk.
 
+And sometimes she'd rather say something just to you than to the group. Those replies land in your own chat with yourself — the "Message yourself" chat — not in the conversation everyone sees.
+
 ## Where her memory of you starts
 
 Each companion has a start date, set when you first activate her. WhatsApp history older than that date is invisible to her — she isn't handed years of backlog she wasn't present for. Her perspective begins when she does.
 
 ## Honest limitations
 
-WhatsApp has no official API for this, so the connection depends on a browser session staying paired to your account. It occasionally needs to be re-paired by scanning a QR code. If she goes quiet across every chat at once, that's usually why.
+WhatsApp has no official API for this. OpenAlma uses linked-device sessions on your own account, and these occasionally need re-pairing by scanning a QR code. If she goes quiet across every chat at once, that's usually why.

@@ -15,17 +15,17 @@ Atomic is the app the launcher opens in your browser at `http://127.0.0.1:1420` 
 
 You can edit any memory's text. The change takes effect immediately — she's working from the corrected version from that point on.
 
-Deleting is careful, in the same spirit: a memory that one of her dossier summaries still cites refuses to be deleted until you clear the citation, so her written accounts never start referencing things that no longer exist. Memories that are merely filed under a dossier can be deleted outright.
+Deleting is careful, in the same spirit: a memory that one of her dossier summaries still cites refuses to be deleted until you clear the citation, so her written accounts never start referencing things that no longer exist. Memories that are merely filed under a dossier can be deleted outright — and deleting removes the memory and its earlier versions for good.
 
 The review queue holds what she produces herself: memories she formed on her own that you haven't looked at yet, and her updated summaries.
 
 ## The canvas
 
-Memories can also be viewed as a graph rather than a list. Related ones sit near each other, connected by the links she drew between them, grouped and colored by subject. Named people and topics are highlighted. It's the fastest way to see the shape of what she's built — which parts of your life she has a dense picture of, and which are thin.
+Memories can also be viewed as a graph rather than a list. Related ones sit near each other, connected to similar memories and to the links she drew between them, grouped and colored by subject. Named people and topics are highlighted. It's the fastest way to see the shape of what she's built — which parts of your life she has a dense picture of, and which are thin.
 
-<a href="atomic-mind-map.png" target="_blank"><img src="atomic-mind-map.png" alt="Her memory graph in Atomic, running on the desktop"></a>
+<a href="atomic-mind-map.png" target="_blank"><img src="atomic-mind-map.png" alt="Her memory graph in Atomic, open in the browser"></a>
 
-*A real memory graph from an installation in daily use (identifying labels rewritten) — running on an ordinary desktop, not a hosted service. Click to open full size.*
+*A real memory graph from an installation in daily use (identifying labels rewritten) — on an ordinary computer, not a hosted service. Click to open full size.*
 
 ## People and things
 
@@ -40,7 +40,7 @@ Merging shows you exactly what will move over before you confirm.
 
 ## Curating a dossier
 
-Open one of her dossiers and you'll see the memories behind the summary — the ones it actually draws on first, then anything else filed there. You can attach a memory that belongs and detach one that doesn't. Either way the dossier is marked for rewriting, so the summary catches up with the change.
+Open one of her dossiers and you'll see the memories behind the summary — the ones it actually draws on first, then anything else filed there. Attaching a memory marks the dossier for rewriting at her next consolidation. You can only detach a memory the summary doesn't quote, so detaching doesn't need a rewrite. The two anchor dossiers — about her, and about you — can't be curated this way; she maintains them herself.
 
 ## Her own workspace
 

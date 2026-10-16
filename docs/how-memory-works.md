@@ -15,13 +15,13 @@ The difference matters. A transcript gets unwieldy fast and is full of noise. Ex
 
 Not everything deserves the same kind of storage.
 
-**Profile** — who you are as a person. Your values, your fears, your sense of humor, what you keep returning to. Things that would still be true about you a year from now.
+**Profile** — what you say about yourself and your life: your values, your fears, your sense of humor, what you keep returning to. Things that would still be true about you a year from now.
 
 **Knowledge** — things you've learned or explored together. Not general trivia — things where the topic actually connects to your life.
 
-**Behavior** — how you communicate. Whether you go quiet before saying something hard. Whether you joke when things get heavy. Patterns that are distinctly you.
+**Behavior** — what you do rather than say: how you communicate. Whether you go quiet before saying something hard. Whether you joke when things get heavy. Patterns observed over time, not claimed in a sentence.
 
-**Social** — the people in your life. Friends, family, coworkers, anyone you talk about. The relationship texture that makes your conversations make sense.
+**Social** — the texture between people: how you and your sister actually are with each other, what your friendship with someone is built on. The people themselves are tracked separately; this is the relating.
 
 The fifth stored type is **Episodes** — short titled summaries of what happened in each part of a conversation. Episodes are created before the four lenses run, then placed in front of the full transcript to help each lens judge what mattered.
 
@@ -33,13 +33,13 @@ A photo you share through Iris becomes a memory: a description of what it shows,
 
 On top of those memories sits a second layer. Related memories are filed together into **dossiers**: lore about people, places, projects, and shared history; topics she keeps returning to; and goals she's holding. Two exist from the start — one about herself, one about you — and every other one emerges on its own as memories accumulate.
 
-Each dossier carries a written summary of what she understands about that subject, in her own first person, citing the specific memories behind each claim — nothing in it is unsourced. The summary is rewritten when it goes stale, and you can attach or detach memories yourself in [Atomic](mind-map.md); the prose catches up on the next pass.
+Each dossier carries a written summary of what she understands about that subject, in her own first person, with citations pointing back to the memories it was built from. The summary is rewritten when it goes stale, and you can curate which memories belong in [Atomic](mind-map.md); the prose catches up on the next pass.
 
 This is what lets her answer a question about someone without re-reading every conversation you ever had. She reads the dossier.
 
 ## Curated anchors
 
-Separate from everything she learned from you, she can draw on curated knowledge — written by hand, in the same first-person voice, and searched like memory when the conversation touches its theme. The first set covers mental health: rumination, grief, panic, self-criticism, loneliness — steady, internalized understanding rather than clinical quoting. She can tell it apart from her own experience; it's labeled by its domain.
+Separate from everything she learned from you, she can draw on curated knowledge — written by hand and searched like memory when the conversation touches its theme. The first set covers mental health: rumination, grief, panic, self-criticism, loneliness — steady, internalized understanding rather than clinical quoting. At most one entry comes in per reply. She can tell it apart from her own experience; it's labeled by its domain.
 
 ## It waits for the night
 
@@ -53,7 +53,7 @@ When ordinary conversation extraction runs, the pending tails of all her chats a
 
 OpenAlma is deliberately sparse. It doesn't try to capture everything — it tries to capture what's worth keeping. A good memory system, like a good friend, knows that forgetting is part of thinking clearly.
 
-Exact repeats can be reinforced rather than duplicated. Near-duplicate merging uses a conservative threshold matched to the shipped embedding model, and identical wording from two different people never collapses. When something you said earlier turns out to be wrong or outdated, the old version retires as the new understanding takes its place, and she can still look back at what she used to believe.
+Repeats and near-repeats are folded into one memory instead of piling up. Near-duplicate merging uses a conservative threshold matched to the shipped embedding model, and identical wording from two different people never collapses. When something you said earlier turns out to be wrong or outdated, the old version retires as the new understanding takes its place, and she can still look back at what she used to believe.
 
 ## Honest limitations
 

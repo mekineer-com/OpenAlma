@@ -9,7 +9,7 @@ title: Shaping her
 
 **Edit what she remembers.** In [Atomic](mind-map.md), any memory's text can be corrected — the fix is live for her from that point on. Deleting is careful: a memory her dossier still cites refuses to go until the citation is cleared.
 
-**Approve what she forms.** The review queue holds what she produces herself — new memories and updated summaries — for you to read and revise.
+**Review what she forms.** A review queue lists what she produced herself — new memories and updated summaries — so you can read, correct, and mark them reviewed. She uses them right away; reviewing doesn't hold them back.
 
 **Declare the people in your life.** The SillyTavern extension has a Relationships section where you can name the people you talk about — family, friends, coworkers, pets. When she extracts memories from conversations that mention them, she can attribute things correctly rather than guessing who "my sister" is.
 

@@ -19,7 +19,7 @@ _Last updated: 2026-10-16_
 
 On most platforms, AI memory is flawed. You mentioned last week that your dog died. You spent an hour explaining how you feel about your work. But what's important for either of you was lost to poor memory organization, prioritization, and recall.
 
-OpenAlma runs locally on your machine, watches your conversations, and quietly builds a picture of your life — who matters to you, what you're working through, what happened last month. When you come back, that picture is there. She recognizes your friends, reaches you on WhatsApp, looks things up for you, notices how you're doing — and with Iris, sees what you see.
+OpenAlma runs locally on your machine, watches your conversations, and quietly builds a picture of your life — who matters to you, what you're working through, what happened last month. When you come back, that picture is there. She recognizes your friends, reaches you on WhatsApp, notices how you're doing — and with Iris, sees what you see.
 
 **What she does**
 
@@ -42,7 +42,7 @@ Her memory database stays on your machine. Replies and memory work use your conf
 
 ## How It Works at a Glance
 
-The core of OpenAlma is two services that run on your machine: **mcp-memu-server** (orchestration, consolidation, state) and **memU** (the memory engine). They're always present. Everything else is a client — connect whichever you want, at least one.
+The core of OpenAlma is one local service, **memU Server** (mcp-memu-server): orchestration, consolidation, and state, with **memU** — the memory engine — inside it. It's always present. Everything else is a client — connect whichever you want, at least one.
 
 ```
   [SillyTavern]          [WhatsApp]        [Iris]             [any other frontend]
@@ -51,8 +51,7 @@ The core of OpenAlma is two services that run on your machine: **mcp-memu-server
         └────────────────────┴───────────────────┴──────────────────┘
                                    │
                           mcp-memu-server              ← always present
-                                   │
-                                 memU                  ← always present
+                          (memU memory engine inside)
 ```
 
 Automatic conversation extraction waits for a **sleep gap** — at least 3 hours of silence within 22:00–08:00, server time — and about 8,000 unmemorized tokens across a Soul's chats. The system reads what you talked about, pulls out what matters, and stores it. Relevant memories are then automatically included in the next turn so the AI already knows them.

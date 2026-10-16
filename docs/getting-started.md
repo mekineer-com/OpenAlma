@@ -22,7 +22,7 @@ The complete OpenAlma stack has been tested on Alpine Linux 3.23 x86-64. Some co
 | SillyTavern integration | Stock SillyTavern on Linux | Other platforms remain subject to client installation and shutdown qualification. |
 | Atomic integration | Alpine Linux; packaged Windows server | Windows Install downloads the server. Linux/macOS server builds remain manual. |
 
-OpenAlma does not alter your firewall or create VPN services automatically. The Windows installer can install Python and Git; install other system prerequisites for the clients you choose.
+OpenAlma does not alter your firewall or create VPN services automatically. The Windows installer can install Python and Git; install other system prerequisites for the clients you choose. On Alpine 3.23, `install-alpine-prerequisites.sh` in this repo installs the reference system packages.
 
 **You'll need**
 
@@ -188,11 +188,11 @@ Works with Mentra on Android. The voice she uses today is Gemini Live's; see [Pl
 
 ### Atomic Mind Map
 
-**Atomic** is the app the launcher opens in your browser at `http://127.0.0.1:1420`, where her memory stops being invisible. Every memory she holds appears as a card you can read — what she took from the conversation, when, what it belongs to — and the canvas lays them out as a living graph: connected by the links she drew, grouped and colored by subject, so you can see at a glance which parts of your life she has a dense picture of and which are still thin.
+**Atomic** is the app the launcher opens in your browser at `http://127.0.0.1:1420`, where her memory stops being invisible. Every memory she holds appears as a card you can read — what she took from the conversation, when, what it belongs to — and the canvas lays them out as a living graph: connected to similar memories and to the links she drew, grouped and colored by subject, so you can see at a glance which parts of your life she has a dense picture of and which are still thin.
 
 - **Correct her.** Edit any memory's text — the fix is live for her from that point on. The review queue holds what she produces herself: new memories she forms on her own, and her updated summaries.
 - **People and things.** Everyone and everything she's recognized by name has a permanent identity. Correct a name, merge two entries that turn out to be the same person (with a preview of exactly what moves over), or hide one so she stops tracking it — hiding destroys nothing, and deletion is refused while memories still point at it.
-- **Curate dossiers.** Open a category and the memories behind its prose are listed beneath it. Attach or detach them; the prose rewrites itself to match on the next pass.
+- **Curate dossiers.** Open a category and the memories behind its prose are listed beneath it. Attach a memory and the prose rewrites itself to match on the next pass; detach is only offered for memories the prose doesn't quote.
 - **Every session memorizes.** Close a mind map session and the conversation you just had becomes memory, same as every other surface.
 
 Full guide: [The mind map](mind-map.md).
