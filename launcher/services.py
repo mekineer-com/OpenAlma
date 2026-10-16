@@ -1583,7 +1583,7 @@ def _stop_status(spec: ServiceSpec, result: dict) -> dict:
     elif error and has_target:
         result["detail"] = f"Stop failed: {error}"
     result["force_stoppable"] = has_target and bool(
-        elapsed if stopping else error or result.get("stuck") or result.get("orphaned")
+        elapsed if stopping else error or result.get("orphaned")
     )
     return result
 

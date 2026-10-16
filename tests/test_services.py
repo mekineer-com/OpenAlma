@@ -1111,15 +1111,16 @@ def test_atomic_match_requires_expected_cwd(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("age, expected", [(10, "starting"), (31, "stuck")])
-def test_status_reports_stuck_for_verified_process_without_port(tmp_path, monkeypatch, age, expected):
+@pytest.mark.parametrize("service_name, port", [("memu-server", 8099), ("sillytavern", 8000)])
+def test_status_reports_stuck_for_verified_process_without_port(tmp_path, monkeypatch, age, expected, service_name, port):
     spec = services.ServiceSpec(
-        name="memu-server",
+        name=service_name,
         label="memU Server",
         cmd=[],
         cwd=tmp_path,
         log_path=tmp_path / "server.log",
         pid_path=tmp_path / "server.pid",
-        port=8099,
+        port=port,
     )
     spec.pid_path.write_text("123", encoding="utf-8")
     old = time.time() - age
@@ -1134,6 +1135,7 @@ def test_status_reports_stuck_for_verified_process_without_port(tmp_path, monkey
     assert status["running"] is (expected == "starting")
     assert status["state"] == expected
     assert status["status_label"] == ("◐ starting" if expected == "starting" else "▲ stuck")
+    assert status["force_stoppable"] is False
     assert status["startable"] is False
     assert status["stoppable"] is True
 
