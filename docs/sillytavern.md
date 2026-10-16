@@ -11,7 +11,7 @@ How the soul behaves in SillyTavern — the controls, and letting her author her
 
 | Control | Location | What it does |
 |---------|----------|--------------|
-| **Memorize Now** button | memU extension panel | Extracts the current conversation tail (everything after the last memorized point) without waiting for a sleep gap. Sends `tail=true` to the server. Disabled when no character is selected, memU is off for the card, or a memorize is already running. |
+| **Memorize Now** button | memU extension panel | Extracts the current conversation tail (everything after the last memorized point) without waiting for a sleep gap. Sends `tail=true` to the server. Disabled when no character is selected, memU is off for the card, the chat is a checkpoint or branch, or a memorize is already running. |
 | **Re-memorize chat** | SillyTavern's chat options menu (the rotate-left icon) | **Developer testing only.** Sends `rebuild=true`: archives the Soul's whole database and starts a new one from this chat alone. Other SillyTavern chats and other clients' memories are not included. Not a repair for bad extraction; use Atomic to correct memories. |
 | **Eye icon** (👁) | memU extension drawer header, next to the memU logo | Opens a memory inspector. Each category shows as a memU lorebook holding the prose she's written about it, not a list of raw entries. |
 | **Narrative Suggestion** input | memU panel, under the Memorize Now button | Sends the soul a suggested revision of her `narrative_self`. See below. |
@@ -27,13 +27,26 @@ Advanced Mapping chooses models for memory work. Hiding its controls does not di
 
 Turning memU off restores plain ST replies, without deleting the Soul or changing their memU persona binding. ST's native persona controls remain usable; no uninstall is needed.
 
+## Server Controls
+
+Use **Start** and **Stop** in the memU Backend panel to control the shared memory
+server. **Auto Start** is off by default, including after upgrading from
+v0.1.22; turn it on again if wanted. It starts MCP with the SillyTavern service
+only when MCP is off, then requests graceful shutdown when ST stops. A server
+already running is left alone. Closing the browser tab does not stop ST.
+
+With Auto Start off, start MCP in this panel or OpenAlma before chatting.
+Background requests never start it. Stop refuses an active Iris conversation;
+if Iris activity is unknown, manual Stop asks for confirmation and automatic
+shutdown leaves MCP running.
+
 ## Memory section checkboxes
 
 | Toggle | Default | What |
 |--------|---------|------|
 | **Override Summarizer** | on | If on, replace SillyTavern's summary message with memU's. If off, memU's renders alongside it. |
-| **Import Lorebooks** | on | Publishes memU categories as SillyTavern lorebooks named `memU - <Character> - <Category>`, so the soul's knowledge shows up in ST's world info. Unchecking deletes any existing ones for this character. |
-| **Mental Health Addon** | off, per character | When the conversation touches a relevant theme, she can draw on one of 15 curated coping entries (rumination, grief, panic, self-criticism, loneliness, etc.). WhatsApp follows the server setting `retrieve.mental_health_query`; it is off when that setting is absent, including new launcher installs. |
+| **Import Lorebooks** | off | Publishes memU categories as SillyTavern lorebooks named `memU - <Character> - <Category>`, so the soul's knowledge shows up in ST's world info. Unchecking deletes any existing ones for this character. |
+| **Mental Health Addon** | off, shared server setting | Reads and edits `retrieve.mental_health_query` in `config.json`, also affecting WhatsApp. When the conversation touches a relevant theme, she can draw on one of 15 curated coping entries (rumination, grief, panic, self-criticism, loneliness, etc.). Fresh installs default off; existing explicit config values are preserved. |
 
 ## Relationships
 

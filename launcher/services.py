@@ -206,7 +206,6 @@ def services_for_root(root: Path) -> list[ServiceSpec]:
                 "SILLYTAVERN_ENABLESERVERPLUGINS": "true",
                 "SILLYTAVERN_ENABLESERVERPLUGINSAUTOUPDATE": "false",
                 "MEMU_SERVER_PATH": str(root / "mcp-memu-server"),
-                "MEMU_SERVER_MANAGED": "launcher",
             },
             install_marker=root / "sillytavern" / "SillyTavern" / "server.js",
         ),
@@ -1656,10 +1655,17 @@ def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None, bu
     _clear_port_cache(spec)
 
 
-def _kill_process_tree(pid: int) -> None:
+def _kill_process_tree(pid: int, *, preserve_service: ServiceSpec | None = None) -> None:
     try:
         process = psutil.Process(pid)
         targets = [process, *process.children(recursive=True)]
+        if preserve_service is not None:
+            preserved: set[int] = set()
+            for child in targets[1:]:
+                if _matches_service_process(preserve_service, child.pid):
+                    preserved.add(child.pid)
+                    preserved.update(descendant.pid for descendant in child.children(recursive=True))
+            targets = [target for target in targets if target.pid not in preserved]
     except psutil.NoSuchProcess:
         return
     except psutil.AccessDenied as exc:
@@ -1820,8 +1826,12 @@ def force_stop(spec: ServiceSpec, *, timeout: float = 10.0) -> None:
         _IRIS_INSTALL_CANCELLED.set()
     _clear_port_cache(spec)
     try:
+        preserve = next((service for service in all_services() if service.name == "memu-server"), None) if spec.name == "sillytavern" else None
         for pid in _verified_pid_candidates(spec):
-            _kill_process_tree(pid)
+            if preserve is None:
+                _kill_process_tree(pid)
+            else:
+                _kill_process_tree(pid, preserve_service=preserve)
         deadline = time.monotonic() + timeout
         while _verified_pid_candidates(spec) and time.monotonic() < deadline:
             time.sleep(0.1)

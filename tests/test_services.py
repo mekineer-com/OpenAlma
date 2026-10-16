@@ -281,7 +281,6 @@ def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch)
         "SILLYTAVERN_ENABLESERVERPLUGINS": "true",
         "SILLYTAVERN_ENABLESERVERPLUGINSAUTOUPDATE": "false",
         "MEMU_SERVER_PATH": str(root / "mcp-memu-server"),
-        "MEMU_SERVER_MANAGED": "launcher",
     }
 
 
@@ -1520,6 +1519,33 @@ def test_stop_leaves_live_nonmatching_service_pidfile(tmp_path, monkeypatch):
     services.stop(spec)
 
     assert adopt_pid.exists()
+
+
+def test_force_stop_sillytavern_preserves_memu_and_its_children(tmp_path, monkeypatch):
+    st = services.ServiceSpec("sillytavern", "ST", [], tmp_path / "st", tmp_path / "st.log", tmp_path / "st.pid")
+    memu = services.ServiceSpec("memu-server", "MCP", [], tmp_path / "memory", tmp_path / "memory.log", tmp_path / "memory.pid")
+    killed = []
+    gone = False
+
+    def kill(pid):
+        nonlocal gone
+        killed.append(pid)
+        if pid in (10, 20):
+            gone = True
+
+    processes = {pid: SimpleNamespace(pid=pid, kill=lambda pid=pid: kill(pid)) for pid in (10, 20, 21, 30)}
+    processes[10].children = lambda recursive: [processes[20], processes[21], processes[30]]
+    processes[20].children = lambda recursive: [processes[21]]
+    monkeypatch.setattr(services.psutil, "Process", lambda pid: processes[pid])
+    monkeypatch.setattr(services, "all_services", lambda: [st, memu])
+    monkeypatch.setattr(services, "_matches_service_process", lambda spec, pid: spec is memu and pid == 20)
+    monkeypatch.setattr(services, "_verified_pid_candidates", lambda spec: [] if gone else [10 if spec is st else 20])
+
+    services.force_stop(st)
+    assert killed == [10, 30]
+    gone = False
+    services.force_stop(memu)
+    assert killed == [10, 30, 20, 21]
 
 
 def test_force_stop_kills_only_verified_matching_pids(tmp_path, monkeypatch):
