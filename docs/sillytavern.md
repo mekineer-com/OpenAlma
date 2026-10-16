@@ -45,7 +45,7 @@ shutdown leaves MCP running.
 | Toggle | Default | What |
 |--------|---------|------|
 | **Override Summarizer** | on | If on, replace SillyTavern's summary message with memU's. If off, memU's renders alongside it. |
-| **Import Lorebooks** | off | Publishes memU categories as SillyTavern lorebooks named `memU - <Character> - <Category>`, so the soul's knowledge shows up in ST's world info. Unchecking deletes any existing ones for this character. |
+| **Import Lorebooks** | on | Publishes memU categories as SillyTavern lorebooks named `memU - <Character> - <Category>`, so the soul's knowledge shows up in ST's world info. Unchecking deletes any existing ones for this character. |
 | **Mental Health Addon** | off, shared server setting | Reads and edits `retrieve.mental_health_query` in `config.json`, also affecting WhatsApp. When the conversation touches a relevant theme, she can draw on one of 15 curated coping entries (rumination, grief, panic, self-criticism, loneliness, etc.). Fresh installs default off; existing explicit config values are preserved. |
 
 ## Relationships
