@@ -15,6 +15,9 @@ def _render(
     services: list[dict] | None = None,
     template_name: str = "index.html",
     editable_configs: list[dict] | None = None,
+    windows: bool = False,
+    launcher_update: dict | None = None,
+    services_active: bool = False,
 ) -> str:
     template_dir = Path(__file__).resolve().parents[1] / "launcher" / "templates"
     env = jinja2.Environment(
@@ -38,9 +41,54 @@ def _render(
         owner_id="Fictional User",
         owner_error="",
         channels_configured=True,
+        runtime_active=lambda _row: False,
+        windows=windows,
+        launcher_update=launcher_update,
+        services_active=services_active,
         channels_error="",
         soul_error="",
     ).split('<script>', 1)[0]
+
+
+@pytest.mark.parametrize("windows", [False, True])
+@pytest.mark.parametrize("active", [False, True])
+def test_launcher_update_controls_keep_linux_download_and_initial_stop_gate(windows, active):
+    html = _render({}, windows=windows, services_active=active,
+                   launcher_update={"tag": "v1.0.0", "url": "https://example.org/installer.exe"})
+    assert ('id="launcher-update-form"' in html) is windows
+    assert ('>Download Update</a>' in html) is not windows
+    download = re.search(r'<div id="update-download"([^>]*)>', html)
+    assert ("hidden" in download.group(1)) is active
+    notice = re.search(r'<span id="update-stop-notice"([^>]*)>', html)
+    assert ("hidden" in notice.group(1)) is not active
+
+
+def test_launcher_update_poll_opens_once_and_has_explicit_retry():
+    path = Path(__file__).resolve().parents[1] / "launcher/static/launcher.js"
+    script = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+vm.runInThisContext(fs.readFileSync(process.argv[1],'utf8'));
+const button={},form={dataset:{},querySelector:()=>button},progress={removeAttribute:()=>{delete progress.value;}},status={};
+global.document={getElementById:id=>({'launcher-update-form':form,'launcher-update-progress':progress,'launcher-update-status':status}[id])};
+let calls=[], state='running', fail=false;
+global.fetch=async(url,options)=>{
+  calls.push([url,options.method]);
+  return {ok:!fail,json:async()=>fail?{detail:'Connection lost'}:url.endsWith('/open')?{state:'opened',step:'Installer opened'}:{state,progress:{downloaded_bytes:25,total_bytes:100}}};
+};
+(async()=>{
+  await Promise.all([startLauncherUpdate(),startLauncherUpdate()]);assert.equal(calls.length,1);
+  assert.equal(button.disabled,true);assert.equal(progress.value,25);assert.equal(progress.max,100);
+  state='ready';await Promise.all([pollLauncherUpdate(),pollLauncherUpdate()]);
+  assert.equal(calls.filter(c=>c[0].endsWith('/open')).length,1);assert.equal(button.textContent,'Open installer again');
+  const count=calls.length;await pollLauncherUpdate();assert.equal(calls.length,count);
+  state='running';fail=true;await startLauncherUpdate();assert.equal(button.textContent,'Retry');assert.equal(status.textContent,'Connection lost');
+  const failed=calls.length;await pollLauncherUpdate();assert.equal(calls.length,failed);
+  fail=false;await startLauncherUpdate();assert.equal(button.disabled,true);assert.equal(calls.at(-1)[0],'/launcher/update');
+  delete form.dataset.paused;state='opened';await pollLauncherUpdate();
+  assert.equal(calls.filter(c=>c[0].endsWith('/open')).length,1);
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+    subprocess.run(["node", "-e", script, str(path)], check=True)
 
 
 def test_memorize_gauge_under_threshold():
@@ -144,7 +192,8 @@ const text=fs.readFileSync(process.argv[2],'utf8'), start=text.indexOf('function
 vm.runInThisContext(text.slice(text.indexOf('var pendingStarts'),text.indexOf("document.addEventListener('submit'")));
 vm.runInThisContext(text.slice(start,text.indexOf('\n{% for s',start)));
 const cells={'.svc-status':{querySelector:()=>null},'.svc-actions':{}}, row={dataset:{runtime:'false',installing:'true'},querySelector:key=>cells[key]};
-global.document={querySelector:()=>row};global.actionHtml=()=>'';
+const download={hidden:true}, notice={hidden:false}, other={dataset:{updateActive:'true'}};
+global.document={getElementById:id=>id==='update-download'?download:notice,querySelector:selector=>selector.includes('data-update-active')?[row,other].find(r=>r.dataset.updateActive==='true'):row};global.actionHtml=()=>'';
 let reloads=0,ok=true,url,payload={install_running:true,install_setup:true,detail:'Installing dependencies',install_progress:{step_number:2,total_steps:5,elapsed_seconds:65}};
 global.location={reload:()=>reloads++};global.fetch=async value=>{url=value;return {ok,json:async()=>payload};};
 async function poll(){pollStatus('atomic');await new Promise(setImmediate);}
@@ -152,6 +201,9 @@ async function poll(){pollStatus('atomic');await new Promise(setImmediate);}
   await poll();assert.equal(url,'/install/atomic/status');assert.equal(reloads,0);
   assert.ok(cells['.svc-status'].innerHTML.includes('Step 2 of 5'));
   assert.ok(cells['.svc-status'].innerHTML.includes('info:service:atomic'));
+  payload.runtime_active=false;await poll();assert.equal(download.hidden,true);
+  other.dataset.updateActive='false';await poll();assert.equal(download.hidden,false);assert.equal(notice.hidden,true);
+  payload.runtime_active=true;await poll();assert.equal(download.hidden,true);assert.equal(notice.hidden,false);
   const shown=cells['.svc-status'].innerHTML;
   cells['.svc-status'].querySelector=()=>({});
   payload.detail='Changed while reading';await poll();

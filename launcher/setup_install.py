@@ -74,6 +74,9 @@ class InstallOperation:
     started_at: float = field(default_factory=time.monotonic)
     thread: threading.Thread | None = field(default=None, repr=False)
     lock_handle: Any = field(default=None, repr=False)
+    downloaded_bytes: int = 0
+    total_bytes: int = 0
+    installer_path: Path | None = field(default=None, repr=False)
 
 
 _LOCK = threading.RLock()
@@ -82,6 +85,7 @@ _OPERATIONS: dict[str, InstallOperation] = {}
 _RELEASE_ISSUE_CACHE: dict[tuple[str, str, str], tuple[float, str]] = {}
 _LAUNCHER_UPDATE_CACHE: tuple[float, str, dict[str, str] | None] | None = None
 INSTALL_LOCK = Path.home() / ".cache" / "openalma-launcher" / "install.lock"
+LAUNCHER_UPDATE_DIR = INSTALL_LOCK.parent / "updates"
 BUN_VERSION = "1.3.14"
 
 
@@ -251,6 +255,78 @@ def launcher_update() -> dict[str, str] | None:
     return update
 
 
+def _download_launcher_update(operation: InstallOperation) -> None:
+    update = launcher_update()
+    if update is None:
+        raise SetupError("No launcher update is available")
+    tag = update["tag"]
+    name = f"OpenAlma-{tag}-Windows.exe"
+    url = f"https://github.com/mekineer-com/OpenAlma/releases/download/{urllib.parse.quote(tag, safe='')}/{name}"
+    release = _request_json(f"https://api.github.com/repos/mekineer-com/OpenAlma/releases/tags/{urllib.parse.quote(tag, safe='')}")
+    asset = next((item for item in release.get("assets") or [] if item.get("name") == name), None)
+    if (release.get("tag_name") != tag or release.get("draft") is not False
+            or not asset or asset.get("state") != "uploaded"
+            or update["url"] != url or asset.get("browser_download_url") != url):
+        raise SetupError("The selected launcher installer is unavailable")
+    digest = asset.get("digest", "")
+    if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+        raise SetupError("Launcher installer has no SHA256 digest")
+    operation.root.mkdir(parents=True, exist_ok=True)
+    installer = operation.root / name
+    cached = False
+    if installer.exists():
+        with installer.open("rb") as downloaded:
+            cached = f"sha256:{hashlib.file_digest(downloaded, 'sha256').hexdigest()}" == digest
+    if not cached:
+        partial = installer.with_suffix(".exe.part")
+        try:
+            _set_operation(operation, step="Downloading update", total_bytes=asset.get("size", 0))
+            with urllib.request.urlopen(urllib.request.Request(url, headers=_HEADERS), timeout=30) as response, partial.open("wb") as output:
+                while chunk := response.read(256 * 1024):
+                    output.write(chunk)
+                    _set_operation(operation, downloaded_bytes=operation.downloaded_bytes + len(chunk))
+            _set_operation(operation, step="Verifying update")
+            with partial.open("rb") as downloaded:
+                if f"sha256:{hashlib.file_digest(downloaded, 'sha256').hexdigest()}" != digest:
+                    raise SetupError("Launcher installer SHA256 mismatch")
+            partial.replace(installer)
+        finally:
+            partial.unlink(missing_ok=True)
+    _set_operation(operation, state="ready", step="Update downloaded", installer_path=installer)
+
+
+def begin_launcher_update() -> dict[str, Any]:
+    if sys.platform != "win32":
+        raise SetupError("Automatic launcher updates are available on Windows")
+    root = LAUNCHER_UPDATE_DIR.resolve()
+    _begin_operation("launcher", root, _download_launcher_update)
+    return operation_status(root, "launcher")
+
+
+def open_launcher_update() -> dict[str, Any]:
+    if sys.platform != "win32":
+        raise SetupError("Automatic launcher updates are available on Windows")
+    root = LAUNCHER_UPDATE_DIR.resolve()
+    with _LOCK:
+        status = operation_status(root, "launcher")
+        if status["state"] == "opened":
+            return status
+        operation = _OPERATIONS.get("launcher")
+        if status["state"] != "ready" or operation is None or operation.installer_path is None:
+            raise SetupConflict("The launcher installer is not ready")
+        update = launcher_update()
+        if update is None or operation.installer_path.name != f"OpenAlma-{update['tag']}-Windows.exe":
+            _set_operation(operation, state="error", step="Update selection changed", detail="Click Retry to download the selected update.")
+            raise SetupError("The selected update changed. Click Retry.")
+        try:
+            os.startfile(operation.installer_path)
+        except OSError as exc:
+            _set_operation(operation, state="error", step="Could not open installer", detail=str(exc))
+            raise SetupError("Could not open the installer. Click Retry.") from exc
+        _set_operation(operation, state="opened", step="Installer opened")
+    return operation_status(root, "launcher")
+
+
 def _read_release(root: Path, filename: str) -> str | None:
     try:
         tag = (root / filename).read_text(encoding="utf-8").strip()
@@ -371,12 +447,12 @@ def release_issue(service_name: str, root: Path, *, refresh: bool = False) -> st
         return cached[1]
     if (root / RECOVERY_FILE).exists():
         return "Core update recovery is required; view the installation log"
-    core_mismatch = any(
+    core_mismatch = service_name != "memu-server" and any(
         (root / entry["destination"]).exists()
         and not _local_matching_checkout(root / entry["destination"], entry["repository"], entry["ref"])
         for entry in manifest["memu-server"]
     )
-    if service_name != "memu-server" and core_mismatch:
+    if core_mismatch:
         issue = "Core update required before this client can start"
     else:
         mismatched = [
@@ -722,6 +798,7 @@ def _write_config(root: Path) -> None:
         config["storage"]["resources_dir"] = "../memu/resources"
         config["storage"]["metadata_store"]["dsn"] = "../memu/sqlite/memu.db"
         config["storage"]["sqlite_dir"] = "../memu/sqlite"
+        config["claude_code_workspace"] = str(settings.SETTINGS_PATH.parent / "workspace")
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise SetupError("Cannot create config.json from config.example.json") from exc
     temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
@@ -1314,6 +1391,8 @@ def operation_status(root: Path, service_name: str = "memu-server") -> dict[str,
                     "step_number": operation.step_number, "total_steps": operation.total_steps,
                     "elapsed_seconds": int(time.monotonic() - operation.started_at),
                 }
+                if service_name == "launcher":
+                    status["progress"].update(downloaded_bytes=operation.downloaded_bytes, total_bytes=operation.total_bytes)
     if status["state"] != "running" and _active_install_owner() == (service_name, str(root.resolve())):
         return {"state": "running", "step": "Installation running in another OpenAlma process", "detail": ""}
     return status

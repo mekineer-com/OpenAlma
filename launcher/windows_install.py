@@ -107,6 +107,7 @@ def main() -> None:
     parser.add_argument("--release-tag", required=True)
     parser.add_argument("--compare-release", action="store_true")
     args = parser.parse_args()
+    settings.prepare_storage()
     apps_root = selected_apps_root(args.apps_root)
     if args.compare_release:
         try:

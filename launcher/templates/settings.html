@@ -9,32 +9,51 @@
     {% endfor %}
   </ul>
 
-  <h2>Embedding model</h2>
-  <label for="embedding-model">Model:</label>
-  <select id="embedding-model" disabled>
-    <option selected>gemini-embedding-2</option>
-  </select>
-  <p class="hint">Changing embeddings model for a soul requires rebuilding their db. Additional models will appear here only when that workflow is supported.</p>
-
-  <form method="post" action="/settings">
-  <h2>Launcher updates</h2>
-  <label for="release_channel">Release channel:</label>
-  <select id="release_channel" name="release_channel">
-    <option value="stable" {% if release_channel == 'stable' %}selected{% endif %}>Stable</option>
-    <option value="prerelease" {% if release_channel == 'prerelease' %}selected{% endif %}>Prerelease</option>
-  </select>
-  <p class="hint">Prerelease includes early releases. Updates are always optional.</p>
-
-  <h2>Apps root</h2>
-  <p class="muted">Directory that contains, or will contain, the sibling OpenAlma repositories.</p>
-  <p>Active: <code>{{ apps_root_active or "(not resolved — service list will be empty until set)" }}</code></p>
+  <h2>Host paths</h2>
+  <form method="post" action="/settings" class="field-row">
+    <label for="apps_root">Apps root</label>
+    <input id="apps_root" type="text" name="apps_root" value="{{ apps_root_stored }}" placeholder="{{ apps_root_active or apps_root_setup_target }}">
+    <button class="btn" type="submit">Save</button>
+    <p class="hint field-help">Contains the OpenAlma components. Blank uses automatic discovery.</p>
+    <p class="hint field-help">Active: <code>{{ apps_root_active or '(not configured)' }}</code></p>
+  </form>
   {% if apps_root_invalid and not apps_root_setup_target %}<p class="failure">The saved Apps root is invalid. Choose an existing directory.</p>{% endif %}
   {% if apps_root_pending %}<p>Setup target: <code>{{ apps_root_setup_target }}</code>. Install core from the Services page.</p>{% endif %}
   {% if apps_root_restart_required %}<p class="failure">Restart the launcher to use the saved Apps root.</p>{% endif %}
-    <label for="apps_root">Override path (leave blank to auto-discover):</label>
-    <input id="apps_root" type="text" name="apps_root" value="{{ apps_root_stored }}" placeholder="/path/to/apps-root">
-    <p class="hint">Auto-discovery walks up from the launcher's own directory looking for any ancestor containing <code>mcp-memu-server/run.py</code>. Set this only if your layout is non-standard.</p>
-    <p><button class="btn" type="submit">Save</button></p>
+  <form method="post" action="/settings/workspace" class="field-row">
+    <label for="soul_workspace">Soul Workspace</label>
+    <input id="soul_workspace" type="text" name="soul_workspace" value="{{ soul_workspace }}" placeholder="{{ workspace_default }}" {% if workspace_error %}disabled{% endif %}>
+    <button class="btn" type="submit" {% if workspace_error %}disabled{% endif %}>Save</button>
+    <p class="hint field-help">Folder for Soul file work and attachments. Changing this path does not move existing files.</p>
+    {% if workspace_error %}<p class="failure field-help">{{ workspace_error }}</p>{% endif %}
+  </form>
+  <div class="field-row">
+    <span class="field-label">Launcher settings</span>
+    <code>{{ settings_path }}</code>
+    <p class="hint field-help">Stores Apps root, update channel and window preferences.</p>
+  </div>
+  <div class="field-row">
+    <span class="field-label">Launcher log</span>
+    <code>{{ launcher_log_path }}</code>
+    <a href="/logs/launcher">View</a>
+  </div>
+
+  <h2>Embedding model</h2>
+  <div class="field-row">
+    <label for="embedding-model">Model</label>
+    <select id="embedding-model" disabled><option selected>gemini-embedding-2</option></select>
+    <p class="hint field-help">Changing embeddings model for a soul requires rebuilding their db. Additional models will appear here only when that workflow is supported.</p>
+  </div>
+
+  <h2>Launcher updates</h2>
+  <form method="post" action="/settings" class="field-row">
+    <label for="release_channel">Release channel</label>
+    <select id="release_channel" name="release_channel">
+      <option value="stable" {% if release_channel == 'stable' %}selected{% endif %}>Stable</option>
+      <option value="prerelease" {% if release_channel == 'prerelease' %}selected{% endif %}>Prerelease</option>
+    </select>
+    <button class="btn" type="submit">Save</button>
+    <p class="hint field-help">Prerelease includes early releases. Updates are always optional.</p>
   </form>
 
   <h2>Edit configs</h2>
@@ -50,9 +69,6 @@
     {% endfor %}
   </ul>
 
-  <h2>Stored at</h2>
-  <p><code>{{ settings_path }}</code></p>
-  <p><a href="/logs/launcher">View launcher log</a>: <code>{{ launcher_log_path }}</code></p>
   <script src="/static/window-position.js"></script>
 {% include "_footer.html" %}
 </body>

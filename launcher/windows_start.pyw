@@ -5,6 +5,7 @@ import os
 import sys
 import traceback
 import winreg
+from contextlib import ExitStack
 
 import settings
 
@@ -25,11 +26,15 @@ def _refresh_path() -> None:
 
 
 def main() -> None:
-    settings.LAUNCHER_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with settings.LAUNCHER_LOG_PATH.open("a", encoding="utf-8", buffering=1) as log:
-        sys.stdout = sys.stderr = log
+    maintenance = bool({"--prepare-update", "--stop-existing"}.intersection(sys.argv))
+    with ExitStack() as stack:
         run = None
         try:
+            if not maintenance or settings.LEGACY_SETTINGS_PATH.exists():
+                settings.prepare_storage()
+            if not maintenance or settings.LAUNCHER_LOG_PATH.exists():
+                log = stack.enter_context(settings.LAUNCHER_LOG_PATH.open("a", encoding="utf-8", buffering=1))
+                sys.stdout = sys.stderr = log
             _refresh_path()
             os.chdir(settings.LAUNCHER_DIR)
             import run

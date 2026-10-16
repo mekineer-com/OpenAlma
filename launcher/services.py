@@ -322,6 +322,10 @@ def _matches_service_process(spec: ServiceSpec, pid: int) -> bool:
             program in {"bun", "npm", "pnpm"} and args[1:3] == ["run", "release:private"]
             or program in {"node", "bun"} and script == "release-private.mjs"
             or program == "mentra-miniapp" and args[1:2] == ["release"]
+            or program == "bun" and args[2:3] == ["release"]
+            and ntpath.normcase(args[1]) == ntpath.normcase(str(
+                spec.cwd / "node_modules" / "@mentra" / "miniapp-cli" / "src" / "index.ts"
+            ))
         )
     if spec.name == "channels-daemon":
         return python and args[1:3] == ["-m", "gateway.daemon"]

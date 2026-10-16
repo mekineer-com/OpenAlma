@@ -1161,6 +1161,25 @@ def test_status_reports_blocked_for_nonmatching_port_listener(tmp_path, monkeypa
     assert "port 8099 is held by PID 999" == status["detail"]
 
 
+def test_iris_installer_recognizes_its_cli_listener(tmp_path, monkeypatch):
+    spec = services.ServiceSpec(
+        "iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid", port=6789,
+    )
+    cli = tmp_path / "node_modules/@mentra/miniapp-cli/src/index.ts"
+    monkeypatch.setattr(services, "_proc_cwd", lambda _pid: tmp_path)
+    monkeypatch.setattr(services, "_proc_cmdline", lambda _pid: f'bun "{cli}" release --port 6789')
+    monkeypatch.setattr(services, "_is_alive", lambda _pid: True)
+    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [123])
+    monkeypatch.setattr(services, "_remember_verified_pid", lambda *_args: None)
+    monkeypatch.setattr(services, "_port_listener_pid", lambda _port: 456)
+
+    assert services._matches_service_process(spec, 456)
+    runtime = services._runtime_state(spec)
+    assert runtime.running and not runtime.port_blocked
+    monkeypatch.setattr(services, "_proc_cmdline", lambda _pid: 'bun /unrelated/index.ts release')
+    assert not services._matches_service_process(spec, 456)
+
+
 def test_verified_service_remains_running_when_port_owner_is_unavailable(tmp_path, monkeypatch):
     spec = services.ServiceSpec(
         "memu-server", "memU Server", [], tmp_path, tmp_path / "log", tmp_path / "pid", port=8099,

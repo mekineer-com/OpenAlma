@@ -374,7 +374,7 @@ begin
       Python := ExpandConstant('{app}\launcher\.venv\Scripts\python.exe');
       Script := ExpandConstant('{app}\launcher\windows_remove.py');
       if not RunHidden(Python, '"' + Script + '"', ResultCode) or (ResultCode <> 0) then
-        RaiseException('Remove Everything could not complete. Some files may already have been deleted. Close apps using the folder before trying again.');
+        RaiseException('Remove Everything could not complete.');
     end;
   end;
 end;

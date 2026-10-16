@@ -32,14 +32,11 @@ def remove_everything(*, confirm: bool = False) -> None:
     ) != 6:
         return
     shutil.rmtree(root, onexc=_clear_readonly_and_retry)
-    shutil.rmtree(settings.SETTINGS_PATH.parent, ignore_errors=True)
-    if not settings.LAUNCHER_LOG_PATH.is_relative_to(root):
-        settings.LAUNCHER_LOG_PATH.unlink(missing_ok=True)
-        for directory in (settings.LAUNCHER_LOG_PATH.parent, settings.LAUNCHER_LOG_PATH.parent.parent):
-            try:
-                directory.rmdir()
-            except OSError:
-                break
+    if not settings.BROWSER_PROFILE_PATH.is_relative_to(root):
+        shutil.rmtree(settings.BROWSER_PROFILE_PATH, ignore_errors=True)
+    for path in (settings.SETTINGS_PATH, settings.LAUNCHER_LOG_PATH):
+        if not path.is_relative_to(root):
+            path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

@@ -12,12 +12,21 @@
   {% if launcher_update %}
   <div class="banner">
     <strong>OpenAlma {{ launcher_update.tag }} is available.</strong>
-    {% if services_active %}
-      Stop all OpenAlma services before updating.
-    {% else %}
+    <span id="update-stop-notice" {% if not services_active %}hidden{% endif %}>
+    Stop all OpenAlma services before updating.
+    </span>
+    <div id="update-download" {% if services_active %}hidden{% endif %}>
       <p>OpenAlma Launcher updates first. Installed services will show Update required and cannot start until their matching updates complete. Your settings and soul data are preserved.</p>
+      {% if windows %}
+      <form id="launcher-update-form" class="inline" onsubmit="event.preventDefault(); startLauncherUpdate()">
+        <button class="btn" type="submit">Update</button>
+      </form>
+      <progress id="launcher-update-progress" hidden aria-label="Update download progress"></progress>
+      <span id="launcher-update-status" role="status"></span>
+      {% else %}
       <a class="btn" href="{{ launcher_update.url }}">Download Update</a>
-    {% endif %}
+      {% endif %}
+    </div>
   </div>
   {% endif %}
 
@@ -34,7 +43,10 @@
   {% if not soul_ids and not soul_error %}
   <form method="post" action="/first-soul" class="banner">
     <p>Your identity is saved. What will your first Soul be called?</p>
-    <input name="soul_id" required placeholder="Soul name">
+    <div class="field-row">
+      <label for="first-soul">Soul name</label>
+      <input id="first-soul" name="soul_id" required placeholder="Soul name">
+    </div>
     <label><input type="checkbox" name="confirmed" required> I confirm these names. They cannot be changed yet.</label>
     <button class="btn" type="submit">Continue</button>
   </form>
@@ -44,9 +56,15 @@
   {% else %}
   <form method="post" action="/owner" class="banner">
     <p><strong>Welcome to OpenAlma.</strong></p>
-    <input name="user_id" required autocomplete="name" placeholder="Your name">
+    <div class="field-row">
+      <label for="owner-name">Your name</label>
+      <input id="owner-name" name="user_id" required autocomplete="name" placeholder="Your name">
+    </div>
     {% if not soul_ids and not soul_error %}
-    <input name="soul_id" required placeholder="Your Soul's name">
+    <div class="field-row">
+      <label for="owner-soul-name">Your Soul's name</label>
+      <input id="owner-soul-name" name="soul_id" required placeholder="Your Soul's name">
+    </div>
     {% endif %}
     <label><input type="checkbox" name="confirmed" required> I confirm {% if not soul_ids and not soul_error %}these spellings. They{% else %}this spelling. It{% endif %} cannot be changed yet.</label>
     <button class="btn" type="submit">Continue</button>
@@ -67,7 +85,7 @@
     </thead>
     <tbody id="visible-services">
       {% for s in services + not_installed_services %}
-      <tr data-service="{{ s.name }}" data-installed="{{ 'true' if s in services else 'false' }}" data-runtime="{{ 'false' if s.install_setup else 'true' }}" data-installing="{{ 'true' if s.install_running else 'false' }}">
+      <tr data-service="{{ s.name }}" data-installed="{{ 'true' if s in services else 'false' }}" data-runtime="{{ 'false' if s.install_setup else 'true' }}" data-installing="{{ 'true' if s.install_running else 'false' }}" data-update-active="{{ 'true' if runtime_active(s) else 'false' }}">
         <td>{{ s.label }}</td>
         <td class="svc-status">
           <div class="svc-status-content">
@@ -346,6 +364,10 @@ function pollStatus(name) {
       }
       if (!data.install_setup) row.dataset.runtime = 'true';
       row.dataset.installing = data.install_running ? 'true' : 'false';
+      if (data.runtime_active !== undefined) {
+        row.dataset.updateActive = String(data.runtime_active);
+        updateDownloadNotice();
+      }
       if (name === 'iris-server') renderIrisInstallations(data);
       var statusCell = row.querySelector('.svc-status');
       var actionsCell = row.querySelector('.svc-actions');
@@ -405,6 +427,7 @@ setInterval(function() {
   document.querySelectorAll('tr[data-service][data-runtime="true"], tr[data-service][data-installing="true"]{% if not needs_setup %}, tr[data-service="iris-server"]{% endif %}').forEach(function(row) {
     pollStatus(row.dataset.service);
   });
+  pollLauncherUpdate();
 }, 2000);
 {% if owner_error or soul_error %}
 setInterval(function() {

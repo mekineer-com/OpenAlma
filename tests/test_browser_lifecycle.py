@@ -15,10 +15,18 @@ import browser  # noqa: E402
 import run  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _isolated_profile(tmp_path, monkeypatch):
+    monkeypatch.setattr(run.settings, "BROWSER_PROFILE_PATH", tmp_path / "old-config/chromium-profile")
+
+
 def test_simultaneous_launches_reuse_the_winning_server(tmp_path):
     script = '''
 import sys, types
 from fastapi import FastAPI
+import settings
+from pathlib import Path
+settings.SETTINGS_PATH = Path(sys.argv[2]) / "paths.json"
 import run
 app = FastAPI()
 run.launcher_app = types.SimpleNamespace(app=app, LAUNCHER_ID="openalma-launcher")
@@ -50,7 +58,7 @@ run.main()
     processes = []
     try:
         for _ in range(2):
-            processes.append(subprocess.Popen([sys.executable, "-u", "-c", script, str(port)],
+            processes.append(subprocess.Popen([sys.executable, "-u", "-c", script, str(port), str(tmp_path)],
                 cwd=Path(run.__file__).parent, env={**os.environ, "HOME": str(tmp_path), "USERPROFILE": str(tmp_path)},
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True))
         for process in processes:
@@ -127,7 +135,8 @@ def test_chromium_profile_persists_after_browser_exit(tmp_path, monkeypatch):
 
     run._open_browser_when_ready("127.0.0.1", 8765, "http://127.0.0.1:8765", server)
 
-    profile = settings_path.parent / "chromium-profile"
+    profile = run.settings.BROWSER_PROFILE_PATH
+    assert profile.parent != settings_path.parent
     assert launched["args"] == ("http://127.0.0.1:8765/?openalma_app=1", "chromium", profile)
     assert launched["kwargs"] == {"width": 552, "height": 661, "position": (321, 123)}
     assert profile.is_dir()
@@ -284,7 +293,7 @@ def test_existing_launcher_reuses_profile_without_stopping_server(tmp_path, monk
     assert launched["args"] == (
         "http://127.0.0.1:8765/?openalma_app=1",
         "chromium",
-        settings_path.parent / "chromium-profile",
+        run.settings.BROWSER_PROFILE_PATH,
     )
     assert launched["kwargs"] == {"position": None}
     assert launched["waited"] is True

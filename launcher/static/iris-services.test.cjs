@@ -121,7 +121,7 @@ test('Services preserves rows and Rename drafts through outages, then restores c
 test('Setup poll applies blocks and outages even with Rename open, without disabling installer cancellation', async () => {
   const stock = {form: {id: 'iris-install-form', classList: {contains: () => false}}}, install = {}, rename = {}, forget = {}, cancel = {disabled: false};
   const address = {disabled: false}, busyHint = {hidden: true}, installerStatus = {};
-  const progress = {hidden: false}, cancelControls = {hidden: false};
+  const progress = {hidden: false}, cancelControls = {hidden: false}, foregroundNotice = {hidden: true};
   const retryButton = {}, retry = {hidden: true, querySelector: () => retryButton};
   let retrySubmit;
   retry.action = '/install/iris-server';
@@ -131,6 +131,7 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
   const elements = new Map([
     ['iris-action-error', actionError], ['iris-installer-status', installerStatus], ['iris-address-busy', busyHint],
     ['iris-installer-progress', progress], ['iris-cancel-controls', cancelControls],
+    ['iris-foreground-notice', foregroundNotice],
     ['iris-preparation-retry', retry],
   ]);
   const selectors = new Map([
@@ -176,6 +177,18 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
   assert.notEqual(context.statusSignature({...ready, action_kind: 'install', action_label: 'Retry'}), signature);
   await poll();
   assert.equal(progress.hidden, true);
+  assert.equal(installerStatus.hidden, true);
+  next = {...ready, running: true, release_host_package: 'com.mentra.mentra.openalma',
+    release_device_session_id: installation.device_session_id};
+  await poll();
+  assert.equal(foregroundNotice.hidden, false);
+  next = {...next, blocked: true, detail: 'Free installer port 6789'};
+  await poll();
+  assert.equal(foregroundNotice.hidden, true);
+  assert.equal(installerStatus.hidden, false);
+  next = ready;
+  await poll();
+  assert.equal(installerStatus.hidden, true);
   assert.equal(cancelControls.hidden, true);
   for (const button of [stock, install, rename, forget]) assert.equal(Boolean(button.disabled), false);
   for (const block of [{blocked: true, detail: 'Free installer port 6789'},

@@ -1,6 +1,6 @@
 """User-overridable path settings for the launcher.
 
-Stored in ``~/.config/openalma-launcher/paths.json``. The launcher captures
+Stored in the app-local ``paths.json``. The launcher captures
 ``apps_root()`` once at startup to locate the four
 sibling repos (mcp-memu-server, hermes-channels, sillytavern, memu) on
 disk. Resolution order:
@@ -31,15 +31,39 @@ from process_flags import hidden_process_kwargs
 LAUNCHER_DIR = Path(__file__).resolve().parent
 PACKAGED_VERSION_PATH = LAUNCHER_DIR.parent / ".openalma-version"
 PACKAGED_MANIFEST_PATH = LAUNCHER_DIR.parent / "release-components.json"
-SETTINGS_PATH = Path.home() / ".config" / "openalma-launcher" / "paths.json"
-LAUNCHER_LOG_PATH = (
-    Path(os.environ["LOCALAPPDATA"]) / "OpenAlma" / "logs" / "launcher.log"
-    if os.name == "nt" and os.environ.get("LOCALAPPDATA")
-    else Path.home() / ".local" / "state" / "openalma" / "launcher.log"
+SETTINGS_ROOT = (
+    Path(os.environ["LOCALAPPDATA"]) / "OpenAlma"
+    if sys.platform == "win32" else LAUNCHER_DIR.parent
 )
+SETTINGS_PATH = SETTINGS_ROOT / "paths.json"
+LAUNCHER_LOG_PATH = SETTINGS_ROOT / "launcher.log"
+LEGACY_SETTINGS_PATH = Path.home() / ".config" / "openalma-launcher" / "paths.json"
+BROWSER_PROFILE_PATH = LEGACY_SETTINGS_PATH.parent / "chromium-profile"
 _AUTODISCOVER_MARKER = "mcp-memu-server/run.py"
 # ponytail: serialize this process's settings updates; separate processes remain last-writer-wins.
 _PATHS_LOCK = Lock()
+
+
+def prepare_storage() -> None:
+    """Prepare private storage and retire the old active settings filename once."""
+    if sys.platform == "win32" and (not SETTINGS_ROOT.exists() or not any(SETTINGS_ROOT.iterdir())):
+        from setup_install import _write_root_marker
+
+        _write_root_marker(SETTINGS_ROOT)
+    SETTINGS_ROOT.mkdir(parents=True, exist_ok=True)
+    if not LEGACY_SETTINGS_PATH.exists():
+        return
+    backup = LEGACY_SETTINGS_PATH.with_suffix(".json.orig")
+    number = 2
+    while backup.exists():
+        backup = LEGACY_SETTINGS_PATH.with_suffix(f".json_{number}.orig")
+        number += 1
+    if not SETTINGS_PATH.exists():
+        paths = json.loads(LEGACY_SETTINGS_PATH.read_text(encoding="utf-8"))
+        if not isinstance(paths, dict):
+            raise ValueError(f"Expected an object in {LEGACY_SETTINGS_PATH}")
+        write_paths(paths)
+    LEGACY_SETTINGS_PATH.rename(backup)
 
 
 def read_paths() -> dict:

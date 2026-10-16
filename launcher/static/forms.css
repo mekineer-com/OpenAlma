@@ -1,0 +1,23 @@
+:root { --field-width: 18rem; --field-label-width: 10rem; }
+html { scrollbar-gutter: stable; }
+input:is([type="text"], [type="url"], [type="search"], :not([type])) {
+  width: var(--field-width); max-width: 100%; box-sizing: border-box;
+}
+.field-row {
+  display: grid; grid-template-columns: var(--field-label-width) var(--field-width) max-content;
+  align-items: center; gap: 0.5rem; margin: 0.8rem 0;
+}
+.field-row[hidden] { display: none; }
+.field-row > label, .field-label { margin: 0; color: #eee; }
+.field-row > input, .field-row > select { width: 100%; min-width: 0; }
+.field-row > .field-help { grid-column: 2 / -1; max-width: var(--field-width); min-width: 0; margin: 0; }
+.field-row > .soul-entry { grid-column: 2 / -1; min-width: 0; }
+.field-row .soul-combobox { width: var(--field-width); max-width: 100%; }
+.field-row .soul-combobox input { width: 100%; min-width: 0; box-sizing: border-box; }
+.field-row code { overflow-wrap: anywhere; }
+@media (max-width: 40rem) {
+  :root { --field-width: min(18rem, calc(92vw - 7rem)); }
+  .field-row { grid-template-columns: var(--field-width) max-content; }
+  .field-row > label, .field-row > .field-label { grid-column: 1 / -1; }
+  .field-row > .field-help, .field-row > .soul-entry { grid-column: 1 / -1; }
+}

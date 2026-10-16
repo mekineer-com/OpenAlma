@@ -66,6 +66,8 @@ try:
 
     import browser
     import settings
+    if __name__ == "__main__":
+        settings.prepare_storage()
     import app as launcher_app
 except Exception as exc:
     _show_startup_error(exc)
@@ -147,7 +149,7 @@ def _watch_browser_and_stop(
 
 
 def _browser_profile() -> Path:
-    profile = settings.SETTINGS_PATH.parent / "chromium-profile"
+    profile = settings.BROWSER_PROFILE_PATH
     profile.mkdir(parents=True, exist_ok=True)
     return profile
 

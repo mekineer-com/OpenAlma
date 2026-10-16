@@ -8,6 +8,7 @@ import zipfile
 from contextlib import closing
 from io import BytesIO, StringIO
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -158,6 +159,246 @@ def test_launcher_update_uses_selected_channel_without_downgrades(monkeypatch, m
     monkeypatch.setattr(setup_install, "read_packaged_release", lambda: "v4.0.0")
     monkeypatch.setattr(setup_install, "_LAUNCHER_UPDATE_CACHE", None)
     assert setup_install.launcher_update() is None
+
+
+@pytest.fixture
+def launcher_update_package(tmp_path, monkeypatch):
+    directory = tmp_path / "updates"
+    tag = "v9.8.7"
+    name = f"OpenAlma-{tag}-Windows.exe"
+    url = f"https://github.com/mekineer-com/OpenAlma/releases/download/{tag}/{name}"
+    payload = b"fictional installer bytes" * 8192
+    release = {
+        "tag_name": tag, "draft": False, "prerelease": False,
+        "assets": [{
+            "name": name, "state": "uploaded", "browser_download_url": url,
+            "digest": "sha256:" + hashlib.sha256(payload).hexdigest(), "size": len(payload),
+        }],
+    }
+    case = {
+        "directory": directory, "release": release, "payload": payload,
+        "downloads": [], "lookups": [], "launched": [], "owner": None,
+        "failure": None, "progress": [],
+    }
+
+    class Response(BytesIO):
+        headers = {"Content-Length": str(len(payload))}
+
+        def read(self, size=-1):
+            assert size > 0, "Installer downloads must use bounded reads"
+            if case["failure"] and self.tell():
+                raise case["failure"]
+            return super().read(min(size, 4096))
+
+    def download(request, **_kwargs):
+        assert request.full_url == url
+        case["downloads"].append(request.full_url)
+        return Response(case["payload"])
+
+    def metadata(request_url):
+        assert request_url == f"https://api.github.com/repos/mekineer-com/OpenAlma/releases/tags/{tag}"
+        case["lookups"].append(request_url)
+        return release
+
+    original_set_operation = setup_install._set_operation
+
+    def set_operation(operation, **values):
+        original_set_operation(operation, **values)
+        if "downloaded_bytes" in values:
+            case["progress"].append(operation.downloaded_bytes)
+
+    # Module-local copies keep pytest/pathlib on the host platform.
+    monkeypatch.setattr(setup_install, "os", SimpleNamespace(**{
+        **vars(setup_install.os), "name": "nt", "startfile": case["launched"].append,
+    }))
+    monkeypatch.setattr(setup_install, "sys", SimpleNamespace(**{**vars(sys), "platform": "win32"}))
+    monkeypatch.setattr(setup_install, "LAUNCHER_UPDATE_DIR", directory)
+    monkeypatch.setattr(setup_install, "INSTALL_LOCK", tmp_path / "install.lock")
+    monkeypatch.setattr(setup_install, "_OPERATION", None)
+    monkeypatch.setattr(setup_install, "_OPERATIONS", {})
+    monkeypatch.setattr(setup_install, "_active_install_owner", lambda: case["owner"])
+    monkeypatch.setattr(setup_install, "_acquire_install_lock", lambda *_args: object())
+    monkeypatch.setattr(setup_install, "_release_install_lock", lambda _handle: None)
+    monkeypatch.setattr(setup_install, "_set_operation", set_operation)
+    monkeypatch.setattr(setup_install, "launcher_update", lambda: {"tag": tag, "url": url})
+    monkeypatch.setattr(setup_install, "_request_json", metadata)
+    monkeypatch.setattr(setup_install.urllib.request, "urlopen", download)
+    return case
+
+
+def test_launcher_installer_download_reports_progress_and_reuses_verified_file(launcher_update_package):
+    case = launcher_update_package
+    setup_install.begin_launcher_update()
+    operation = setup_install._OPERATION
+    operation.thread.join(3)
+    assert not operation.thread.is_alive()
+    assert setup_install.operation_status(case["directory"], "launcher")["state"] == "ready"
+    assert operation.installer_path.read_bytes() == case["payload"]
+    assert operation.downloaded_bytes == operation.total_bytes == len(case["payload"])
+    assert any(0 < value < len(case["payload"]) for value in case["progress"])
+    assert case["lookups"] and len(case["downloads"]) == 1
+    assert not list(case["directory"].rglob("*.part"))
+    assert case["launched"] == []
+
+    setup_install.begin_launcher_update()
+    retry = setup_install._OPERATION
+    retry.thread.join(3)
+    assert not retry.thread.is_alive() and retry is not operation
+    assert retry.state == "ready" and retry.installer_path == operation.installer_path
+    assert len(case["downloads"]) == 1
+    assert len(case["lookups"]) >= 2
+
+    retry.installer_path.write_bytes(b"corrupted staged installer")
+    replacement = setup_install.InstallOperation("launcher", case["directory"])
+    setup_install._download_launcher_update(replacement)
+    assert replacement.state == "ready"
+    assert replacement.installer_path.read_bytes() == case["payload"]
+    assert len(case["downloads"]) == 2
+
+
+@pytest.mark.parametrize("failure", ["digest", "partial"])
+def test_launcher_installer_failed_download_can_retry(launcher_update_package, failure):
+    case = launcher_update_package
+    payload = case["payload"]
+    if failure == "digest":
+        case["payload"] = b"corrupt installer bytes"
+    else:
+        case["failure"] = ConnectionError("fictional interrupted transfer")
+    setup_install.begin_launcher_update()
+    operation = setup_install._OPERATION
+    operation.thread.join(3)
+    assert not operation.thread.is_alive()
+    assert operation.state == "error" and operation.detail
+    assert operation.installer_path is None
+    assert not list(case["directory"].rglob("*.part"))
+    assert not list(case["directory"].rglob("*.exe"))
+    assert case["launched"] == []
+
+    case["payload"], case["failure"] = payload, None
+    setup_install.begin_launcher_update()
+    retry = setup_install._OPERATION
+    retry.thread.join(3)
+    assert not retry.thread.is_alive()
+    assert retry.state == "ready"
+    assert retry.installer_path.read_bytes() == payload
+    assert len(case["downloads"]) == 2
+
+
+@pytest.mark.parametrize("field,value", [
+    ("tag_name", "v9.8.6"), ("draft", True), ("name", "other.exe"),
+    ("state", "new"), ("browser_download_url", "https://example.invalid/update.exe"),
+    ("digest", None), ("digest", "sha256:invalid"),
+])
+def test_launcher_installer_rejects_unverified_metadata(launcher_update_package, field, value):
+    case = launcher_update_package
+    target = case["release"] if field in {"tag_name", "draft"} else case["release"]["assets"][0]
+    target[field] = value
+    operation = setup_install.InstallOperation("launcher", case["directory"])
+    with pytest.raises(setup_install.SetupError):
+        setup_install._download_launcher_update(operation)
+    assert operation.installer_path is None
+    assert case["downloads"] == case["launched"] == []
+
+
+def test_launcher_installer_open_is_idempotent_and_waits_for_lock_release(launcher_update_package, monkeypatch):
+    case = launcher_update_package
+    operation = setup_install.InstallOperation("launcher", case["directory"])
+    setup_install._download_launcher_update(operation)
+    monkeypatch.setattr(setup_install, "_OPERATION", operation)
+    monkeypatch.setattr(setup_install, "_OPERATIONS", {"launcher": operation})
+    case["owner"] = ("launcher", str(case["directory"].resolve()))
+    assert setup_install.operation_status(case["directory"], "launcher")["state"] == "running"
+    with pytest.raises(setup_install.SetupError):
+        setup_install.open_launcher_update()
+    assert case["launched"] == []
+    assert operation.state == "ready"
+
+    case["owner"] = None
+    assert setup_install.open_launcher_update()["state"] == "opened"
+    assert setup_install.open_launcher_update()["state"] == "opened"
+    assert [Path(path) for path in case["launched"]] == [operation.installer_path]
+    assert operation.installer_path.is_file()
+
+
+@pytest.mark.parametrize("selection", [None, {"tag": "v9.8.6", "url": "unused"}])
+def test_launcher_installer_open_rejects_changed_or_absent_selection(launcher_update_package, monkeypatch, selection):
+    case = launcher_update_package
+    setup_install.begin_launcher_update()
+    operation = setup_install._OPERATION
+    operation.thread.join(3)
+    assert not operation.thread.is_alive() and operation.state == "ready"
+    monkeypatch.setattr(setup_install, "launcher_update", lambda: selection)
+
+    with pytest.raises(setup_install.SetupError, match="The selected update changed. Click Retry."):
+        setup_install.open_launcher_update()
+
+    assert operation.state == "error"
+    assert operation.installer_path.is_file()
+    assert case["launched"] == []
+
+
+@pytest.mark.parametrize("failure", ["absent_selection", "invalid_metadata"])
+def test_launcher_installer_begin_revalidates_ready_selection(launcher_update_package, monkeypatch, failure):
+    case = launcher_update_package
+    setup_install.begin_launcher_update()
+    operation = setup_install._OPERATION
+    operation.thread.join(3)
+    assert not operation.thread.is_alive() and operation.state == "ready"
+    if failure == "absent_selection":
+        monkeypatch.setattr(setup_install, "launcher_update", lambda: None)
+    else:
+        case["release"]["draft"] = True
+
+    setup_install.begin_launcher_update()
+    retry = setup_install._OPERATION
+    retry.thread.join(3)
+    assert not retry.thread.is_alive() and retry is not operation
+    assert setup_install.operation_status(case["directory"], "launcher")["state"] == "error"
+    assert retry.installer_path is None and retry.detail
+    assert operation.installer_path.is_file()
+    assert len(case["downloads"]) == 1
+    assert len(case["lookups"]) == (2 if failure == "invalid_metadata" else 1)
+    assert case["launched"] == []
+
+
+def test_launcher_installer_launch_failure_retries_without_redownload(launcher_update_package, monkeypatch):
+    case = launcher_update_package
+    setup_install.begin_launcher_update()
+    operation = setup_install._OPERATION
+    operation.thread.join(3)
+    assert not operation.thread.is_alive()
+    assert operation.state == "ready"
+    installer = operation.installer_path
+
+    def fail_launch(_path):
+        raise OSError("fictional launch failure")
+
+    monkeypatch.setattr(setup_install.os, "startfile", fail_launch)
+    with pytest.raises(setup_install.SetupError):
+        setup_install.open_launcher_update()
+    assert operation.state == "error" and "fictional launch failure" in operation.detail
+    assert installer.is_file()
+    monkeypatch.setattr(setup_install.os, "startfile", case["launched"].append)
+    setup_install.begin_launcher_update()
+    retry = setup_install._OPERATION
+    retry.thread.join(3)
+    assert not retry.thread.is_alive()
+    assert retry.state == "ready" and retry.installer_path == installer
+    assert len(case["downloads"]) == 1
+    assert setup_install.open_launcher_update()["state"] == "opened"
+    assert [Path(path) for path in case["launched"]] == [installer]
+
+
+def test_launcher_byte_progress_does_not_change_component_status(launcher_update_package, monkeypatch):
+    case = launcher_update_package
+    operation = setup_install.InstallOperation("launcher", case["directory"])
+    monkeypatch.setattr(setup_install, "_OPERATION", operation)
+    setup_install._set_operation(operation, downloaded_bytes=17, total_bytes=31)
+    progress = setup_install.operation_status(case["directory"], "launcher")["progress"]
+    assert progress["downloaded_bytes"] == 17 and progress["total_bytes"] == 31
+    operation.service_name = "atomic"
+    progress = setup_install.operation_status(case["directory"], "atomic")["progress"]
+    assert set(progress) == {"step_number", "total_steps", "elapsed_seconds"}
 
 
 def test_failed_core_install_is_a_visible_retry(tmp_path, monkeypatch):
@@ -404,6 +645,11 @@ def test_iris_release_mismatch_uses_the_normal_client_update_check(tmp_path, mon
     monkeypatch.setattr(setup_install, "_local_matching_checkout", lambda *_: True)
     assert setup_install.release_issue("iris-server", tmp_path, refresh=True) == ""
 
+    checks = []
+    monkeypatch.setattr(setup_install, "_local_matching_checkout", lambda path, *_: checks.append(path.name) or True)
+    assert setup_install.release_issue("memu-server", tmp_path, refresh=True) == ""
+    assert checks == ["mcp-memu-server", "memu"]
+
 
 def test_write_config_sets_shared_paths_once(tmp_path):
     server = tmp_path / "mcp-memu-server"
@@ -423,6 +669,7 @@ def test_write_config_sets_shared_paths_once(tmp_path):
     setup_install._write_config(tmp_path)
     created = json.loads((server / "config.json").read_text(encoding="utf-8"))
     assert created["memu"]["path"] == "../memu/src"
+    assert created["claude_code_workspace"] == str(setup_install.settings.SETTINGS_PATH.parent / "workspace")
     assert created["storage"] == {
         "resources_dir": "../memu/resources",
         "metadata_store": {"dsn": "../memu/sqlite/memu.db"},

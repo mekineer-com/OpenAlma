@@ -374,7 +374,7 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
         visible = client.get(page).text
         stock = visible.split('<details id="iris-stock-installation"', 1)[1].split('</details>', 1)[0] if page == '/iris' else ''
         assert 'open' not in stock.split('>', 1)[0]
-        assert "Bring the targeted OpenAlma Mentra app to the foreground" in visible
+        assert "Open OpenAlma Mentra on your phone to finish installing Iris" in visible
         assert "Bring the targeted OpenAlma Mentra app to the foreground" not in stock
         assert '>Force Stop</button>' in visible and '>Force Stop</button>' not in stock
     with pytest.MonkeyPatch.context() as unavailable:
@@ -671,7 +671,9 @@ def test_iris_page_and_poll_share_setup_status(tmp_path, monkeypatch, setup, run
     for url in ("/iris", "/iris?device_session_id=fork-test&repair=1"):
         html = client.get(url).text
         initial = json.JSONDecoder().raw_decode(html.split("const initialStatus = ", 1)[1])[0]
-        assert initial == client.get("/service/iris-server/status").json()
+        polled = client.get("/service/iris-server/status").json()
+        assert polled.pop("runtime_active") == app._runtime_active(initial)
+        assert initial == polled
         if setup.get("install_running"):
             assert initial["install_progress"] == setup["install_progress"]
         retry = html.split('<form id="iris-preparation-retry"', 1)[1].split('</form>', 1)[0]
@@ -694,7 +696,7 @@ def test_iris_page_and_poll_share_setup_status(tmp_path, monkeypatch, setup, run
             not setup["ready"] and (url != "/iris" or setup.get("action_kind") != "install")
         )
         assert bool(re.search(r'<button[^>]*disabled', install)) == disabled
-        address = html.split('class="iris-address">', 1)[1].split("</form>", 1)[0]
+        address = html.split('action="/iris/address"', 1)[1].split("</form>", 1)[0]
         busy = any(runtime.get(key) for key in ("running", "starting", "stuck", "orphaned"))
         assert bool(re.search(r'<button[^>]*disabled', address)) == busy
         hint = html.split('id="iris-address-busy"', 1)[1].split(">", 1)[0]
@@ -835,6 +837,85 @@ def test_open_route_uses_default_browser_tab(tmp_path, monkeypatch):
     before = len(opened)
     assert client.post("/open-url", data={"url": "https://example.org"}, headers={"Origin": "https://other.example"}).status_code == 403
     assert len(opened) == before
+
+
+@pytest.mark.parametrize("path,action", [("/launcher/update", "begin_launcher_update"),
+                                         ("/launcher/update/open", "open_launcher_update")])
+def test_launcher_update_actions_keep_platform_and_readiness_guards(monkeypatch, path, action):
+    calls = []
+    monkeypatch.setattr(app.setup_install, action, lambda: calls.append(action) or {"state": "running"})
+    monkeypatch.setattr(app.sys, "platform", "linux")
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    assert client.post(path).status_code == 400
+    monkeypatch.setattr(app.sys, "platform", "win32")
+    monkeypatch.setattr(app, "launcher_update_readiness", lambda: {"active_services": ["Fictional service"]})
+    assert client.post(path).status_code == 409
+    assert calls == []
+    monkeypatch.setattr(app, "launcher_update_readiness", lambda: {"active_services": []})
+    assert client.post(path).json() == {"state": "running"}
+    assert calls == [action]
+    assert client.post(path, headers={"Origin": "https://other.example"}).status_code == 403
+    assert calls == [action]
+
+
+@pytest.mark.parametrize("running", [False, True])
+def test_workspace_save_preserves_config_and_uses_live_api_when_running(tmp_path, monkeypatch, running):
+    path = tmp_path / "mcp-memu-server/config.json"
+    path.parent.mkdir()
+    original = {"claude_code_workspace": "/fictional/old", "keep": {"value": 1}}
+    path.write_text(json.dumps(original))
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    spec = services.ServiceSpec("memu-server", "memU Server", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(app.services, "all_services", lambda: [spec])
+    monkeypatch.setattr(app.services, "_runtime_state", lambda _spec: services.RuntimeState(running=running))
+    calls = []
+    monkeypatch.setattr(app.services, "_mcp_request", lambda route, payload: calls.append((route, payload)) or {"ok": True})
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    workspace = str(tmp_path / "fictional-workspace")
+    assert client.post("/settings/workspace", data={"soul_workspace": workspace}, follow_redirects=False).status_code == 303
+    assert json.loads(Path(str(path) + ".orig").read_text()) == original
+    if running:
+        assert calls == [("/config", {"claude_code_workspace": workspace})]
+        assert json.loads(path.read_text()) == original
+    else:
+        assert calls == []
+        assert json.loads(path.read_text()) == {**original, "claude_code_workspace": workspace}
+        assert client.post("/settings/workspace", data={"soul_workspace": ""}, follow_redirects=False).status_code == 303
+        assert json.loads(path.read_text()) == {**original, "claude_code_workspace": ""}
+        from concurrent.futures import ThreadPoolExecutor
+        import time
+        read_config = app._memu_config
+        def overlapping_read():
+            result = read_config()
+            time.sleep(0.02)
+            return result
+        monkeypatch.setattr(app, "_memu_config", overlapping_read)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            list(pool.map(app._save_memu_config, [{"first": 1}, {"second": 2}]))
+        assert json.loads(path.read_text()) == {**original, "claude_code_workspace": "", "first": 1, "second": 2}
+
+
+def test_host_paths_layout_and_independent_settings_saves(tmp_path, monkeypatch):
+    path = tmp_path / "mcp-memu-server/config.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps({"claude_code_workspace": "/fictional/workspace"}))
+    prefs = tmp_path / "paths.json"
+    prefs.write_text(json.dumps({"apps_root": str(tmp_path), "release_channel": "prerelease", "keep": True}))
+    monkeypatch.setattr(app.settings, "SETTINGS_PATH", prefs)
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "host_prerequisites", lambda _root: {"rows": []})
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    html = client.get("/settings").text
+    assert html.index("Host prerequisites") < html.index("Host paths") < html.index("Embedding model")
+    assert "<h2>Stored at</h2>" not in html and "<h2>Apps root</h2>" not in html
+    assert 'value="/fictional/workspace"' in html
+    assert "Stores Apps root, update channel and window preferences." in html
+    assert 'type="file"' not in html
+    assert client.post("/settings", data={"apps_root": "/fictional/apps"}, follow_redirects=False).status_code == 303
+    assert app.settings.read_paths()["release_channel"] == "prerelease"
+    assert client.post("/settings", data={"release_channel": "stable"}, follow_redirects=False).status_code == 303
+    assert app.settings.read_paths() == {"apps_root": "/fictional/apps", "release_channel": "stable", "keep": True}
+    assert json.loads(path.read_text())["claude_code_workspace"] == "/fictional/workspace"
 
 
 def test_install_route_rejects_live_service(tmp_path, monkeypatch):

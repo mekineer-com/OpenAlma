@@ -6,6 +6,9 @@
   {% set install_disabled = not iris_setup.ready or iris.ready is sameas false or installer_busy or iris.blocked or iris.install_running or iris.state == 'stopping' or iris.installations is not defined %}
   {% set stock_install_disabled = (not iris_setup.ready and iris_setup.step != 'release') or (iris.ready is sameas false and iris.action_kind != 'install') or installer_busy or iris.blocked or iris.install_running or iris.state == 'stopping' or iris.installations is not defined %}
   {% set show_installer = not selected_installation or iris.release_device_session_id == selected_installation.device_session_id %}
+  <p id="iris-action-error" class="banner" role="alert" hidden></p>
+  <p id="iris-installer-status" class="banner" role="alert" {% if not (iris.blocked or iris.ready is sameas false or iris.installations is not defined) %}hidden{% endif %}>{% if iris.blocked %}{{ iris.detail or 'Iris installer port 6789 is occupied. Free the port before installing.' }}{% elif iris.ready is sameas false %}{{ iris.status_label }}: {{ iris.detail }}{% elif iris.installations is not defined %}Iris app status is unavailable.{% endif %}</p>
+  <p id="iris-foreground-notice" class="banner" role="status" {% if not (show_installer and iris.running and not iris.blocked and iris.release_host_package == 'com.mentra.mentra.openalma') %}hidden{% endif %}>Open OpenAlma Mentra on your phone to finish installing Iris. Installation continues automatically.</p>
   <h2>{{ selected_installation.display_name ~ ' setup' if selected_installation else 'Iris & Phone Setup' }}</h2>
     <h3 class="iris-section">memU Server readiness</h3>
     <ul class="checklist">
@@ -16,8 +19,9 @@
     {% if iris_setup.ready %}<p class="ready">Host ready</p>{% else %}<p class="failure">Next: {{ iris_setup.reason }}</p>{% endif %}
 
     <h3 class="iris-section">memU Server address</h3>
-    <form method="post" action="/iris/address" class="iris-address">
-      <input type="url" name="public_base_url" aria-label="memU Server address" required value="{{ iris_connection.base_url or '' }}" placeholder="http://10.77.0.1">
+    <form method="post" action="/iris/address" class="iris-address field-row">
+      <label for="iris-server-address">Address</label>
+      <input id="iris-server-address" type="url" name="public_base_url" aria-label="memU Server address" required value="{{ iris_connection.base_url or '' }}" placeholder="http://10.77.0.1">
       <button class="btn" type="submit" {% if installer_busy %}disabled{% endif %}>Save</button>
     </form>
     <p id="iris-address-busy" class="hint" {% if not installer_busy %}hidden{% endif %}>Finish or cancel the Iris installer before saving a new address; it uses the address captured when it starts.</p>
@@ -28,7 +32,6 @@
       <li>Enter the server address into Mentra.</li>
       <li>Click Install beside your phone on the <a href="/">main page</a> to install Iris.</li>
     </ol>
-    <p id="iris-installer-status" class="failure" role="alert">{% if iris.blocked %}{{ iris.detail or 'Iris installer port 6789 is occupied. Free the port before installing.' }}{% elif iris.ready is sameas false %}{{ iris.status_label }}: {{ iris.detail }}{% elif iris.installations is not defined %}Iris app status is unavailable.{% endif %}</p>
     <form id="iris-preparation-retry" method="post" action="/install/iris-server" {% if not (iris.ready is sameas false and not iris.install_running and (iris.action_kind == 'install' and iris.action_label == 'Retry')) %}hidden{% endif %}>
       <p>Installer tools are not ready. <button class="btn" type="submit" {% if installer_busy or iris.blocked or iris.install_running or iris.state == 'stopping' %}disabled{% endif %}>Retry</button> <a href="/install/iris-server/logs">View preparation log</a></p>
     </form>
@@ -48,15 +51,11 @@
         <code>{{ iris.release_device_session_id }}</code>. Cancel this installer before installing on another app.</p>
       {% endif %}
     {% endif %}
-    {% if iris.running and iris.release_host_package == 'com.mentra.mentra.openalma' %}
-      <p class="ready">Bring the targeted OpenAlma Mentra app to the foreground to install automatically. No QR is needed.</p>
-    {% endif %}
     <div id="iris-cancel-controls">
     {% if iris.force_stoppable %}<p><button class="btn" type="button" onclick="irisAction('force-stop', this)">Force Stop</button></p>
     {% elif iris.stoppable %}<p><button class="btn" type="button" onclick="irisAction('stop', this)">Cancel</button></p>{% endif %}
     </div>
     {% elif installer_busy %}<p class="muted">Another Iris installation is in progress.</p>{% endif %}
-    <p id="iris-action-error" class="failure" role="alert"></p>
 
     {% if selected_installation %}
     <h3>App status</h3>
@@ -69,9 +68,10 @@
         {% if row.metadata_known is not sameas false %}
         <details class="iris-rename">
           <summary title="{{ name_tooltip }}" aria-label="Rename {{ row.display_name }}">{{ row.display_name }}</summary>
-          <form method="post" action="/iris/installations/{{ row.device_session_id|urlencode }}/rename">
-            <label>Display name<input type="text" name="display_name" value="{{ row.display_name }}" required></label>
-            <p><button class="btn" type="submit">Save name</button></p>
+          <form method="post" action="/iris/installations/{{ row.device_session_id|urlencode }}/rename" class="field-row">
+            <label for="phone-name-{{ row.device_session_id }}">Display name</label>
+            <input id="phone-name-{{ row.device_session_id }}" type="text" name="display_name" value="{{ row.display_name }}" required>
+            <button class="btn" type="submit">Save name</button>
           </form>
         </details>
         {% else %}<strong title="{{ name_tooltip }}">{{ row.display_name }}</strong>{% endif %}
@@ -100,11 +100,17 @@
           <option value="source">Source folder on this Launcher machine</option>
           <option value="github">GitHub version</option>
         </select>
-      <label data-repair-source="zip">Iris ZIP<input type="file" name="bundle_file" accept=".zip"></label>
-      <label data-repair-source="source" hidden>Trusted Iris source folder<input type="text" name="source_folder" value="{{ iris_source_folder }}"><span class="hint">Builds this folder using its installed dependencies.</span></label>
-      <label data-repair-source="github" hidden>Published version
-        <select name="github_version">{% for version in repair_versions %}<option>{{ version }}</option>{% else %}<option value="">No GitHub versions available</option>{% endfor %}</select>
-      </label>
+      <div data-repair-source="zip" class="field-row">
+        <label for="iris-zip">Iris ZIP</label><input id="iris-zip" type="file" name="bundle_file" accept=".zip">
+      </div>
+      <div data-repair-source="source" class="field-row" hidden>
+        <label for="iris-source-folder">Source folder</label><input id="iris-source-folder" type="text" name="source_folder" value="{{ iris_source_folder }}">
+        <span class="hint field-help">Builds this trusted folder using its installed dependencies.</span>
+      </div>
+      <div data-repair-source="github" class="field-row" hidden>
+        <label for="iris-github-version">Published version</label>
+        <select id="iris-github-version" name="github_version">{% for version in repair_versions %}<option>{{ version }}</option>{% else %}<option value="">No GitHub versions available</option>{% endfor %}</select>
+      </div>
     </form>
         {% endif %}
       </li>
@@ -202,6 +208,10 @@
         !statusAvailable ? status.detail || 'Iris app status is unavailable.' :
         status.ready === false ? status.detail || status.status_label :
         status.setup && !status.setup.ready ? status.setup.reason : '';
+      installerStatus.hidden = !installerStatus.textContent;
+      document.getElementById('iris-foreground-notice').hidden = !(status.running && !status.blocked &&
+        status.release_host_package === 'com.mentra.mentra.openalma' &&
+        (!selectedDevice || status.release_device_session_id === selectedDevice));
       const preparationRetry = document.getElementById('iris-preparation-retry');
       preparationRetry.hidden = !(status.ready === false && !status.install_running && (status.action_kind === 'install' && status.action_label === 'Retry'));
       preparationRetry.querySelector('button').disabled = submitting || installerBusy || status.blocked || status.install_running || status.state === 'stopping';
@@ -242,6 +252,7 @@
       if (submitting) return;
       submitting = true;
       actionError.textContent = '';
+      actionError.hidden = true;
       if (button) button.disabled = true;
       try {
         const response = await fetch(url, options);
@@ -255,6 +266,7 @@
         else location.reload();
       } catch (err) {
         actionError.textContent = err.message;
+        actionError.hidden = false;
         if (button && (statusAvailable || !button.closest('form[action="/iris/install"], #iris-installations'))) button.disabled = false;
         submitting = false;
       }

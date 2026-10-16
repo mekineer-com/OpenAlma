@@ -4,3 +4,7 @@ __pycache__/
 imports/*.db*
 /launcher/runtime/
 /installer/windows/output/
+/paths.json
+/paths.json*.orig
+/launcher.log
+/workspace/

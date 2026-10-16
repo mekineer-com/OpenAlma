@@ -63,9 +63,10 @@ def _packaged_manifest(tmp_path, monkeypatch):
     manifest = tmp_path / "release-components.json"
     manifest.write_bytes((Path(__file__).resolve().parents[1] / "release-components.json").read_bytes())
     monkeypatch.setattr(settings, "PACKAGED_MANIFEST_PATH", manifest)
+    monkeypatch.setattr(settings, "BROWSER_PROFILE_PATH", tmp_path / "profile")
 
 
-@pytest.mark.parametrize("argument", ["", "--prepare-update"])
+@pytest.mark.parametrize("argument", ["", "--prepare-update", "--stop-existing"])
 def test_windows_entry_point_preserves_import_failure(tmp_path, argument):
     script = '''
 import ctypes, os, runpy, sys, types
@@ -82,6 +83,10 @@ sys.modules["winreg"] = types.SimpleNamespace(HKEY_LOCAL_MACHINE=0, HKEY_CURRENT
 messages = []
 ctypes.windll = types.SimpleNamespace(user32=types.SimpleNamespace(MessageBoxW=lambda *args: messages.append(args)))
 import settings
+settings.SETTINGS_ROOT = root / "storage"
+settings.SETTINGS_PATH = settings.SETTINGS_ROOT / "paths.json"
+settings.LAUNCHER_LOG_PATH = settings.SETTINGS_ROOT / "launcher.log"
+settings.LEGACY_SETTINGS_PATH = root / "legacy/paths.json"
 sys.argv = [str(settings.LAUNCHER_DIR / "windows_start.pyw"), *([argument] if argument else [])]
 try:
     runpy.run_path(sys.argv[0], run_name="__main__")
@@ -92,9 +97,87 @@ else:
 assert len(messages) == (0 if argument else 1)
 if not argument:
     assert messages[0][1] == "fictional startup failure"
-assert "ValueError: fictional startup failure" in settings.LAUNCHER_LOG_PATH.read_text(encoding="utf-8")
+if argument:
+    assert not settings.SETTINGS_ROOT.exists()
+else:
+    assert "ValueError: fictional startup failure" in settings.LAUNCHER_LOG_PATH.read_text(encoding="utf-8")
 '''
     subprocess.run([sys.executable, "-c", script, str(tmp_path), argument],
+                   cwd=Path(settings.__file__).parent, check=True, timeout=10)
+
+
+@pytest.mark.parametrize("existing_log", [False, True])
+def test_maintenance_preserves_readiness_code_without_creating_log(tmp_path, existing_log):
+    script = '''
+import os, runpy, sys, types
+from pathlib import Path
+import settings
+root = Path(sys.argv[1])
+settings.SETTINGS_ROOT = root / "storage"
+settings.SETTINGS_PATH = settings.SETTINGS_ROOT / "paths.json"
+settings.LAUNCHER_LOG_PATH = settings.SETTINGS_ROOT / "launcher.log"
+settings.LEGACY_SETTINGS_PATH = root / "old/paths.json"
+if sys.argv[2] == "True":
+    settings.SETTINGS_ROOT.mkdir()
+    settings.LAUNCHER_LOG_PATH.write_text("existing log\\n")
+def unavailable(*args):
+    raise OSError("no registry")
+sys.modules["winreg"] = types.SimpleNamespace(HKEY_LOCAL_MACHINE=0, HKEY_CURRENT_USER=1, OpenKey=unavailable)
+class ActiveServicesError(RuntimeError):
+    pass
+def prepare_update():
+    raise ActiveServicesError("fictional service is active")
+sys.modules["run"] = types.SimpleNamespace(ActiveServicesError=ActiveServicesError, prepare_update=prepare_update)
+sys.argv = [str(settings.LAUNCHER_DIR / "windows_start.pyw"), "--prepare-update"]
+try:
+    runpy.run_path(sys.argv[0], run_name="__main__")
+except SystemExit as exc:
+    assert exc.code == 11
+else:
+    raise AssertionError("readiness code lost")
+if settings.LAUNCHER_LOG_PATH.exists():
+    assert "fictional service is active" in settings.LAUNCHER_LOG_PATH.read_text()
+else:
+    assert not settings.SETTINGS_ROOT.exists()
+'''
+    subprocess.run([sys.executable, "-c", script, str(tmp_path), str(existing_log)],
+                   cwd=Path(settings.__file__).parent, check=True, timeout=10)
+
+
+@pytest.mark.parametrize("failure", ["corrupt_legacy", "log_open"])
+def test_windows_storage_startup_errors_are_visible(tmp_path, failure):
+    script = '''
+import ctypes, runpy, sys, types
+from pathlib import Path
+import settings
+root = Path(sys.argv[1])
+failure = sys.argv[2]
+settings.SETTINGS_ROOT = root / "storage"
+settings.SETTINGS_PATH = settings.SETTINGS_ROOT / "paths.json"
+settings.LAUNCHER_LOG_PATH = settings.SETTINGS_ROOT / "launcher.log"
+settings.LEGACY_SETTINGS_PATH = root / "legacy.json"
+if failure == "corrupt_legacy":
+    settings.LEGACY_SETTINGS_PATH.write_text("{broken")
+else:
+    settings.SETTINGS_ROOT.mkdir()
+    settings.LAUNCHER_LOG_PATH.mkdir()
+messages = []
+ctypes.windll = types.SimpleNamespace(user32=types.SimpleNamespace(MessageBoxW=lambda *args: messages.append(args)))
+sys.modules["winreg"] = types.SimpleNamespace()
+sys.argv = [str(settings.LAUNCHER_DIR / "windows_start.pyw")]
+try:
+    runpy.run_path(sys.argv[0], run_name="__main__")
+except (ValueError, OSError) as exc:
+    assert len(messages) == 1
+    assert messages[0][1] == str(exc)
+else:
+    raise AssertionError("startup error was swallowed")
+assert not settings.SETTINGS_PATH.exists()
+if failure == "corrupt_legacy":
+    assert settings.LEGACY_SETTINGS_PATH.read_text() == "{broken"
+    assert not settings.LEGACY_SETTINGS_PATH.with_suffix(".json.orig").exists()
+'''
+    subprocess.run([sys.executable, "-c", script, str(tmp_path), failure],
                    cwd=Path(settings.__file__).parent, check=True, timeout=10)
 
 
@@ -296,6 +379,58 @@ def test_windows_upgrade_uses_saved_apps_root(tmp_path, monkeypatch):
     assert windows_install.selected_apps_root(tmp_path / "fallback") == saved.resolve()
 
 
+def test_installer_prepares_storage_before_selecting_saved_root(tmp_path, monkeypatch):
+    root = tmp_path / "private"
+    legacy = tmp_path / "old.json"
+    saved = tmp_path / "selected"
+    legacy.write_text(json.dumps({"apps_root": str(saved), "unknown": 7}))
+    monkeypatch.setattr(settings.sys, "platform", "win32")
+    monkeypatch.setattr(settings, "SETTINGS_ROOT", root)
+    monkeypatch.setattr(settings, "SETTINGS_PATH", root / "paths.json")
+    monkeypatch.setattr(settings, "LEGACY_SETTINGS_PATH", legacy)
+    monkeypatch.setattr(sys, "argv", ["windows_install.py", "--apps-root", str(root), "--release-tag", "v1.0.0"])
+    calls = []
+    def configure(selected, tag):
+        assert (root / ".openalma-root").exists()
+        assert settings.read_paths()["unknown"] == 7
+        calls.append((selected, tag))
+    monkeypatch.setattr(windows_install, "configure", configure)
+    windows_install.main()
+    assert calls == [(saved.resolve(), "v1.0.0")]
+    assert not saved.exists(), "storage preparation must not claim the saved custom root"
+
+
+def test_custom_owned_root_upgrade_with_unowned_settings_storage(tmp_path, monkeypatch):
+    storage = tmp_path / "private"
+    storage.mkdir()
+    sentinel = storage / "unrelated.txt"
+    sentinel.write_text("keep")
+    (storage / "logs").mkdir()
+    root = tmp_path / "custom-apps"
+    assert setup_install._write_root_marker(root)
+    legacy = tmp_path / "legacy.json"
+    choices = {"apps_root": str(root), "release_channel": "prerelease", "unknown": {"keep": True}}
+    original = json.dumps(choices).encode()
+    legacy.write_bytes(original)
+    monkeypatch.setattr(settings.sys, "platform", "win32")
+    monkeypatch.setattr(settings, "SETTINGS_ROOT", storage)
+    monkeypatch.setattr(settings, "SETTINGS_PATH", storage / "paths.json")
+    monkeypatch.setattr(settings, "LEGACY_SETTINGS_PATH", legacy)
+    monkeypatch.setattr(settings, "PACKAGED_VERSION_PATH", tmp_path / ".openalma-version")
+    monkeypatch.setattr(sys, "argv", ["windows_install.py", "--apps-root", str(storage), "--release-tag", "v1.0.0"])
+    windows_install.main()
+    assert settings.read_paths() == choices
+    assert not (storage / ".openalma-root").exists()
+    assert sentinel.read_text() == "keep"
+    assert (storage / "logs").is_dir()
+    assert legacy.with_suffix(".json.orig").read_bytes() == original
+    assert not legacy.exists()
+    assert (root / windows_install.RELEASE_FILE).read_text().strip() == "v1.0.0"
+    settings.prepare_storage()
+    with pytest.raises(ValueError, match="Refusing to claim nonempty Apps root"):
+        windows_install.configure(storage, "v1.0.0")
+
+
 def test_remove_everything_accepts_utf8_recorded_root(tmp_path, monkeypatch):
     root = tmp_path / "José" / "OpenAlma"
     root.mkdir(parents=True)
@@ -303,8 +438,16 @@ def test_remove_everything_accepts_utf8_recorded_root(tmp_path, monkeypatch):
     settings_path = tmp_path / "config" / "paths.json"
     settings_path.parent.mkdir()
     settings_path.write_text(json.dumps({"apps_root": str(root)}) + "\n", encoding="utf-8")
+    neighbor = settings_path.parent / "unrelated.txt"
+    neighbor.write_text("keep")
+    workspace = tmp_path / "external-workspace"
+    workspace.mkdir()
+    (workspace / "keep.txt").touch()
+    settings.BROWSER_PROFILE_PATH.mkdir()
+    (settings.BROWSER_PROFILE_PATH / "cookies").touch()
     state_dir = tmp_path / "state" / "logs"
     state_dir.mkdir(parents=True)
+    (state_dir / "launcher.log").write_text("old log")
     unrelated = state_dir.parent / "old-default-data.db"
     unrelated.touch()
     calls = []
@@ -319,9 +462,14 @@ def test_remove_everything_accepts_utf8_recorded_root(tmp_path, monkeypatch):
     windows_remove.remove_everything()
 
     assert not root.exists()
-    assert not settings_path.parent.exists()
+    assert settings_path.parent.is_dir()
+    assert not settings_path.exists()
+    assert neighbor.read_text() == "keep"
+    assert (workspace / "keep.txt").exists()
+    assert not settings.BROWSER_PROFILE_PATH.exists()
     assert calls[0][1]["onexc"] is not None
     assert unrelated.exists()
+    assert not (state_dir / "launcher.log").exists()
 
 
 def test_remove_everything_rejects_changed_owner_without_deleting(tmp_path, monkeypatch):

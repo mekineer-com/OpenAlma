@@ -33,6 +33,65 @@ function installProgressHtml(progress) {
 
 var serviceRows = [];
 
+function updateDownloadNotice() {
+  var download = document.getElementById('update-download');
+  if (!download) return;
+  var active = !!document.querySelector('tr[data-update-active="true"]');
+  download.hidden = active;
+  document.getElementById('update-stop-notice').hidden = !active;
+}
+
+async function launcherUpdateRequest(path, method) {
+  var response = await fetch(path, {method: method || 'GET', cache: 'no-store'});
+  var data = await response.json();
+  if (!response.ok) throw new Error(data.detail || 'Launcher update failed');
+  return data;
+}
+
+function renderLauncherUpdate(data) {
+  var form = document.getElementById('launcher-update-form');
+  var button = form.querySelector('button');
+  var progress = document.getElementById('launcher-update-progress');
+  var busy = data.state === 'running' || data.state === 'ready';
+  button.disabled = busy;
+  button.textContent = busy ? 'Updating…' : data.state === 'error' ? 'Retry' : data.state === 'opened' ? 'Open installer again' : 'Update';
+  document.getElementById('launcher-update-status').textContent =
+    (data.step || '') + (data.detail ? ': ' + data.detail : '');
+  progress.hidden = !busy;
+  if (data.progress && data.progress.total_bytes) {
+    progress.max = data.progress.total_bytes;
+    progress.value = data.progress.downloaded_bytes;
+  } else {
+    progress.removeAttribute('value');
+  }
+}
+
+async function pollLauncherUpdate(start) {
+  var form = document.getElementById('launcher-update-form');
+  if (!form || form.dataset.polling || (!start && form.dataset.paused)) return;
+  form.dataset.polling = 'true';
+  delete form.dataset.paused;
+  if (start) renderLauncherUpdate({state: 'running', step: 'Preparing update'});
+  try {
+    var data = await launcherUpdateRequest(start ? '/launcher/update' : '/launcher/update/status', start ? 'POST' : 'GET');
+    renderLauncherUpdate(data);
+    if (data.state === 'ready') {
+      data = await launcherUpdateRequest('/launcher/update/open', 'POST');
+      renderLauncherUpdate(data);
+    }
+    if (data.state === 'opened' || data.state === 'error') form.dataset.paused = 'true';
+  } catch (error) {
+    form.dataset.paused = 'true';
+    renderLauncherUpdate({state: 'error', step: error.message});
+  } finally {
+    delete form.dataset.polling;
+  }
+}
+
+function startLauncherUpdate() {
+  return pollLauncherUpdate(true);
+}
+
 function initServiceVisibility() {
   serviceRows = Array.from(document.querySelectorAll('tr[data-service], #echo-row'));
   try {

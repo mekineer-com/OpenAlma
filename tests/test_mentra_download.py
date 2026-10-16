@@ -107,6 +107,7 @@ vm.runInThisContext(source.slice(source.indexOf('function pollStatus'), source.i
   document.querySelectorAll = value => { selector = value; return [{dataset:{service:'iris-server',runtime:'false'}}]; };
   let polled;
   global.pollStatus = name => { polled = name; };
+  global.pollLauncherUpdate = () => {};
   vm.runInThisContext(polling);
   tick();
   if (!selector.includes('tr[data-service="iris-server"]') || polled !== 'iris-server') throw new Error('Unprepared Iris must keep polling');

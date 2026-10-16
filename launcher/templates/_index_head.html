@@ -7,7 +7,6 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <style>
     :root { color-scheme: dark; font-size: 15px; }
-    html { scrollbar-gutter: stable; }
     body {
       font-family: system-ui, sans-serif;
       font-size: 0.82rem;
@@ -38,6 +37,12 @@
     details.not-installed summary { cursor: pointer; color: #aaa; }
     .services-table { table-layout: fixed; }
     .services-table tbody tr { height: 5rem; }
+    .services-table tr[data-service="iris-server"]:has(+ tr[data-iris-installation]),
+    .services-table tr[data-iris-installation] { height: 3.5rem; }
+    .services-table tr[data-service="iris-server"]:has(+ tr[data-iris-installation]),
+    .services-table tr[data-iris-installation]:not(:has(+ tr[data-iris-installation])) { height: 4.25rem; }
+    tr[data-service="iris-server"]:has(+ tr[data-iris-installation]) td { padding-top: calc(1.1rem + 2px); }
+    tr[data-iris-installation]:not(:has(+ tr[data-iris-installation])) td { padding-bottom: calc(1.1rem + 2px); }
     .services-table th:nth-child(1) { width: 20%; }
     .services-table th:nth-child(2) { width: 50%; }
     .services-table th:nth-child(3) { width: 22%; }
@@ -119,7 +124,7 @@
     .soul-entry { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
     .soul-combobox { position: relative; display: inline-block; }
     .soul-combobox input { font: inherit; padding: 0.2rem 0.35rem; background: #2a2a2a; color: #eee;
-                           border: 1px solid #444; border-radius: 3px; min-width: 18rem; }
+                           border: 1px solid #444; border-radius: 3px; width: var(--field-width); min-width: 0; box-sizing: border-box; }
     .soul-options { position: absolute; z-index: 2; top: 100%; left: 0; right: 0; display: grid;
                     background: #222; border: 1px solid #444; box-shadow: 0 0.35rem 0.8rem #0008; }
     .soul-options[hidden] { display: none; }
@@ -129,5 +134,6 @@
     .soul-ready { color: #4ade80; font-weight: 700; }
     .soul-new { flex-basis: 100%; color: #fbbf24; }
   </style>
+  <link rel="stylesheet" href="/static/forms.css">
 </head>
 <body>

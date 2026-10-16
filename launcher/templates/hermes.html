@@ -15,7 +15,7 @@
   <p>Active soul: <strong>{{ active_soul }}</strong></p>
   <p class="failure">Souls unavailable: {{ soul_error }}. Start mcp-memu-server before changing the active soul.</p>
   {% else %}
-  <form method="post" action="/soul" id="channels-soul-form">
+  <form method="post" action="/soul" id="channels-soul-form" class="field-row">
     <label for="soul_id">Active soul:</label>
     <span class="soul-entry">
       <span class="soul-combobox">
@@ -37,14 +37,14 @@
   <p class="failure">WhatsApp policy needs repair: {{ policy_error }}</p>
   {% else %}
   <form method="post" action="/policy">
-    <p>
+    <div class="field-row">
       <label for="default-channel-policy">New rows default to</label>
       <select id="default-channel-policy" name="default_policy">
         {% for p in policies %}
           <option value="{{ p }}" {% if (default_policy|default('excluded')) == p %}selected{% endif %}>{{ p }}</option>
         {% endfor %}
       </select>
-    </p>
+    </div>
   {% if chats %}
   <p class="muted">
     Legend:<br>

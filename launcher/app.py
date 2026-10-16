@@ -6,6 +6,7 @@ import logging
 import os
 import shutil
 import sqlite3
+import sys
 import tempfile
 import urllib.error
 import urllib.parse
@@ -30,6 +31,7 @@ import soul
 ROOT = Path(__file__).resolve().parent
 LAUNCHER_ID = "openalma-launcher"
 _ECHO_CONFIRM_LOCKS: dict[str, Lock] = {}
+_CONFIG_WRITE_LOCK = Lock()
 templates = Jinja2Templates(
     directory=str(ROOT / "templates"),
     context_processors=[lambda _request: {"launcher_version": setup_install.read_packaged_release() or "Development"}],
@@ -138,6 +140,27 @@ def launcher_update_readiness() -> dict[str, object]:
     if owner := setup_install._active_install_owner():
         active.append(f"{owner[0]} installation in progress (wait for it to finish)")
     return {"application": LAUNCHER_ID, "active_services": active}
+
+
+@app.get("/launcher/update/status")
+def launcher_update_status() -> dict:
+    return setup_install.operation_status(setup_install.LAUNCHER_UPDATE_DIR, "launcher")
+
+
+@app.post("/launcher/update")
+@app.post("/launcher/update/open")
+def launcher_update_action(request: Request) -> dict:
+    if sys.platform != "win32":
+        raise HTTPException(status_code=400, detail="Automatic launcher updates are available on Windows")
+    if active := launcher_update_readiness()["active_services"]:
+        raise HTTPException(status_code=409, detail="Stop all OpenAlma services before updating: " + ", ".join(active))
+    try:
+        return (setup_install.open_launcher_update() if request.url.path.endswith("/open")
+                else setup_install.begin_launcher_update())
+    except setup_install.SetupConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except setup_install.SetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/launcher/window-position", include_in_schema=False)
@@ -307,10 +330,9 @@ def index(request: Request) -> HTMLResponse:
                     )
                 )
                 continue
-            if not services.is_installed(spec):
-                setup = (setup_install.setup_status(setup_root, verify_runtime=False) if spec.name == "memu-server"
-                         else setup_install.optional_setup_status(spec.name, setup_root))
-                not_installed.append({"name": spec.name, "label": spec.label} | setup)
+            setup = (setup_install.setup_status(setup_root, verify_runtime=False) if spec.name == "memu-server"
+                     else setup_install.optional_setup_status(spec.name, setup_root))
+            not_installed.append({"name": spec.name, "label": spec.label} | setup)
     owner_id: str | None = None
     owner_error = ""
     try:
@@ -345,6 +367,8 @@ def index(request: Request) -> HTMLResponse:
             "owner_error": owner_error,
             "launcher_update": setup_install.launcher_update(),
             "services_active": any(_runtime_active(row) for row in rows + not_installed),
+            "runtime_active": _runtime_active,
+            "windows": sys.platform == "win32",
         },
     )
 
@@ -720,6 +744,53 @@ def iris_page(request: Request, device_session_id: str = "", repair: bool = Fals
     })
 
 
+def _memu_config() -> tuple[Path, dict]:
+    root = settings.apps_root()
+    if root is None:
+        raise ValueError("Install memU Server first")
+    path = root / "mcp-memu-server" / "config.json"
+    config = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(config, dict):
+        raise ValueError("mcp config.json must be a JSON object")
+    return path, config
+
+
+def _save_memu_config(changes: dict) -> None:
+    with _CONFIG_WRITE_LOCK:
+        path, config = _memu_config()
+        for key, value in changes.items():
+            if isinstance(value, dict):
+                section = config.setdefault(key, {})
+                if not isinstance(section, dict):
+                    raise ValueError(f"{key} must be a JSON object")
+                section.update(value)
+            else:
+                config[key] = value
+        backup = Path(str(path) + ".orig")
+        number = 2
+        while backup.exists():
+            backup = Path(str(path) + f"{number}.orig")
+            number += 1
+        shutil.copy2(path, backup)
+        backup.chmod(0o600)
+        memu_spec = next((spec for spec in services.all_services() if spec.name == "memu-server"), None)
+        if memu_spec and services._runtime_state(memu_spec).running:
+            services._mcp_request("/config", changes)
+        else:
+            temporary = None
+            try:
+                with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as output:
+                    temporary = Path(output.name)
+                    json.dump(config, output, indent=2)
+                    output.write("\n")
+                    output.flush()
+                    os.fsync(output.fileno())
+                temporary.replace(path)
+            finally:
+                if temporary:
+                    temporary.unlink(missing_ok=True)
+
+
 @app.post("/iris/address")
 def iris_address_save(public_base_url: str = Form()) -> RedirectResponse:
     try:
@@ -729,10 +800,8 @@ def iris_address_save(public_base_url: str = Form()) -> RedirectResponse:
     root = settings.apps_root()
     if root is None:
         raise HTTPException(status_code=400, detail="Install OpenAlma first")
-    path = root / "mcp-memu-server" / "config.json"
     if not services._IRIS_INSTALL_LOCK.acquire(blocking=False):
         raise HTTPException(status_code=409, detail="Another Iris setup change is in progress; wait and try again")
-    temporary = None
     try:
         specs = services.all_services()
         iris_spec = next((spec for spec in specs if spec.name == "iris-server"), None)
@@ -740,38 +809,13 @@ def iris_address_save(public_base_url: str = Form()) -> RedirectResponse:
             runtime = services._runtime_state(iris_spec)
             if runtime.running or runtime.stuck or runtime.orphaned:
                 raise services.ServiceStoppingError("Finish or cancel the Iris installer before changing the address")
-        config = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(config, dict):
-            raise ValueError("mcp config.json must be a JSON object")
-        config.setdefault("mentra", {})["public_base_url"] = address
-        backup = Path(str(path) + ".orig")
-        number = 2
-        while backup.exists():
-            backup = Path(str(path) + f"{number}.orig")
-            number += 1
-        shutil.copy2(path, backup)
-        backup.chmod(0o600)
-        memu_spec = next((spec for spec in specs if spec.name == "memu-server"), None)
-        if memu_spec and services._runtime_state(memu_spec).running:
-            services._mcp_request("/config", {"mentra": {"public_base_url": address}})
-        else:
-            with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as output:
-                temporary = Path(output.name)
-                json.dump(config, output, indent=2)
-                output.write("\n")
-                output.flush()
-                os.fsync(output.fileno())
-            temporary.replace(path)
+        _save_memu_config({"mentra": {"public_base_url": address}})
     except services.ServiceStoppingError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=f"Cannot save OpenAlma address: {exc}") from exc
     finally:
-        try:
-            if temporary:
-                temporary.unlink(missing_ok=True)
-        finally:
-            services._IRIS_INSTALL_LOCK.release()
+        services._IRIS_INSTALL_LOCK.release()
     services._MENTRA_READINESS_CACHE.clear()
     return RedirectResponse("/iris", status_code=303)
 
@@ -783,6 +827,13 @@ def settings_page(request: Request) -> HTMLResponse:
     stored = paths.get("apps_root") or ""
     candidate = settings.next_apps_root(stored)
     setup_root = settings.setup_apps_root()
+    workspace = ""
+    workspace_error = ""
+    try:
+        _path, config = _memu_config()
+        workspace = str(config.get("claude_code_workspace") or "")
+    except (OSError, ValueError) as exc:
+        workspace_error = f"Soul Workspace unavailable: {exc}"
     editable = [
         {"key": key, "label": CONFIG_LABELS.get(key, key)}
         for key in _editable_configs(apps_root)
@@ -801,17 +852,37 @@ def settings_page(request: Request) -> HTMLResponse:
             "editable_configs": editable,
             "settings_path": str(settings.SETTINGS_PATH),
             "launcher_log_path": str(settings.LAUNCHER_LOG_PATH),
+            "soul_workspace": workspace,
+            "workspace_default": str(settings.SETTINGS_PATH.parent / "workspace"),
+            "workspace_error": workspace_error,
             "host_prerequisites": services.host_prerequisites(apps_root or setup_root),
         },
     )
 
 
 @app.post("/settings")
-def settings_save(
+async def settings_save(
+    request: Request,
     apps_root: str = Form(default=""),
     release_channel: Literal["stable", "prerelease"] = Form(default="stable"),
 ) -> RedirectResponse:
-    settings.update_paths(apps_root=apps_root.strip() or None, release_channel=release_channel)
+    form = await request.form()
+    changes = {}
+    if "apps_root" in form:
+        changes["apps_root"] = apps_root.strip() or None
+    if "release_channel" in form:
+        changes["release_channel"] = release_channel
+    settings.update_paths(**changes)
+    return RedirectResponse("/settings", status_code=303)
+
+
+@app.post("/settings/workspace")
+def soul_workspace_save(soul_workspace: str = Form(default="")) -> RedirectResponse:
+    try:
+        workspace = str(Path(soul_workspace.strip()).expanduser().resolve()) if soul_workspace.strip() else ""
+        _save_memu_config({"claude_code_workspace": workspace})
+    except (OSError, ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=f"Cannot save Soul Workspace: {exc}") from exc
     return RedirectResponse("/settings", status_code=303)
 
 
@@ -1158,7 +1229,8 @@ def service_status(service_name: str) -> dict:
     root = settings.apps_root()
     if root is None:
         raise HTTPException(status_code=409, detail="Install core and restart OpenAlma first")
-    return _setup_aware_status(spec, root, verify_runtime=False)
+    status = _setup_aware_status(spec, root, verify_runtime=False)
+    return {**status, "runtime_active": _runtime_active(status)}
 
 
 @app.get("/whatsapp/pair-status")

@@ -302,6 +302,9 @@ class MentraStatusTest(TestCase):
             repair_requested=True, repair_versions={}, iris_source_folder="/fictional/iris",
         )
         self.assertIn(">Repair<", page)
+        self.assertLess(page.index('id="iris-installer-status"'), page.index('<h2>'))
+        self.assertLess(page.index('id="iris-foreground-notice"'), page.index('<h2>'))
+        self.assertLess(page.index('id="iris-action-error"'), page.index('<h2>'))
         self.assertNotIn('name="soul_id"', page)
         self.assertIn('name="device_session_id" value="test-phone"', page)
 

@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 from fastapi.testclient import TestClient
@@ -8,6 +9,83 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "launcher"))
 import services  # noqa: E402
 import settings  # noqa: E402
 import app  # noqa: E402
+
+
+@pytest.mark.parametrize("platform", ["linux", "win32"])
+def test_storage_cutover_preserves_choices_and_retires_legacy(tmp_path, monkeypatch, platform):
+    root = tmp_path / "private"
+    legacy = tmp_path / "old/paths.json"
+    legacy.parent.mkdir()
+    original = b'{"apps_root":"/chosen/apps","unknown":{"keep":true}}\n'
+    legacy.write_bytes(original)
+    legacy.chmod(0o600)
+    first_backup = legacy.with_suffix(".json.orig")
+    first_backup.write_text("earlier backup")
+    monkeypatch.setattr(settings.sys, "platform", platform)
+    monkeypatch.setattr(settings, "SETTINGS_ROOT", root)
+    monkeypatch.setattr(settings, "SETTINGS_PATH", root / "paths.json")
+    monkeypatch.setattr(settings, "LEGACY_SETTINGS_PATH", legacy)
+    settings.prepare_storage()
+    assert settings.read_paths() == json.loads(original)
+    assert settings.read_paths()["unknown"] == {"keep": True}
+    assert not legacy.exists()
+    assert first_backup.read_text() == "earlier backup"
+    assert legacy.with_suffix(".json_2.orig").read_bytes() == original
+    if platform == "win32":
+        assert (root / ".openalma-root").read_text().strip() == str(root.resolve())
+    settings.SETTINGS_PATH.unlink()
+    settings.prepare_storage()
+    assert not settings.SETTINGS_PATH.exists(), "retired settings must not resurrect"
+
+
+def test_storage_cutover_new_settings_win(tmp_path, monkeypatch):
+    target = tmp_path / "paths.json"
+    legacy = tmp_path / "old.json"
+    target.write_text('{"new":true}')
+    legacy.write_text('{"old":true}')
+    monkeypatch.setattr(settings.sys, "platform", "linux")
+    monkeypatch.setattr(settings, "SETTINGS_ROOT", tmp_path)
+    monkeypatch.setattr(settings, "SETTINGS_PATH", target)
+    monkeypatch.setattr(settings, "LEGACY_SETTINGS_PATH", legacy)
+    settings.prepare_storage()
+    assert settings.read_paths() == {"new": True}
+    assert not legacy.exists()
+    assert legacy.with_suffix(".json.orig").read_text() == '{"old":true}'
+    target.unlink()
+    settings.prepare_storage()
+    assert not target.exists()
+
+
+def test_windows_storage_accepts_unclaimed_nonempty_root(tmp_path, monkeypatch):
+    root = tmp_path / "private"
+    root.mkdir()
+    unrelated = root / "unrelated.txt"
+    unrelated.write_text("keep")
+    legacy = tmp_path / "old.json"
+    legacy.write_text("{}")
+    monkeypatch.setattr(settings.sys, "platform", "win32")
+    monkeypatch.setattr(settings, "SETTINGS_ROOT", root)
+    monkeypatch.setattr(settings, "SETTINGS_PATH", root / "paths.json")
+    monkeypatch.setattr(settings, "LEGACY_SETTINGS_PATH", legacy)
+    settings.prepare_storage()
+    assert unrelated.read_text() == "keep"
+    assert not (root / ".openalma-root").exists()
+    assert settings.read_paths() == {}
+    assert not legacy.exists()
+
+
+@pytest.mark.parametrize("contents", ["{broken", "[]"])
+def test_storage_cutover_rejects_invalid_legacy_without_retiring_it(tmp_path, monkeypatch, contents):
+    legacy = tmp_path / "old.json"
+    legacy.write_text(contents)
+    monkeypatch.setattr(settings.sys, "platform", "linux")
+    monkeypatch.setattr(settings, "SETTINGS_ROOT", tmp_path)
+    monkeypatch.setattr(settings, "SETTINGS_PATH", tmp_path / "paths.json")
+    monkeypatch.setattr(settings, "LEGACY_SETTINGS_PATH", legacy)
+    with pytest.raises(ValueError):
+        settings.prepare_storage()
+    assert not settings.SETTINGS_PATH.exists()
+    assert legacy.read_text() == contents
 
 
 def _apps_root(path: Path) -> Path:
@@ -103,6 +181,7 @@ import sys
 from pathlib import Path
 Path.home = classmethod(lambda cls: Path(sys.argv[1]))
 import settings
+settings.SETTINGS_PATH = Path(sys.argv[1]) / ".config/openalma-launcher/paths.json"
 try:
     settings.apps_root()
 except ValueError:
@@ -127,6 +206,8 @@ Path.home = classmethod(lambda cls: Path(sys.argv[1]))
 tempfile.gettempdir = lambda: sys.argv[1]
 opened = []
 sys.modules["webbrowser"] = types.SimpleNamespace(open=lambda url: opened.append(url))
+import settings
+settings.SETTINGS_PATH = Path(sys.argv[1]) / ".config/openalma-launcher/paths.json"
 try:
     import run
 except ValueError:

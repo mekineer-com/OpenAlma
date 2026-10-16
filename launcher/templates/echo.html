@@ -6,12 +6,11 @@
   .echo-form input[type=file], .echo-form input[type=range] { max-width:100%; }
   .echo-prose { white-space:pre-wrap; overflow-wrap:anywhere; }
   #echo-results details { margin:.8rem 0; }
-  .echo-form .soul-combobox input { min-width:0; width:18rem; max-width:65vw; }
 </style>
 <p class="muted">Import dated chat JSON. Preview and storage make no model calls. Processing history creates memories and revises dossiers; each batch costs model usage.</p>
 <p id="echo-error" class="failure" role="alert" hidden></p>
 <form method="post" action="/echo/soul" id="echo-soul-form" class="echo-form">
-  <fieldset id="echo-soul-picker">
+  <fieldset id="echo-soul-picker" class="field-row">
     <label for="echo-soul">Soul:</label>
     <span class="soul-entry">
       <span class="soul-combobox">
@@ -27,8 +26,8 @@
   </fieldset>
 </form>
 <form id="echo-chat-form" class="echo-form">
-  <fieldset id="echo-picker">
-    <p class="muted">Choose or enter the app this chat came from, such as Replika, Nomi or Kindroid. Each Soul can import one chat app.</p>
+  <fieldset id="echo-picker" class="field-row">
+    <p class="muted field-help">Choose or enter the app this chat came from, such as Replika, Nomi or Kindroid. Each Soul can import one chat app.</p>
     <label for="echo-label">Chat app</label>
     <span class="soul-entry">
       <span class="soul-combobox">
@@ -43,11 +42,13 @@
 </form>
 <form id="echo-upload-form" class="echo-form">
   <fieldset id="echo-upload" disabled>
-    <p><label for="echo-file">Chat JSON file</label> <input id="echo-file" type="file" accept=".json,application/json" required></p>
+    <div class="field-row"><label for="echo-file">Chat JSON file</label> <input id="echo-file" type="file" accept=".json,application/json" required></div>
     <p><label><input id="echo-all-history" type="checkbox" checked> Archive entire file</label></p>
     <div id="echo-gap" hidden>
-      <label for="echo-history-count">Gap after message <output id="echo-gap-count">0</output></label>
-      <input id="echo-history-count" type="range" min="0" max="0" value="0">
+      <div class="field-row">
+        <label for="echo-history-count">Gap after message <output id="echo-gap-count">0</output></label>
+        <input id="echo-history-count" type="range" min="0" max="0" value="0">
+      </div>
       <p class="muted">Before the gap is archived. After it joins the unmemorized chat and the Soul's next ordinary Memorize.</p>
     </div>
     <button class="btn" type="submit">Preview</button>
