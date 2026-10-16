@@ -63,7 +63,12 @@ def _packaged_manifest(tmp_path, monkeypatch):
     manifest = tmp_path / "release-components.json"
     manifest.write_bytes((Path(__file__).resolve().parents[1] / "release-components.json").read_bytes())
     monkeypatch.setattr(settings, "PACKAGED_MANIFEST_PATH", manifest)
+    monkeypatch.setattr(settings, "SETTINGS_ROOT", tmp_path / "storage")
+    monkeypatch.setattr(settings, "SETTINGS_PATH", tmp_path / "storage/paths.json")
+    monkeypatch.setattr(settings, "LAUNCHER_LOG_PATH", tmp_path / "storage/launcher.log")
+    monkeypatch.setattr(settings, "LEGACY_SETTINGS_PATH", tmp_path / "legacy/paths.json")
     monkeypatch.setattr(settings, "BROWSER_PROFILE_PATH", tmp_path / "profile")
+    monkeypatch.setattr(windows_remove, "LAUNCHER_UPDATE_DIR", tmp_path / "updates", raising=False)
 
 
 @pytest.mark.parametrize("argument", ["", "--prepare-update", "--stop-existing"])
@@ -470,6 +475,146 @@ def test_remove_everything_accepts_utf8_recorded_root(tmp_path, monkeypatch):
     assert calls[0][1]["onexc"] is not None
     assert unrelated.exists()
     assert not (state_dir / "launcher.log").exists()
+
+
+@pytest.mark.parametrize("failure", ["child", "directory", "external-log", "profile"])
+def test_remove_everything_can_retry_partial_deletion(tmp_path, monkeypatch, failure):
+    root = settings.SETTINGS_ROOT if failure in {"child", "directory"} else tmp_path / "apps"
+    assert setup_install._write_root_marker(root)
+    preferences = {"apps_root": str(root), "unknown": {"preserve": True}}
+    settings.write_paths(preferences)
+    (root / "payload.txt").write_text("fixture data")
+    settings.LAUNCHER_LOG_PATH.write_text("fixture log")
+    marker = root / windows_install.OWNER_FILE
+    locked = True
+    if failure in {"child", "profile"}:
+        if failure == "profile":
+            settings.BROWSER_PROFILE_PATH.mkdir()
+        real_rmtree = windows_remove.shutil.rmtree
+
+        def remove(path, *args, **kwargs):
+            target = root if failure == "child" else settings.BROWSER_PROFILE_PATH
+            if Path(path) == target and locked:
+                if failure == "child":
+                    marker.unlink()
+                    settings.SETTINGS_PATH.unlink()
+                raise PermissionError("fixture locked child")
+            return real_rmtree(path, *args, **kwargs)
+
+        monkeypatch.setattr(windows_remove.shutil, "rmtree", remove)
+    elif failure == "directory":
+        real_rmdir = windows_remove.os.rmdir
+        real_chmod = windows_remove.os.chmod
+        # Windows chmod does not remove directory traversal permission as POSIX does.
+        monkeypatch.setattr(windows_remove.os, "chmod", lambda path, mode:
+                            None if Path(path) == root else real_chmod(path, mode))
+
+        def remove(path, *args, **kwargs):
+            if Path(path) == root and locked:
+                raise PermissionError("fixture locked directory")
+            return real_rmdir(path, *args, **kwargs)
+
+        monkeypatch.setattr(windows_remove.os, "rmdir", remove)
+    else:
+        real_unlink = Path.unlink
+
+        def remove(path, *args, **kwargs):
+            if path == settings.LAUNCHER_LOG_PATH and locked:
+                settings.SETTINGS_PATH.unlink(missing_ok=True)
+                raise PermissionError("fixture locked external log")
+            return real_unlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", remove)
+
+    with pytest.raises(PermissionError, match="fixture locked"):
+        windows_remove.remove_everything()
+    assert marker.read_text(encoding="utf-8").strip() == str(root)
+    assert settings.read_paths() == preferences
+    assert setup_install._write_root_marker(root), "reinstall must still recognize its owned root"
+    locked = False
+    windows_remove.remove_everything()
+    assert not root.exists()
+    assert not settings.SETTINGS_PATH.exists()
+    assert not settings.LAUNCHER_LOG_PATH.exists()
+
+
+def test_remove_everything_cleans_only_known_external_files(tmp_path, monkeypatch):
+    root = tmp_path / "apps"
+    assert setup_install._write_root_marker(root)
+    assert setup_install._write_root_marker(settings.SETTINGS_ROOT)
+    workspace = settings.SETTINGS_ROOT / "workspace"
+    workspace.mkdir()
+    (workspace / "fictional-work.txt").write_text("keep external workspace")
+    settings.write_paths({"apps_root": str(root), "workspace": str(workspace)})
+    legacy = settings.LEGACY_SETTINGS_PATH
+    legacy.parent.mkdir()
+    legacy.write_text("old active settings")
+    backups = [legacy.with_name(legacy.name + suffix) for suffix in (".orig", "_2.orig", "_10.orig")]
+    for path in backups:
+        path.write_text("retired settings")
+    unrelated = legacy.with_name("paths.json.notes.orig")
+    unrelated.write_text("keep unrelated file")
+    old_log = settings.SETTINGS_ROOT / "logs/launcher.log"
+    old_log.parent.mkdir()
+    old_log.write_text("old launcher log")
+    neighbor = old_log.parent / "unrelated.log"
+    neighbor.write_text("keep unrelated log")
+    cache = windows_remove.LAUNCHER_UPDATE_DIR
+    cache.mkdir()
+    installers = [cache / name for name in ("OpenAlma-v0.1.21-Windows.exe", "OpenAlma-v0.1.22-Windows.exe.part")]
+    for path in installers:
+        path.write_text("fictional installer")
+    other_download = cache / "other-app.exe"
+    other_download.write_text("keep unrelated download")
+    malformed = [cache / name for name in ("OpenAlma-v1.2.3--notes-Windows.exe", "OpenAlma-v1.2.3-.-Windows.exe")]
+    for path in malformed:
+        path.write_text("not a generated installer name")
+
+    windows_remove.remove_everything()
+
+    assert not root.exists()
+    assert not legacy.exists() and not any(path.exists() for path in backups)
+    assert not old_log.exists() and not any(path.exists() for path in installers)
+    assert unrelated.read_text() == "keep unrelated file"
+    assert neighbor.read_text() == "keep unrelated log"
+    assert other_download.read_text() == "keep unrelated download"
+    assert all(path.exists() for path in malformed)
+    assert (workspace / "fictional-work.txt").read_text() == "keep external workspace"
+
+
+@pytest.mark.parametrize("location", ["root", "profile"])
+def test_remove_everything_does_not_chmod_external_link_targets(tmp_path, monkeypatch, location):
+    # Match Windows' rmtree backend rather than POSIX's nested fd callbacks.
+    monkeypatch.setattr(windows_remove.shutil, "_use_fd_functions", False)
+    root = tmp_path / "apps"
+    assert setup_install._write_root_marker(root)
+    settings.write_paths({"apps_root": str(root)})
+    workspace = tmp_path / "external-workspace"
+    workspace.mkdir()
+    (workspace / "keep.txt").write_text("keep external work")
+    mode = workspace.stat().st_mode
+    link = root / "workspace-link" if location == "root" else settings.BROWSER_PROFILE_PATH
+    try:
+        link.symlink_to(workspace, target_is_directory=True)
+    except OSError:
+        pytest.skip("This environment cannot create a directory symlink")
+    real_unlink = windows_remove.os.unlink
+    locked = True
+
+    def unlink(path, *args, **kwargs):
+        if Path(path).name == link.name and locked:
+            raise PermissionError("fixture locked symlink")
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(windows_remove.os, "unlink", unlink)
+    with pytest.raises(PermissionError, match="fixture locked symlink"):
+        windows_remove.remove_everything()
+    assert workspace.stat().st_mode == mode
+    assert (workspace / "keep.txt").read_text() == "keep external work"
+    locked = False
+    windows_remove.remove_everything()
+    assert workspace.stat().st_mode == mode
+    assert (workspace / "keep.txt").read_text() == "keep external work"
 
 
 def test_remove_everything_rejects_changed_owner_without_deleting(tmp_path, monkeypatch):
