@@ -90,6 +90,7 @@ Windows users can download the [latest Beta installer](https://github.com/mekine
 | `v0.1.14` | Launcher-only fix: keep the server running through Edge process handoffs; unchanged v0.1.12 component compatibility |
 | `v0.1.15` | Install the compatible Atomic Windows server automatically; unchanged v0.1.12 component compatibility |
 | `v0.1.21` | Windows launcher upgrade repairs, update-progress reload fixes, and startup button alignment; compatible component versions remain independently pinned |
+| `v0.1.22` | Automatic Windows update download, Host paths, Iris installation feedback, consistent attachment workspaces, launcher-managed ST controls, and retryable removal |
 
 ---
 
