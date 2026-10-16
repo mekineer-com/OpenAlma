@@ -301,10 +301,11 @@ def _is_alive(pid: int) -> bool:
 
 
 def _matches_service_process(spec: ServiceSpec, pid: int) -> bool:
-    cmd = _proc_cmdline(pid).lower()
+    # Windows command-line reads are expensive; check the directory first.
     cwd = _proc_cwd(pid)
     if cwd is None or cwd != spec.cwd:
         return False
+    cmd = _proc_cmdline(pid).lower()
     try:
         args = shlex.split(cmd)
     except ValueError:
@@ -368,11 +369,6 @@ def _channels_whatsapp_child_markers() -> list[tuple[Path, tuple[str, ...]]]:
     ]
 
 
-def _cmdline_has_markers(pid: int, markers: tuple[str, ...]) -> bool:
-    cmd = _proc_cmdline(pid).lower()
-    return bool(cmd) and all(marker.lower() in cmd for marker in markers)
-
-
 def _matches_managed_process(spec: ServiceSpec, pid: int) -> bool:
     if _matches_service_process(spec, pid):
         return True
@@ -382,14 +378,18 @@ def _matches_managed_process(spec: ServiceSpec, pid: int) -> bool:
 
 
 def _matches_channels_child_process(pid: int) -> bool:
-    return any(_cmdline_has_markers(pid, markers) for _pidfile, markers in _channels_whatsapp_child_markers())
+    cmd = _proc_cmdline(pid).lower()
+    return bool(cmd) and any(
+        all(marker.lower() in cmd for marker in markers)
+        for _pidfile, markers in _channels_whatsapp_child_markers()
+    )
 
 
 def _scan_service_pids(spec: ServiceSpec) -> list[int]:
     pids: list[int] = []
     for process in psutil.process_iter(("pid",)):
         pid = process.pid
-        if _is_alive(pid) and _matches_managed_process(spec, pid):
+        if _matches_managed_process(spec, pid) and _is_alive(pid):
             pids.append(pid)
     return pids
 

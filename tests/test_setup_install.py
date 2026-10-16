@@ -749,6 +749,21 @@ def test_clone_publishes_and_reuses_exact_tagged_checkout(tmp_path):
 
     assert (root / "memu" / "README.md").read_text(encoding="utf-8") == "fictional fixture\n"
     assert not list(root.glob(".openalma-memu-*"))
+    checkout = root / "memu"
+    assert setup_install._local_matching_checkout(checkout, str(source), "v1.0.0")
+    identity = ["git", "-c", "user.name=Fictional Developer", "-c", "user.email=fictional@example.invalid"]
+    subprocess.run([*identity, "tag", "-am", "fixture", "v1.0.1"], cwd=checkout, check=True)
+    assert setup_install._local_matching_checkout(checkout, str(source), "v1.0.1")
+    (checkout / "local-config.json").touch()
+    assert setup_install._local_matching_checkout(checkout, str(source), "v1.0.1")
+    assert not setup_install._local_matching_checkout(checkout, str(source), "missing-tag")
+    assert not setup_install._local_matching_checkout(checkout, str(source / "other"), "v1.0.0")
+    (checkout / "README.md").write_text("changed fixture\n", encoding="utf-8")
+    assert not setup_install._local_matching_checkout(checkout, str(source), "v1.0.0")
+    subprocess.run(["git", "add", "README.md"], cwd=checkout, check=True)
+    assert not setup_install._local_matching_checkout(checkout, str(source), "v1.0.0")
+    subprocess.run([*identity, "commit", "-qam", "changed fixture"], cwd=checkout, check=True)
+    assert not setup_install._local_matching_checkout(checkout, str(source), "v1.0.0")
 
 
 def test_begin_core_install_reuses_active_operation(tmp_path, monkeypatch):

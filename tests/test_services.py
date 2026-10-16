@@ -1051,11 +1051,12 @@ def test_sillytavern_match_requires_expected_cwd(tmp_path, monkeypatch):
         log_path=tmp_path / "st.log",
         pid_path=tmp_path / "st.pid",
     )
+    monkeypatch.setattr(services, "_proc_cmdline", lambda _pid: pytest.fail("Unrelated cwd must not read the command line"))
+    for cwd in (None, tmp_path / "other"):
+        monkeypatch.setattr(services, "_proc_cwd", lambda _pid: cwd)
+        assert services._matches_service_process(spec, 123) is False
+
     monkeypatch.setattr(services, "_proc_cmdline", lambda _pid: "node server.js")
-
-    monkeypatch.setattr(services, "_proc_cwd", lambda _pid: tmp_path / "other")
-    assert services._matches_service_process(spec, 123) is False
-
     monkeypatch.setattr(services, "_proc_cwd", lambda _pid: spec.cwd)
     assert services._matches_service_process(spec, 123) is True
     for command in ("less server.js", "node other.js --note server.js", "cat start.sh"):
@@ -1800,19 +1801,29 @@ def test_channels_daemon_match_requires_cwd_and_gateway_module(tmp_path, monkeyp
     assert services._matches_service_process(spec, 123) is True
 
 
-def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monkeypatch):
+@pytest.mark.parametrize("pidfiles", [True, False])
+def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monkeypatch, pidfiles):
     channels_home = tmp_path / "channels_data"
     whatsapp_home = channels_home / "whatsapp"
     session_path = whatsapp_home / "session"
     session_path.mkdir(parents=True)
-    (session_path / "bridge.pid").write_text("41", encoding="utf-8")
-    (whatsapp_home / "web_source.pid").write_text("42", encoding="utf-8")
+    if pidfiles:
+        (session_path / "bridge.pid").write_text("41", encoding="utf-8")
+        (whatsapp_home / "web_source.pid").write_text("42", encoding="utf-8")
     monkeypatch.setattr(services, "_CHANNELS_HOME", channels_home)
-    monkeypatch.setattr(services, "_scan_service_pids", lambda _spec: [])
-    monkeypatch.setattr(services, "_is_alive", lambda pid: pid in {41, 42})
+    monkeypatch.setattr(services, "_PROCESS_SCAN_CACHE", {})
+    monkeypatch.setattr(services.psutil, "process_iter", lambda _attrs: [
+        type("Process", (), {"pid": pid})() for pid in (41, 42, 43, 44)
+    ])
+    def alive(pid):
+        assert pid != 43, "Unrelated processes must not need liveness inspection"
+        return pid in {41, 42}
+    monkeypatch.setattr(services, "_is_alive", alive)
+    reads = []
 
     def cmdline(pid):
-        if pid == 41:
+        reads.append(pid)
+        if pid in {41, 44}:
             return f"node bridge.js --port 3000 --session {session_path} --mode self-chat"
         if pid == 42:
             return (
@@ -1820,7 +1831,7 @@ def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monke
                 f"--db {whatsapp_home / 'web_source.db'} "
                 f"--status {whatsapp_home / 'web_source_status.json'}"
             )
-        return ""
+        return f"node bridge.js --db {whatsapp_home / 'web_source.db'} --status {whatsapp_home / 'web_source_status.json'}"
 
     monkeypatch.setattr(services, "_proc_cmdline", cmdline)
     monkeypatch.setattr(services, "_proc_cwd", lambda _pid: None)
@@ -1834,6 +1845,9 @@ def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monke
     )
 
     assert services._verified_pid_candidates(spec) == [41, 42]
+    assert reads.count(41) == reads.count(42) == (1 if pidfiles else 2)
+    if not pidfiles:
+        assert reads.count(43) == reads.count(44) == 1
 
 
 def test_channels_needs_soul_selection_before_start(tmp_path, monkeypatch):

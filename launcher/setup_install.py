@@ -417,12 +417,12 @@ def _local_matching_checkout(destination: Path, repository: str, ref: str) -> bo
         return False
     try:
         origin = _git_output(["git", "remote", "get-url", "origin"], destination)
-        head = _git_output(["git", "rev-parse", "HEAD"], destination)
-        tagged = _git_output(["git", "rev-list", "-n", "1", ref], destination)
+        commits = _git_output(["git", "rev-parse", "HEAD", f"{ref}^{{commit}}"], destination).splitlines()
         dirty = _git_output(["git", "status", "--porcelain", "--untracked-files=no"], destination)
     except SetupError:
         return False
-    return _normalized_repository(origin) == _normalized_repository(repository) and head == tagged and not dirty
+    return (_normalized_repository(origin) == _normalized_repository(repository)
+            and len(commits) == 2 and commits[0] == commits[1] and not dirty)
 
 
 def packaged_manifest(root: Path) -> dict[str, list[dict[str, str]]] | None:
