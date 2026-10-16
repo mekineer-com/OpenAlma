@@ -68,7 +68,7 @@ def _packaged_manifest(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "LAUNCHER_LOG_PATH", tmp_path / "storage/launcher.log")
     monkeypatch.setattr(settings, "LEGACY_SETTINGS_PATH", tmp_path / "legacy/paths.json")
     monkeypatch.setattr(settings, "BROWSER_PROFILE_PATH", tmp_path / "profile")
-    monkeypatch.setattr(windows_remove, "LAUNCHER_UPDATE_DIR", tmp_path / "updates", raising=False)
+    monkeypatch.setattr(windows_remove, "LAUNCHER_UPDATE_DIR", tmp_path / "updates")
 
 
 @pytest.mark.parametrize("argument", ["", "--prepare-update", "--stop-existing"])
