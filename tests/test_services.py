@@ -280,6 +280,7 @@ def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch)
     assert next(spec for spec in specs if spec.name == "sillytavern").env == {
         "SILLYTAVERN_ENABLESERVERPLUGINS": "true",
         "SILLYTAVERN_ENABLESERVERPLUGINSAUTOUPDATE": "false",
+        "MEMU_SERVER_PATH": str(root / "mcp-memu-server"),
     }
 
 
@@ -832,6 +833,7 @@ def test_retry_consolidation_uses_encoded_owner_and_scope(monkeypatch):
 
 def test_owner_request_uses_shared_mcp_transport(monkeypatch):
     seen = {}
+    monkeypatch.setattr(services, "_port_listener_pid", lambda _port, **_kwargs: 123)
 
     class Response(_FakeResponse):
         def read(self):
@@ -1275,6 +1277,34 @@ def test_port_listener_lookup_is_cached(monkeypatch):
     assert services._port_listener_pid(8099) == 123
 
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("listener", ["absent", "present", "unknown_pid", "query_failure"])
+@pytest.mark.parametrize("mentra", [False, True])
+def test_offline_http_is_skipped_only_after_fresh_listener_absence(monkeypatch, listener, mentra):
+    port = services.MEMU_SERVER_PORT
+    monkeypatch.setattr(services, "_PORT_PID_CACHE", {port: (time.monotonic(), 123 if listener == "absent" else None)})
+
+    def connections(**_kwargs):
+        if listener == "query_failure":
+            raise services.psutil.AccessDenied()
+        return [] if listener == "absent" else [SimpleNamespace(
+            status=services.psutil.CONN_LISTEN, laddr=("127.0.0.1", port),
+            pid=None if listener == "unknown_pid" else 123,
+        )]
+
+    calls = []
+    monkeypatch.setattr(services.psutil, "net_connections", connections)
+    monkeypatch.setattr(services.urllib.request, "urlopen", lambda *_args, **_kwargs: calls.append(True) or BytesIO(b'{"state":"ready"}'))
+    if mentra:
+        result = services._read_mentra_status(port)
+        assert result["state"] == ("unavailable" if listener == "absent" else "ready")
+    elif listener == "absent":
+        with pytest.raises(ConnectionRefusedError):
+            services._mcp_request("/owner")
+    else:
+        assert services._mcp_request("/owner") == {"state": "ready"}
+    assert len(calls) == (0 if listener == "absent" else 1)
 
 
 def test_force_kill_process_tree_starts_with_supervisor(monkeypatch):

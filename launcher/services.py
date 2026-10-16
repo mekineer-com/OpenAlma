@@ -205,6 +205,7 @@ def services_for_root(root: Path) -> list[ServiceSpec]:
             env={
                 "SILLYTAVERN_ENABLESERVERPLUGINS": "true",
                 "SILLYTAVERN_ENABLESERVERPLUGINSAUTOUPDATE": "false",
+                "MEMU_SERVER_PATH": str(root / "mcp-memu-server"),
             },
             install_marker=root / "sillytavern" / "SillyTavern" / "server.js",
         ),
@@ -243,14 +244,16 @@ def _read_adopt_pid(spec: ServiceSpec) -> int | None:
     return _read_pid(spec.adopt_pid_path)
 
 
-def _port_listener_pid(port: int) -> int | None:
+def _port_listener_pid(port: int, *, refresh: bool = False) -> int | None:
     now = time.monotonic()
     cached = _PORT_PID_CACHE.get(port)
-    if cached is not None and now - cached[0] < PORT_PID_CACHE_SECONDS:
+    if not refresh and cached is not None and now - cached[0] < PORT_PID_CACHE_SECONDS:
         return cached[1]
     try:
         connections = psutil.net_connections(kind="tcp")
     except (psutil.Error, OSError):
+        if refresh:
+            return UNKNOWN_PORT_PID
         with socket.socket() as probe:
             probe.settimeout(0.2)
             pid = UNKNOWN_PORT_PID if probe.connect_ex(("127.0.0.1", port)) == 0 else None
@@ -651,6 +654,8 @@ def retry_memorize(soul_id: str, user_id: str) -> dict:
 
 
 def _mcp_request(path: str, payload: dict | None = None, *, timeout: float = 2, method: str | None = None) -> dict:
+    if _port_listener_pid(MEMU_SERVER_PORT, refresh=True) is None:
+        raise ConnectionRefusedError("memU Server is not listening")
     request = urllib.request.Request(
         f"http://127.0.0.1:{MEMU_SERVER_PORT}{path}",
         data=json.dumps(payload).encode() if payload is not None else None,
@@ -751,6 +756,8 @@ def _read_mentra_status(
         "device_session_id": device_session_id,
     })
     try:
+        if _port_listener_pid(port, refresh=True) is None:
+            raise ConnectionRefusedError("memU Server is not listening")
         request = urllib.request.Request(
             f"http://127.0.0.1:{port}/integration/mentra/status?{query}",
         )
