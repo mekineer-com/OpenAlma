@@ -102,6 +102,7 @@ def test_memorize_gauge_under_threshold():
         "context_load_has_chat": True,
     })
     assert "Memorize: 2,000 / 8,000 (25%)" in html
+    assert html.index('<h3>Fictional Soul</h3>') < html.index("Memorize: 2,000")
     assert 'style="width: 25%"' in html
     assert "waiting for sleep-gap" not in html
     assert 'title="Back to Services"' not in html
@@ -469,6 +470,7 @@ const unknown = {...base, summed_unmemorized_tokens: null, pct: null, sleep_gap_
   source_warning: 'Cannot read <snapshot> & "source"', context_load_has_chat: false, paused: true,
   retry_operation: 'consolidation', soul_id: 'First Soul'};
 context.renderMemorize({souls: [unknown]});
+assert.match(box.innerHTML, /<h3>First Soul<\/h3>/);
 assert.match(box.innerHTML, /Memorize: error/);
 assert.match(box.innerHTML, /Cannot read &lt;snapshot&gt; &amp; &quot;source&quot;/);
 assert.match(box.innerHTML, /popovertarget="info:source:First Soul"/);
@@ -600,7 +602,7 @@ def test_multi_soul_meters_are_named_and_retry_stays_paused():
     first = html.split("<h3>First Soul</h3>", 1)[1].split("<h3>Other Soul</h3>", 1)[0]
     assert "&asymp; 12,000 tokens" in first and "&asymp; 34,000 tokens" not in first
     assert "&asymp; 34,000 tokens" in html.split("<h3>Other Soul</h3>", 1)[1]
-    assert "<h3>" not in _render(base)
+    assert "<h3>Fictional Soul</h3>" in _render(base)
     zero = _render({**base, "threshold": 0, "paused": True, "retry_operation": "memorize"})
     assert "Paused: Memorize failed" in zero and ">Retry</button>" in zero
 

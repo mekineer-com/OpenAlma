@@ -192,7 +192,7 @@ function renderMemorize(data) {
   var focusKey = document.activeElement?.closest('.context-info')?.dataset.info;
   var rows = data.souls || [];
   box.innerHTML = rows.map(function(row) {
-    return (rows.length > 1 ? '<h3>' + esc(row.soul_id) + '</h3>' : '') + memorizeHtml(row);
+    return '<h3>' + esc(row.soul_id) + '</h3>' + memorizeHtml(row);
   }).join('') || '<p class="muted">No Souls available</p>';
   box.querySelectorAll('.context-info').forEach(function(info) {
     if (info.dataset.info === openKey) {

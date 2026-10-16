@@ -180,7 +180,7 @@
   <div id="memorize-meter">
     {% for meter in memorize %}
     <div data-soul="{{ meter.soul_id }}">
-    {% if memorize|length > 1 %}<h3>{{ meter.soul_id }}</h3>{% endif %}
+    <h3>{{ meter.soul_id }}</h3>
     {% if meter.error %}
       <p class="error" role="alert">{{ meter.error }}</p>
     {% elif meter.threshold is defined and meter.threshold is not none %}
