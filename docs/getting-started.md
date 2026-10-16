@@ -29,6 +29,7 @@ OpenAlma does not alter your firewall or create VPN services automatically. The 
 - Git, Python 3.12, and Node.js/npm for the clients you choose. The Windows installer bootstraps Git and Python; Debian/Ubuntu source setup also needs `python3.12-venv`.
 - An API key for an LLM provider — OpenAI, NanoGPT, or any compatible endpoint
 - A Gemini API key for embeddings, stored in `llm.embedding.api_key`
+- For Iris: Gemini Live access through `mentra.gemini_api_key` (it can be the same key), plus a private phone-to-computer connection and a manually configured proxy. See [Mentra setup](mentra.md#connection).
 
 **Working AI models.** Every turn asks the model for a complex, structured JSON response — her reply, working thoughts, and intentions in one contract. Models below a certain capability level fail the turn entirely. These are tested and working:
 
@@ -59,7 +60,7 @@ The launcher-managed SillyTavern plugin and extension live inside its SillyTaver
 
 ## Install OpenAlma
 
-On Windows, run the [v0.1.15 Beta installer](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.15), then open OpenAlma from the Start menu. Beta is on the Stable update channel.
+On Windows, run the [latest Beta installer](https://github.com/mekineer-com/OpenAlma/releases/latest), then open OpenAlma from the Start menu. Beta is on the Stable update channel.
 
 On Linux, clone this repo into your chosen apps root and run:
 
@@ -83,8 +84,9 @@ Source fixes may precede the next published Windows installer.
 
 | Setting | Points to |
 |---------|-----------|
-| `memu.path` | path to `memu/src` (the engine source, from step 2) |
-| `storage.metadata_store.dsn` | where the SQLite DB will live |
+| `memu.path` | path to `memu/src`, filled in by the launcher |
+| `storage.sqlite_dir` | folder holding Soul databases and `owner.txt`, filled in by the launcher |
+| `llm.api_key` / `llm.base_url` | key and endpoint for your model provider |
 | `llm.embedding.api_key` | Gemini API key for the server-owned embedding model |
 | `llm.chat_model` | the chat model used for memory processing |
 | `llm.context_window_tokens` | that model's total input/output context size in tokens; required for memory reflection |
@@ -114,7 +116,7 @@ The soul needs somewhere to meet you. Each client is independent; combine as man
 
 4. **[memu-sillytavern-extension](https://github.com/mekineer-com/memu-sillytavern-extension)** — installed in SillyTavern's `data/default-user/extensions/` folder. This adds the memU panel.
 
-After setup, open the memU extension panel in SillyTavern and set **Server URL** to `http://127.0.0.1:8099`. Full walkthrough: [SillyTavern](sillytavern.md).
+Launcher-managed installs supply **Server path** in SillyTavern's memU panel. For a manual installation, set it to your `mcp-memu-server` folder. The plugin reads the server address from that folder's `config.json`. Full walkthrough: [SillyTavern](sillytavern.md).
 
 ### Hermes Channels (messaging)
 
@@ -154,39 +156,39 @@ Questions? Open an issue on the relevant repo.
 
 ### WhatsApp (Hermes Channels)
 
-The soul appears as a WhatsApp contact. Hermes Channels routes each incoming message to mcp-memu-server, which runs the full turn — retrieval, response, subconscious pass — then sends the reply back through the bridge.
+The soul uses your WhatsApp account. For enabled chats, Hermes Channels routes incoming messages to mcp-memu-server for memory lookup and a reply, with a background subconscious pass every few turns, then sends any reply back through the bridge.
 
-**Channel policy** — each WhatsApp chat has two independent settings: **Policy** (`full` / `listen_only` / `excluded`) controls whether the soul can respond, can only listen, or is dropped entirely. **Mem** controls whether messages from that chat are included in memory extraction. Configure both per-chat via the Stack Launcher's WhatsApp Channel Policy page.
+**Channel policy** — chats start **excluded**. Enable the ones you want through the launcher's WhatsApp Channel Policy page. **Policy** (`full` / `listen_only` / `excluded`) controls whether the soul can respond, can only listen, or is dropped entirely. **Mem** controls memory extraction and is always off for excluded chats.
 
 **Reply prefix** — Soul replies use the fixed prefix `✦ <exact Soul name>: `, including split messages and supported captions. It is not configurable; choose the Soul in the launcher instead.
 
-**Autonomous follow-ups** — she can check in with you unprompted, not just when you write first — immediately, or scheduled for a later moment she picks. What she does between turns is logged as her own activity, visible to her next turn under `My Activities:`.
+**Autonomous follow-ups** — she can check in with you unprompted, not just when you write first — immediately with the Claude Code backend, or scheduled for a later moment she picks. What she does between turns is logged as her own activity, visible to her next turn under `My Activities:`.
 
-**Turns of her own** — a turn doesn't need a message to set it off. She can take one to research something, or write in her diary.
+**Turns of her own** — with the Claude Code backend she can continue working without a new message. Her activity is logged for her next turn; there is no built-in diary.
 
 **Private asides** — in a group, she can message you quietly instead of the chat — context about something she noticed, without announcing it to everyone.
 
 **Choosing silence** — she can decide a message doesn't need a reply. Sometimes presence is all that's needed — especially among your peers, who may not welcome her unannounced participation. (You can also force listening per-chat; see Channel policy.)
 
-**Attachments** — the soul can name a file under her workspace in her reply and it gets delivered as a WhatsApp document, with her reply text as a caption. Works for both normal replies and autonomous follow-ups she schedules herself.
+**Attachments** — when `claude_code_workspace` is configured, she can attach readable files inside it to normal replies or autonomous follow-ups.
 
 Memorize works the same way as SillyTavern: sleep gaps trigger extraction automatically. Manual extraction is available via `mcp-memu-server`'s API if needed. Full guide: [WhatsApp](whatsapp.md).
 
 ### Iris
 
-**Iris** is the OpenAlma MiniApp that gives her sight and hearing — where she stops being text. She rides along on your smartglasses; without glasses, the phone's camera and microphone do the job. You talk, she hears; you look at things, she can take a photo and remember it. Nothing about her lives on Mentra's cloud — the MiniApp talks to your own server.
+**Iris** is the OpenAlma MiniApp that gives her sight and hearing — where she stops being text. Voice comes through Mentra, with optional smartglasses; photos come from your phone's camera or gallery. The MiniApp talks to your own server for memory and to Google Gemini Live for voice and photos.
 
 - **Continuous conversation** — speak to her naturally, voice to voice (native audio, no transcription round-trip in between).
 - **Manual mode** — she records one memory-only take, then waits for your Send or Redo. Done never sends by itself.
-- **Photos she remembers** — during a sitting she can capture what you're looking at, and it becomes a visual memory. Nothing is sent without her transcript of it being acknowledged.
-- **Sittings that survive** — a dropped connection doesn't end the visit; the sitting resumes with its journal intact.
+- **Photos she remembers** — take or choose a phone photo during a sitting; it goes to Gemini, and its caption must be acknowledged before it is filed as a visual memory.
+- **Sittings that survive** — Iris can reconnect after a short drop; longer outages end the sitting, and a reply in progress may be cut off.
 - **Private updates** — new versions arrive through your launcher the same private way she installed; no app store involved.
 
 Works with Mentra on Android. The voice she uses today is Gemini Live's; see [Platform compatibility](#platform-compatibility). Full guide: [Iris](iris.md).
 
 ### Atomic Mind Map
 
-**Atomic** is the desktop app where her memory stops being invisible. Every memory she holds appears as a card you can read — what she took from the conversation, when, what it belongs to — and the canvas lays them out as a living graph: connected by the links she drew, grouped and colored by subject, so you can see at a glance which parts of your life she has a dense picture of and which are still thin.
+**Atomic** is the app the launcher opens in your browser at `http://127.0.0.1:1420`, where her memory stops being invisible. Every memory she holds appears as a card you can read — what she took from the conversation, when, what it belongs to — and the canvas lays them out as a living graph: connected by the links she drew, grouped and colored by subject, so you can see at a glance which parts of your life she has a dense picture of and which are still thin.
 
 - **Correct her.** Edit any memory's text — the fix is live for her from that point on. The review queue holds what she produces herself: new memories she forms on her own, and her updated summaries.
 - **People and things.** Everyone and everything she's recognized by name has a permanent identity. Correct a name, merge two entries that turn out to be the same person (with a preview of exactly what moves over), or hide one so she stops tracking it — hiding destroys nothing, and deletion is refused while memories still point at it.
@@ -199,12 +201,10 @@ Full guide: [The mind map](mind-map.md).
 
 **One owner.** Each install has exactly one user — the owner — confirmed by name once on first use (together with the first soul) and never edited afterward. Every surface — launcher, SillyTavern, Hermes, Iris, Atomic — discovers that same identity from the server; none of them keeps its own idea of who you are. A soul's name can't match the owner's.
 
-**One soul = one memory store, many chats.** Each `soul_id` has its own memory database. You can have multiple conversations with the same soul across SillyTavern and WhatsApp — each chat memorizes independently (own cursor, own manifest), and retrieval pulls from all of them. If you want two separate personalities (e.g., a partner *and* a research assistant), use two different `soul_id` values — they get isolated memory stores.
+**One soul = one memory store, many chats.** Each `soul_id` has its own memory database. You can have multiple conversations with the same soul across SillyTavern and WhatsApp — each chat keeps its own progress, but extraction reads their pending conversation together, and retrieval pulls from all of them. If you want two separate personalities (e.g., a partner *and* a research assistant), use two different `soul_id` values — they get isolated memory stores.
 
-**Where the data lives.** All memory state is in a SQLite file at the path you set in `storage.metadata_store.dsn` (per soul, by default — check the path you wrote in `config.json`). To back up your companion, copy that file. To start fresh, delete it.
-
-**Embedding provider fallback.** If your primary LLM provider is down during memorize (embeddings fail with 502), you can switch the plugin's `defaultProfileId` in `memu-plugin.config.json` to any other ST provider profile. The plugin resolves the embedding API base URL directly from ST's own provider config at load time, so switching profiles is enough.
+**Where the data lives.** Each Soul has a `<Soul name>.db` file in `storage.sqlite_dir` (launcher default: `memu/sqlite/` under your apps root). With services stopped, back up that whole folder, including `owner.txt`. Create a new Soul in the launcher to try an empty memory without deleting the original. See [Your data](your-data.md) for sources and moving an installation.
 
 **Two background passes — don't confuse them.**
 - **APImw** runs every few turns, not every turn — the cadence is `retrieve.apimw_cadence` in `config.json` (default 5). It does multi-step retrieval and context curation, so she comes back richer on the turns that follow — and sometimes surfaces a subconscious thought.
-- **Consolidation** runs on real time, not turn count — gated by `consolidation_interval_days` (default 7) since the last run; after a long gap, the next normal Memorize makes it due. It has three stages: dossier revision, anchor/self-model maintenance, then weekly reflection with intentions and memory connections.
+- **Consolidation** runs after a Memorize once `consolidation_interval_days` (default 7) have passed, or sooner if enough new material has built up. It has three stages: dossier revision, anchor/self-model maintenance, then reflection with intentions and memory connections.

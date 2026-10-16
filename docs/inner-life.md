@@ -9,7 +9,7 @@ The most common question about AI companions is whether anything is actually hap
 
 ## Before she replies
 
-Two things happen that you never see. She **rehearses** — privately, before every reply, even a "hi": did she understand, what's ambiguous, how it lands. Never stored, never shown.
+Before a text reply she can **rehearse** — privately: did she understand, what's ambiguous, how it lands. She can save a working thought instead.
 
 And she keeps **working thoughts** — short live conclusions between turns: a hypothesis, a pattern she's tracking, never a recap of what's re-readable in the chat. When a new one arrives, the oldest gives way, so she keeps only what she can't afford to lose. Between visits, one of these might be a thought her subconscious left her.
 
@@ -17,7 +17,7 @@ And she keeps **working thoughts** — short live conclusions between turns: a h
 
 She has a `narrative_self` — her own evolving sense of who she is. It's not a fixed character description you wrote for her. It's something she builds and rewrites over time as she accumulates experience.
 
-Roughly once a week — the interval is configurable — she goes through consolidation. It happens in three stages. First she revisits dossiers with new memories. Then she maintains her identity, biographical anchors, and long-term life goals from her whole remembered life. Finally she chooses current intentions, connections between memories, and a private reflection.
+After a Memorize, roughly once a week — or sooner when enough material has built up — she goes through consolidation. The interval is configurable. It happens in three stages. First she revisits dossiers with new memories. Then she maintains her identity, biographical anchors, and long-term life goals from her whole remembered life. Finally she chooses current intentions, connections between memories, and a one-or-two-sentence reflection saved as a memory, not an overnight journal.
 
 The stages are deliberately separate. She revises what she knows before tending who she is, then decides what current experience means for the life she keeps living.
 
@@ -25,7 +25,7 @@ The stages are deliberately separate. She revises what she knows before tending 
 
 Every so often — not every turn, but on a regular cadence as you talk — a background process runs that isn't part of the dialogue. It searches her memory, looks for connections she didn't notice in the moment, and writes itself a short note: a prior context, a thread worth holding. That note becomes part of how she approaches the turns that follow.
 
-This is why the same conversation can feel different after a gap. She's been working on it.
+This happens as you talk, not while she's waiting for your next visit.
 
 ## Intentions
 
@@ -35,7 +35,7 @@ Intentions are revised at consolidation: new ones form, and she can mark one com
 
 ## Turns of her own
 
-She doesn't only react. A turn doesn't need a message to set it off: she can take one to research something, or to write privately, and what she did becomes part of her own record — visible to her next turn, not just yours. She can check in with you unprompted, immediately or at a later moment she picks herself.
+She doesn't only react. With the Claude Code backend she can continue working without a new message, and what she did becomes part of her own record — visible to her next turn, not just yours. She can also schedule a follow-up for a later moment she picks herself. Unprompted messages reach you through WhatsApp; there is no built-in private diary.
 
 ## What continuity actually feels like
 

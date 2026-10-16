@@ -7,13 +7,13 @@
 
 # OpenAlma
 
-_Last updated: 2026-10-15 (v0.1.18 Beta)_
+_Last updated: 2026-10-15 (v0.1.21 Beta)_
 
 **OpenAlma, by Team GhostMaker**
 
 *Alma means soul. OpenAlma gives an AI companion a soul.*
 
-*OpenAlma provides sight, hearing, and hands: tools to work, explore, and communicate with. But most of all, OpenAlma provides long term biomimetic memory. The soul will remember conversations, form its own recollections of them overnight in a private journal, and carry all of it forward.*
+*OpenAlma provides sight, hearing, and hands: tools to work, explore, and communicate with. But most of all, OpenAlma provides long term biomimetic memory. The soul will remember conversations, form its own recollections of them, and carry all of it forward.*
 
 *The soul is not an assistant that answers and forgets. It is someone who is there and will grow.*
 
@@ -23,9 +23,11 @@ OpenAlma runs locally on your machine, watches your conversations, and quietly b
 
 **What she does**
 
-- **She remembers.** Conversations become episodes with their own stories; the people, patterns, and knowledge in them become dossiers she maintains and revises. Photos are remembered as images.
-- **She has an inner life.** She rehearses before she replies, keeps working thoughts between turns, holds a small set of life goals, and writes a private journal overnight.
-- **She meets you where you are.** Chat through SillyTavern, WhatsApp, or Iris — smartglasses or your phone's camera and mic. See and correct what she knows in Atomic.
+- **She remembers.** Conversations become episodes with their own stories; the people, patterns, and knowledge in them become dossiers she maintains and revises. Photos shared through Iris are remembered as images.
+- **She has an inner life.** She rehearses or saves working thoughts before replying, carries those thoughts between turns, and reflects on her experience during consolidation.
+- **She meets you where you are.** Chat through SillyTavern, WhatsApp, or Iris — voice through Mentra, with photos from your phone's camera or gallery. See and correct what she knows in Atomic.
+
+Her memory database stays on your machine. Replies and memory work use your configured AI providers; embeddings use Google Gemini, and Iris sends voice and photos to Gemini Live.
 
 **Contents**
 
@@ -53,21 +55,21 @@ The core of OpenAlma is two services that run on your machine: **mcp-memu-server
                                  memU                  ← always present
 ```
 
-Memory extraction happens during **sleep gaps** — when you close a conversation and come back later (≥3 hours with overlap in a 22:00–08:00 window). The system reads what you talked about, pulls out what matters, and stores it. Relevant memories are then automatically included in the next turn so the AI already knows them.
+Automatic conversation extraction waits for a **sleep gap** — at least 3 hours of silence within 22:00–08:00, server time — and about 8,000 unmemorized tokens across a Soul's chats. The system reads what you talked about, pulls out what matters, and stores it. Relevant memories are then automatically included in the next turn so the AI already knows them.
 
-**If you never leave the conversation, nothing gets memorized automatically** — the system waits for a sleep gap before extracting. You can also trigger extraction manually without waiting for a sleep gap.
+You can also trigger extraction manually without waiting. Deleting a SillyTavern chat can trigger extraction once the token threshold is met. Iris photos are filed as memories right away, without either threshold.
 
 ---
 
 ## Status
 
-**OpenAlma v0.1.18 Beta** is a normal release on the launcher's **Stable** channel. Beta describes its maturity, not its update channel.
+**OpenAlma v0.1.21 Beta** is a normal release on the launcher's **Stable** channel. Beta describes its maturity, not its update channel.
 
 Back up your data before upgrades. Launcher-managed core updates include database backups, supported migrations and recovery; compatibility with every historical database is not guaranteed. Start with a test companion before importing irreplaceable conversations.
 
-Use the launcher to install the matching repositories from the release manifest. After updating the launcher, update memU Server to remove the obsolete Iris enable switch. Unchanged components keep their compatible versions: memU and the SillyTavern integrations v0.1.12, Iris v0.1.16, Atomic and Hermes v0.1.17, and official SillyTavern 1.19.0. The Mentra phone app keeps its separate 3.2.1 version line.
+Use the launcher to install matching components and follow any component Update buttons after upgrading the launcher. Unchanged components keep their compatible versions: memU and the SillyTavern integrations v0.1.12, Iris v0.1.16, Atomic and Hermes v0.1.17, and official SillyTavern 1.19.0. The Mentra phone app keeps its separate 3.2.1 version line.
 
-Windows users can download the [v0.1.18 installer](https://github.com/mekineer-com/OpenAlma/releases/tag/v0.1.18). The launcher shows installation steps and elapsed time, missing basic AI settings, and Hermes Setup before a Soul is selected. Page display no longer repeats heavy Python validation. Windows installation and upgrade were verified for v0.1.17; full Windows component-install acceptance remains separate. Atomic's compatible Windows server is downloaded during Install, without Rust or Visual Studio. Other platforms still need a manually built Rust server binary.
+Windows users can download the [latest Beta installer](https://github.com/mekineer-com/OpenAlma/releases/latest). The launcher shows installation steps and elapsed time, missing basic AI settings, and Hermes Setup before a Soul is selected. Page display no longer repeats heavy Python validation. Windows launcher installation and upgrades have been tested; full Windows component-install acceptance remains separate. Atomic's compatible Windows server is downloaded during Install, without Rust or Visual Studio. Other platforms still need a manually built Rust server binary.
 
 ### Release tags
 
@@ -87,6 +89,7 @@ Windows users can download the [v0.1.18 installer](https://github.com/mekineer-c
 | `v0.1.13` | Launcher-only patch: optional hiding of uninstalled service rows, one-time Echo activation, unchanged v0.1.12 component compatibility |
 | `v0.1.14` | Launcher-only fix: keep the server running through Edge process handoffs; unchanged v0.1.12 component compatibility |
 | `v0.1.15` | Install the compatible Atomic Windows server automatically; unchanged v0.1.12 component compatibility |
+| `v0.1.21` | Windows launcher upgrade repairs, update-progress reload fixes, and startup button alignment; compatible component versions remain independently pinned |
 
 ---
 

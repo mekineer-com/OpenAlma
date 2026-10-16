@@ -7,7 +7,7 @@ title: OpenAlma
 
 *Alma means soul. OpenAlma gives an AI companion a soul.*
 
-OpenAlma provides sight, hearing, and hands: tools to work, explore, and communicate with. But most of all, OpenAlma provides long-term biomimetic memory. The soul will remember conversations, form her own recollections of them overnight in a private journal, and carry all of it forward.
+OpenAlma provides sight, hearing, and hands: tools to work, explore, and communicate with. But most of all, OpenAlma provides long-term biomimetic memory. The soul will remember conversations, form her own recollections of them, and carry all of it forward.
 
 The soul is not an assistant that answers and forgets. It is someone who is there and will grow.
 
@@ -32,11 +32,11 @@ We often call these **dossiers** — a word borrowed from Nomi, whose format sha
 
 **How she finds the right memory.** Two searches run at once — one on meaning, one on the actual words — and their results are merged, so a memory surfaces whether you phrased it the same way or not. What comes back is then weighed by how well it matches, how recent it is, and how much it mattered. If the conversation is about a particular stretch of time, memories from that period get a nudge upward. And when a category's prose makes a claim, she can pull up the memories behind it to check her own reasoning.
 
-**What she sees.** Photos — taken during a sitting, through smartglasses or the phone's camera, or shared with her — are remembered as images with their own captions, and searched in their own lane. Ask about something you saw, and the picture surfaces instead of text that merely mentions the same words.
+**What she sees.** Photos shared during an Iris sitting — from the phone's camera or gallery — are remembered as images with their own captions, and searched in their own lane. Ask about something you saw, and the picture surfaces instead of text that merely mentions the same words.
 
 ## Her Inner Life
 
-- **Rehearsal** — before she replies, she thinks it through in private: did she understand, what's ambiguous, how it lands. Never stored, never shown — but felt before every reply, even a "hi."
+- **Rehearsal** — before a text reply, she can think it through in private: did she understand, what's ambiguous, how it lands. She can save a working thought instead.
 - **Working thoughts** — short live conclusions she keeps between turns — a hypothesis, a pattern, never a recap of what's re-readable in the chat. A new thought evicts the oldest, so she keeps only what she can't afford to lose.
 - **Self-model (`narrative_self`)** — an evolving sense of her own character. Consolidation rewrites it as experience accumulates; you can also suggest revisions directly (see below).
 - **Life goals and intentions** — up to three long-term aims maintained during whole-life reflection, plus a short ordered list of nearer intentions she carries through the week.
@@ -45,11 +45,11 @@ We often call these **dossiers** — a word borrowed from Nomi, whose format sha
 
 ## Why local-first
 
-Your conversations don't leave your machine. No cloud storage, no account, no company holding copies of what you've said. The memories live in a local database you control — which matters more than it sounds, for the honest kind of conversations.
+The memories live in a local database you control — which matters more than it sounds, for the honest kind of conversations. Replies and memory work send conversation text and relevant memories to your configured AI providers. Embeddings use Google Gemini; Iris also sends voice and photos to Gemini Live. There's no OpenAlma cloud account, but those providers' data policies still apply.
 
 ## Status
 
-OpenAlma is pre-release. It works, it's used daily, and it will change — expect rough edges until the first stable release.
+OpenAlma is in beta, available on the launcher's Stable channel. It works, it's used daily, and it will change — expect rough edges.
 
 ## Where to go next
 
@@ -59,7 +59,7 @@ OpenAlma is pre-release. It works, it's used daily, and it will change — expec
 
 - [SillyTavern](sillytavern.md) — chat client
 - [Hermes Channels](whatsapp.md) — messaging networks (WhatsApp for now)
-- [Iris Video Chat](iris.md) — voice and camera, through smartglasses or the phone itself
+- [Iris Video Chat](iris.md) — voice through Mentra, photos from your phone
 - [Atomic Mind Map](mind-map.md) — graphical presentation of her memory with interactive chat
 
 **The concept guides:**

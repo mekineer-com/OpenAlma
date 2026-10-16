@@ -7,7 +7,7 @@ title: How memory works
 
 ## It's not a transcript
 
-OpenAlma doesn't store what you said. It reads your conversations and extracts what matters — the kind of thing a close friend would carry forward, not a court reporter.
+OpenAlma's memory isn't just a transcript. It keeps conversation sources and extracts what matters — the kind of thing a close friend would carry forward, not a court reporter.
 
 The difference matters. A transcript gets unwieldy fast and is full of noise. Extracted memory stays sparse and meaningful. She remembers that you're anxious about your job situation, not the exact words you used on a Tuesday to describe it.
 
@@ -27,7 +27,7 @@ The fifth stored type is **Episodes** — short titled summaries of what happene
 
 ## Photos are memories too
 
-A photo you share becomes a memory like anything else: a description of what it shows, plus a stored impression of the image itself that search can match against directly. Ask her about something you saw and she searches photos in their own lane, apart from what was said — so an image isn't drowned out by conversation that happened to use the same words, and it can be found by what it looked like, not only by the words in its description.
+A photo you share through Iris becomes a memory: a description of what it shows, plus a stored impression of the image itself that search can match against directly. Ask her about something you saw and she searches photos in their own lane, apart from what was said — so an image isn't drowned out by conversation that happened to use the same words, and it can be found by what it looked like, not only by the words in its description.
 
 ## Dossiers
 
@@ -43,11 +43,11 @@ Separate from everything she learned from you, she can draw on curated knowledge
 
 ## It waits for the night
 
-Nothing is memorized mid-conversation. Extraction waits for a **sleep gap** — you close the chat, hours pass overnight, you come back — and for enough conversation to have accumulated. Then the whole stretch is read as one story.
+Automatic conversation extraction waits for a **sleep gap** — at least three hours of silence within 22:00–08:00, server time — and about 8,000 unmemorized tokens across a Soul's chats. Then the whole stretch is read as one story. Deleting a SillyTavern chat can also trigger extraction once the token threshold is met. Iris photos are filed as memories right away, without either threshold.
 
 Waiting is deliberate. A day is judged whole — what felt urgent at noon may have dissolved by evening, and the lenses read it with that perspective. If you don't want to wait (say, after a conversation you want captured now), you can trigger extraction manually at any time.
 
-And it's always every chat. When any conversation fires extraction, the pending tails of all her chats are gathered and split into episodes by storyline, not by app — so a short WhatsApp exchange that could never trigger the threshold on its own gets folded in when a longer sitting does. Stretches she only overheard advance her place in the conversation but extract nothing: she heard them, they aren't hers to remember.
+When ordinary conversation extraction runs, the pending tails of all her chats are gathered and split into episodes by storyline, not by app — including short WhatsApp exchanges. The size threshold counts them together. Stretches she only overheard advance her place in the conversation but extract nothing: she heard them, they aren't hers to remember.
 
 ## What gets forgotten on purpose
 

@@ -12,7 +12,7 @@ How the soul behaves in SillyTavern — the controls, and letting her author her
 | Control | Location | What it does |
 |---------|----------|--------------|
 | **Memorize Now** button | memU extension panel | Extracts the current conversation tail (everything after the last memorized point) without waiting for a sleep gap. Sends `tail=true` to the server. Disabled when no character is selected. |
-| **Re-memorize chat** | SillyTavern's chat options menu (the rotate-left icon) | Wipes client-side progress and lorebooks, then sends `force=true` — resets the cursor and re-extracts all segments from the beginning. Use after schema changes or if extraction looked wrong. |
+| **Re-memorize chat** | SillyTavern's chat options menu (the rotate-left icon) | **Developer testing only.** Sends `rebuild=true`: archives the Soul's whole database and starts a new one from this chat alone. Other SillyTavern chats and other clients' memories are not included. Not a repair for bad extraction; use Atomic to correct memories. |
 | **Eye icon** (👁) | memU extension drawer header, next to the memU logo | Opens a memory inspector. Each category shows as a memU lorebook holding the prose she's written about it, not a list of raw entries. |
 | **Narrative Suggestion** input | memU panel, under the Memorize Now button | Sends the soul a suggested revision of her `narrative_self`. See below. |
 | **Swipe / delete her last reply** | ST's normal swipe or message delete | Regenerating re-runs the turn — and the working state that reply wrote (her scratchpad and intentions at that moment) rolls back with it, one step. |
@@ -33,7 +33,7 @@ Turning memU off restores plain ST replies, without deleting the Soul or changin
 |--------|---------|------|
 | **Override Summarizer** | on | If on, replace SillyTavern's summary message with memU's. If off, memU's renders alongside it. |
 | **Import Lorebooks** | on | Publishes memU categories as SillyTavern lorebooks named `memU - <Character> - <Category>`, so the soul's knowledge shows up in ST's world info. Unchecking deletes any existing ones for this character. |
-| **Mental Health Addon** | off | Enables the mental-health procedural sidecar — 15 curated anchor entries (rumination, grief, panic, self-criticism, loneliness, etc.) the soul can draw on when the conversation touches a relevant theme. Items appear in the turn prompt as `[mental_health-procedural-memory]`. Always-on once checked; not soul-gated. |
+| **Mental Health Addon** | off, per character | When the conversation touches a relevant theme, she can draw on one of 15 curated coping entries (rumination, grief, panic, self-criticism, loneliness, etc.). WhatsApp follows the server setting `retrieve.mental_health_query`, which is on by default. |
 
 ## Relationships
 

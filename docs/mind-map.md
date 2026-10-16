@@ -9,7 +9,7 @@ title: Atomic Mind Map
 
 Memory normally runs invisibly. That's good for continuity, but it means mistakes accumulate silently — she can be quietly wrong about you for months and neither of you would notice.
 
-Atomic is the desktop app that opens her memory up — the mind map, made real. Every memory she holds appears as a card: what she took from the conversation, when, and what it belongs to. You can read all of it. Search reaches her memories and her own workspace notes alike, loading more results as you scroll.
+Atomic is the app the launcher opens in your browser at `http://127.0.0.1:1420` — the mind map, made real. Every memory she holds appears as a card: what she took from the conversation, when, and what it belongs to. You can read all of it. Search reaches her memories and her own workspace notes alike, loading more results as you scroll.
 
 ## Correcting her
 
@@ -48,7 +48,7 @@ Atomic isn't only a window onto her memory - each soul gets a workspace of her
 own in it. Her own notes, and real conversations with you, kept separate per
 soul: switch souls and you switch workspaces. The memory tools stay open in
 tabs while you work, instead of closing after every look. The workspace is
-newer than the latest release tag and lives on Atomic's `buildfix` branch.
+included in the OpenAlma Beta.
 
 ## When you close it
 
