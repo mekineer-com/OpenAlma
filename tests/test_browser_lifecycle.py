@@ -96,7 +96,8 @@ def test_linux_shortcut_uses_real_paths_and_desktop_escaping(tmp_path, monkeypat
     target = run._install_shortcut()
     entry = target.read_text()
     assert target == tmp_path / "data/applications/openalma.desktop"
-    assert "@EXEC@" not in entry and "/home/marcos" not in entry
+    assert "@EXEC@" not in entry and "@ICON@" not in entry
+    assert f"Icon={root / 'memu-icon.png'}\n" in entry
     assert "50%%" in entry and r'\\$' in entry and r'\\"' in entry
     validator = run.browser.shutil.which("desktop-file-validate")
     if validator:
