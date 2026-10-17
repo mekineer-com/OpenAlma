@@ -21,9 +21,9 @@ How the soul behaves in SillyTavern — the controls, and letting her author her
 
 Choose a persona on the saved character card before turning memU on. Each Soul has one fixed memU persona, including while memU is off. Existing Souls select their bound persona automatically. The light-blue memU switches on the card and in the panel control the same setting; the card's memU-logo button opens the panel.
 
-The panel's Model Mapping edits `mcp-memu-server/config.json` and reads it when ST starts. Choose your configured OpenAI-compatible providers through ST; unsupported provider formats are unavailable. **SillyTavern Replies (SRMM)** controls ST replies, APImw synthesis and Narrative Suggestion. Other app replies have their own choice, except Iris's voice model.
+The panel reads `mcp-memu-server/config.json`, including hand edits, and can edit its model settings. Choose your configured OpenAI-compatible providers through ST; unsupported provider formats are unavailable. **SillyTavern Replies (SRMM)** stays in ST and controls ST replies, APImw synthesis and Narrative Suggestion. Other OpenAlma App Replies edits the shared server connection, except Iris's voice model.
 
-Advanced Mapping chooses models for memory work. Hiding its controls does not disable those choices. **Use Claude Code** switches server work to Claude Code while SRMM remains an independent API choice. The Launcher explains context-window setup for Memorize.
+Advanced Mapping chooses models for memory work and copies those connections into the shared config, so they work with ST closed. Unchecking it asks for confirmation before removing those overrides, including any hand edits; ST retains profile/model choices for re-enabling. Choosing SRMM or ST selected for a memory step copies the connection once, without following later changes. **Use Claude Code** switches server work to Claude Code while SRMM remains an independent API choice; hiding controls in Claude Code mode does not disable them. The Launcher explains context-window setup for Memorize.
 
 Turning memU off restores plain ST replies, without deleting the Soul or changing their memU persona binding. ST's native persona controls remain usable; no uninstall is needed.
 
