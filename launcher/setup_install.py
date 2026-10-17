@@ -533,11 +533,12 @@ def _sqlite_directory(root: Path) -> Path:
 
 
 def _backup_databases(root: Path, old_tag: str, new_tag: str) -> Path:
+    config_path = root / "mcp-memu-server" / "config.json"
     databases = sorted(
         path for path in _sqlite_directory(root).glob("*.db")
         if not path.name.startswith(".") and not path.is_symlink() and path.is_file()
     )
-    required = sum(
+    required = config_path.stat().st_size + sum(
         path.stat().st_size + sum(
             sidecar.stat().st_size for suffix in ("-wal", "-shm")
             if (sidecar := Path(str(path) + suffix)).exists()
@@ -561,6 +562,7 @@ def _backup_databases(root: Path, old_tag: str, new_tag: str) -> Path:
             closing(sqlite3.connect(backup / database.name)) as target,
         ):
             source.backup(target)
+    shutil.copy2(config_path, backup / "config.json")
     return backup
 
 
@@ -621,6 +623,16 @@ def _recovery_state(root: Path) -> tuple[dict[str, Any], Path]:
 def _restore_previous_core(
     root: Path, state: dict[str, Any], backup: Path, log: Any, *, refresh_packages: bool = True,
 ) -> None:
+    # Older update backups contain only databases.
+    if (config_backup := backup / "config.json").exists():
+        destination = root / "mcp-memu-server" / "config.json"
+        temporary = destination.with_name(f".{destination.name}.restore.tmp")
+        temporary.unlink(missing_ok=True)
+        try:
+            shutil.copy2(config_backup, temporary)
+            temporary.replace(destination)
+        finally:
+            temporary.unlink(missing_ok=True)
     _restore_databases(root, backup)
     for destination in sorted(CORE_DESTINATIONS):
         _run(

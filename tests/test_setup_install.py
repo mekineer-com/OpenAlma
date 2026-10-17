@@ -429,18 +429,24 @@ def test_pending_core_update_is_visible_and_blocks_start(tmp_path, monkeypatch):
     assert setup_install.start_issue("memu-server", tmp_path) == "Update required: memu"
 
 
-def test_database_backup_restore_roundtrip(tmp_path):
+def test_database_backup_restore_roundtrip(tmp_path, monkeypatch):
     root = tmp_path / "apps"
     server = root / "mcp-memu-server"
     sqlite_dir = root / "memu/sqlite"
     server.mkdir(parents=True)
     sqlite_dir.mkdir(parents=True)
-    (server / "config.json").write_text(json.dumps({
+    config_path = server / "config.json"
+    config_path.write_text(json.dumps({
         "storage": {
             "sqlite_dir": "../memu/sqlite",
             "metadata_store": {"dsn": "../memu/sqlite/memu.db"},
         },
-    }), encoding="utf-8")
+        "llm": {"api_key": "fictional-key", "step_models": {"memory_extract": "fictional-model"}},
+        "unrelated": {"keep": True},
+    }, indent=3) + "\n\n", encoding="utf-8")
+    config_path.chmod(0o600)
+    original = config_path.read_bytes()
+    original_mode = config_path.stat().st_mode & 0o777
     database = sqlite_dir / "FictionalSoul.db"
     with closing(sqlite3.connect(database)) as connection:
         connection.execute("CREATE TABLE value (text TEXT)")
@@ -448,16 +454,56 @@ def test_database_backup_restore_roundtrip(tmp_path):
         connection.commit()
 
     backup = setup_install._backup_databases(root, "v1.0.0", "v1.1.0")
+    assert (backup / "config.json").read_bytes() == original
+    assert (backup / "config.json").stat().st_mode & 0o777 == original_mode
+    assert config_path.read_bytes() == original
     with closing(sqlite3.connect(database)) as connection:
         connection.execute("UPDATE value SET text = 'after'")
         connection.commit()
-    setup_install._restore_databases(root, backup)
+    config_path.write_text('{"storage": {"sqlite_dir": "missing-after-update"}}')
+    config_path.chmod(0o644)
+    monkeypatch.setattr(setup_install, "_run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(setup_install, "core_issue", lambda *_args: "")
+    setup_install._restore_previous_core(root, {
+        "from": "v1.0.0", "commits": {"memu": "old-memu", "mcp-memu-server": "old-mcp"},
+    }, backup, None, refresh_packages=False)
 
+    assert config_path.read_bytes() == original
+    assert config_path.stat().st_mode & 0o777 == original_mode
+    assert not (server / ".config.json.restore.tmp").exists()
     with closing(sqlite3.connect(database)) as connection:
         assert connection.execute("SELECT text FROM value").fetchone() == ("before",)
 
 
-def test_database_backup_copies_all_regular_databases_and_ignores_hidden(tmp_path):
+def test_config_restore_copy_failure_keeps_current_file_and_recovery(tmp_path, monkeypatch):
+    server = tmp_path / "mcp-memu-server"
+    server.mkdir()
+    config_path = server / "config.json"
+    current = b'{"llm": {"api_key": "fictional-current-key"}}\n'
+    config_path.write_bytes(current)
+    backup = tmp_path / setup_install.UPDATE_BACKUP_DIR / "failed"
+    backup.mkdir(parents=True)
+    (backup / "config.json").write_text('{"llm": {"api_key": "fictional-original-key"}}')
+    marker = tmp_path / setup_install.RECOVERY_FILE
+    marker.write_text(json.dumps({
+        "from": "v1.0.0", "to": "v1.1.0", "backup": str(backup),
+        "commits": {"memu": "old-memu", "mcp-memu-server": "old-mcp"},
+    }))
+    def failed_copy(_source, destination):
+        destination.write_text("partial")
+        raise OSError("Copy interrupted")
+    monkeypatch.setattr(setup_install.shutil, "copy2", failed_copy)
+    monkeypatch.setattr(setup_install, "install_log_path", lambda _name: tmp_path / "install.log")
+    monkeypatch.setattr(setup_install, "_restore_databases", lambda *_args: pytest.fail("must restore config first"))
+    with pytest.raises(OSError, match="Copy interrupted"):
+        setup_install._recover_core(setup_install.InstallOperation("memu-server", tmp_path))
+    assert config_path.read_bytes() == current
+    assert not (server / ".config.json.restore.tmp").exists()
+    assert marker.exists()
+    assert (backup / "config.json").exists()
+
+
+def test_database_backup_copies_all_regular_databases_and_ignores_hidden(tmp_path, monkeypatch):
     root = tmp_path / "apps"
     server = root / "mcp-memu-server"
     sqlite_dir = root / "memu/sqlite"
@@ -476,6 +522,16 @@ def test_database_backup_copies_all_regular_databases_and_ignores_hidden(tmp_pat
     stale_failed = root / setup_install.UPDATE_BACKUP_DIR / "stale-failed"
     stale_failed.mkdir(parents=True)
 
+    config_path = server / "config.json"
+    reserve = 64 * 1024 * 1024
+    monkeypatch.setattr(setup_install.shutil, "disk_usage", lambda _path: SimpleNamespace(
+        free=reserve + config_path.stat().st_size - 1,
+    ))
+    with pytest.raises(setup_install.SetupError, match="Not enough free space"):
+        setup_install._backup_databases(root, "v1.0.0", "v1.1.0")
+    monkeypatch.setattr(setup_install.shutil, "disk_usage", lambda _path: SimpleNamespace(
+        free=reserve + config_path.stat().st_size,
+    ))
     backup = setup_install._backup_databases(root, "v1.0.0", "v1.1.0")
 
     assert [path.name for path in sorted(backup.glob("*.db"))] == ["memu.db", "procedural.db"]
@@ -500,22 +556,28 @@ def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatc
     for entry in entries:
         (tmp_path / entry["destination"]).mkdir()
     (tmp_path / setup_install.RELEASE_TAG_FILE).write_text("v1.0.0\n", encoding="utf-8")
-    backup = tmp_path / setup_install.UPDATE_BACKUP_DIR / "backup"
-    backup.mkdir(parents=True)
+    config_path = tmp_path / "mcp-memu-server" / "config.json"
+    original = b'{ "storage": {"sqlite_dir": "../memu"}, "llm": {"api_key": "fictional-key"} }\n\n'
+    config_path.write_bytes(original)
     events = []
 
     monkeypatch.setattr(
         setup_install, "_managed_checkout_state",
         lambda entry, root: (root / entry["destination"], "old-" + entry["destination"]),
     )
-    monkeypatch.setattr(setup_install, "_backup_databases", lambda *_args: backup)
     def checkout(*_args):
+        actual_backup = next((tmp_path / setup_install.UPDATE_BACKUP_DIR).iterdir())
+        assert (actual_backup / "config.json").read_bytes() == original
+        config_path.write_text("{changed-by-new-server}")
         if failure == "checkout":
             raise setup_install.SetupError("Offline fetch")
         events.append("new-code")
     monkeypatch.setattr(setup_install, "_checkout_release", checkout)
     monkeypatch.setattr(setup_install, "_refresh_core", lambda *_args: events.append("environment"))
-    monkeypatch.setattr(setup_install, "_restore_databases", lambda *_args: events.append("databases"))
+    def restore_databases(*_args):
+        assert config_path.read_bytes() == original
+        events.extend(["config", "databases"])
+    monkeypatch.setattr(setup_install, "_restore_databases", restore_databases)
     issues = iter(["core verification failed", ""] if failure == "verification" else [""])
     monkeypatch.setattr(setup_install, "core_issue", lambda *_args, **_kwargs: next(issues))
 
@@ -534,7 +596,8 @@ def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatc
     with pytest.raises(setup_install.SetupError, match=error):
         setup_install._update_core(operation, "v2.0.0", {"memu-server": entries}, None)
 
-    assert events.index("databases") < events.index("old-code")
+    assert events.index("config") < events.index("databases") < events.index("old-code")
+    assert config_path.read_bytes() == original
     if failure == "checkout":
         assert "environment" not in events
     else:
@@ -571,7 +634,8 @@ def test_recovery_marker_blocks_stale_update_request(tmp_path, monkeypatch):
         setup_install.begin_core_install(tmp_path)
 
 
-def test_core_recovery_restores_database_before_code_and_clears_marker(tmp_path, monkeypatch):
+@pytest.mark.parametrize("with_config", [False, True])
+def test_core_recovery_restores_database_before_code_and_clears_marker(tmp_path, monkeypatch, with_config):
     backup = tmp_path / setup_install.UPDATE_BACKUP_DIR / "failed"
     backup.mkdir(parents=True)
     state = {
@@ -583,11 +647,22 @@ def test_core_recovery_restores_database_before_code_and_clears_marker(tmp_path,
     (tmp_path / setup_install.RECOVERY_FILE).write_text(json.dumps(state), encoding="utf-8")
     for destination in setup_install.CORE_DESTINATIONS:
         (tmp_path / destination).mkdir()
+    config_path = tmp_path / "mcp-memu-server" / "config.json"
+    current = b'{"llm": {"api_key": "fictional-current-key"}}\n'
+    original = b'{ "llm": {"api_key": "fictional-original-key"}, "unrelated": true }\n\n'
+    config_path.write_bytes(current)
+    if with_config:
+        (backup / "config.json").write_bytes(original)
+        (backup / "config.json").chmod(0o600)
+        original_mode = (backup / "config.json").stat().st_mode & 0o777
     events = []
     operation = setup_install.InstallOperation("memu-server", tmp_path)
     monkeypatch.setattr(setup_install, "_OPERATION", operation)
     monkeypatch.setattr(setup_install, "install_log_path", lambda _name: tmp_path / "install.log")
-    monkeypatch.setattr(setup_install, "_restore_databases", lambda *_args: events.append("databases"))
+    def restore_databases(*_args):
+        assert config_path.read_bytes() == (original if with_config else current)
+        events.append("databases")
+    monkeypatch.setattr(setup_install, "_restore_databases", restore_databases)
     monkeypatch.setattr(
         setup_install, "_run",
         lambda command, **_kwargs: events.append("code") if command[:3] == ["git", "checkout", "--detach"] else None,
@@ -600,6 +675,10 @@ def test_core_recovery_restores_database_before_code_and_clears_marker(tmp_path,
     assert events[0] == "databases"
     assert events.count("code") == 2
     assert events[-1] == "packages"
+    assert config_path.read_bytes() == (original if with_config else current)
+    if with_config:
+        assert config_path.stat().st_mode & 0o777 == original_mode
+    assert not (config_path.parent / ".config.json.restore.tmp").exists()
     assert not (tmp_path / setup_install.RECOVERY_FILE).exists()
     assert not backup.exists()
     assert (tmp_path / setup_install.RELEASE_TAG_FILE).read_text(encoding="utf-8") == "v1.0.0-buildfix\n"

@@ -198,22 +198,15 @@ def _ai_setup_message(root: Path | None) -> str:
     if not isinstance(embedding, dict):
         return "to correct the AI configuration: llm.embedding must be a JSON object."
     required = [("embedding API key", embedding.get("api_key"))]
-    selectors = [llm.get(name, {}) for name in ("reply_models", "step_models")]
-    if not all(isinstance(rows, dict) for rows in selectors):
-        return "to correct the AI configuration: model selectors must be JSON objects."
     # Leave advanced model validation to the server.
-    basic = not llm.get("step_context_window_tokens") and all(
-        row is None or row == "" or isinstance(row, dict) and row.get("source") == "config"
-        for rows in selectors for row in rows.values()
-    )
-    if not config.get("claude_code") and basic:
+    if not config.get("claude_code"):
         required.insert(0, ("chat model", llm.get("chat_model")))
         if llm.get("api_key") != "":
             required.insert(0, ("chat API key", llm.get("api_key")))
     missing = [label for label, value in required
                if not str(value or "").strip() or str(value).strip().startswith("YOUR_")]
     capacity = config.get("claude_code_context_window_tokens") if config.get("claude_code") else llm.get("context_window_tokens")
-    if (config.get("claude_code") or basic) and (type(capacity) is not int or capacity <= 0):
+    if type(capacity) is not int or capacity <= 0:
         missing.append("your model's context-window size")
     if not missing:
         return ""

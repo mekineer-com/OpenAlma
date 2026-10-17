@@ -106,16 +106,16 @@ def test_ai_setup_notice_lists_only_missing_values_and_clears_after_save(tmp_pat
     config_path.write_text(json.dumps(config))
     assert app._ai_setup_message(tmp_path) == ""
     config["llm"].update(chat_model="", context_window_tokens=None,
-                         step_models={"memory_extract": {"source": "configured"}})
+                         step_models={"memory_extract": "fictional-model"})
     config_path.write_text(json.dumps(config))
-    assert app._ai_setup_message(tmp_path) == ""
+    assert app._ai_setup_message(tmp_path) == "to enter chat model and your model's context-window size."
     config["llm"]["embedding"]["api_key"] = ""
     config_path.write_text(json.dumps(config))
-    assert app._ai_setup_message(tmp_path) == "to enter embedding API key."
+    assert app._ai_setup_message(tmp_path) == "to enter chat model, embedding API key, and your model's context-window size."
     config["llm"]["embedding"]["api_key"] = "fictional-embedding-key"
     config["llm"].update(step_models={}, step_context_window_tokens={"memory_extract": 32000})
     config_path.write_text(json.dumps(config))
-    assert app._ai_setup_message(tmp_path) == ""
+    assert app._ai_setup_message(tmp_path) == "to enter chat model and your model's context-window size."
 
     config["claude_code"] = True
     config["llm"].update(api_key="", chat_model="")
@@ -127,9 +127,33 @@ def test_ai_setup_notice_lists_only_missing_values_and_clears_after_save(tmp_pat
 
     config_path.write_text("{broken")
     assert "unreadable AI configuration" in client.get("/").text
-    for malformed in ({"llm": []}, {"llm": {"embedding": []}}, {"llm": {"step_models": []}}):
+    for malformed in ({"llm": []}, {"llm": {"embedding": []}}):
         config_path.write_text(json.dumps(malformed))
         assert "correct the AI configuration" in client.get("/").text
+
+
+@pytest.mark.parametrize("step", ["fictional-model", {
+    "provider": "openai", "base_url": "https://fictional.invalid/v1",
+    "chat_model": "fictional-model", "api_key": "fictional-step-key",
+    "context_window_tokens": 32000,
+}])
+def test_ai_readiness_requires_base_fields_with_step_models(tmp_path, step):
+    config_path = tmp_path / "mcp-memu-server" / "config.json"
+    config_path.parent.mkdir()
+    config = {"llm": {
+        "step_models": {"memory_extract": step},
+        "step_context_window_tokens": {"memory_extract": 32000},
+        "embedding": {"api_key": "fictional-embedding-key"},
+    }}
+    config_path.write_text(json.dumps(config))
+    assert app._ai_setup_message(tmp_path) == (
+        "to enter chat API key, chat model, and your model's context-window size."
+    )
+    config["llm"].update(api_key="", chat_model="fictional-base", context_window_tokens=64000)
+    config_path.write_text(json.dumps(config))
+    original = config_path.read_bytes()
+    assert app._ai_setup_message(tmp_path) == ""
+    assert config_path.read_bytes() == original
 
 
 def test_home_groups_iris_by_reported_phones_not_checkout(tmp_path, monkeypatch):
