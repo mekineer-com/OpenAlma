@@ -5,12 +5,12 @@
       "repositories": [
         {
           "repository": "https://github.com/mekineer-com/mcp-memu-server.git",
-          "ref": "v0.1.23",
+          "ref": "v0.1.24",
           "destination": "mcp-memu-server"
         },
         {
           "repository": "https://github.com/mekineer-com/memU.git",
-          "ref": "v0.1.12",
+          "ref": "v0.1.24",
           "destination": "memu"
         }
       ]
@@ -19,7 +19,7 @@
       "repositories": [
         {
           "repository": "https://github.com/mekineer-com/iris.git",
-          "ref": "v0.1.23",
+          "ref": "v0.1.24",
           "destination": "mentra-os/miniapps/openalma"
         }
       ]
