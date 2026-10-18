@@ -9,7 +9,8 @@ test('server refusal preserves the page and typed soul', async () => {
   const context = vm.createContext({
     FormData: class {},
     fetch: async () => ({ok: false, json: async () => ({detail: 'Choose a different name'})}),
-    alert: message => messages.push(message),
+    showLauncherMessage: message => messages.push(message),
+    alert: () => assert.fail('Soul errors must remain inline'),
     location: {href: '/original'},
   });
   vm.runInContext(fs.readFileSync(__dirname + '/soul-selector.js', 'utf8'), context);
@@ -28,7 +29,8 @@ test('late existing-soul conflict can be confirmed and retried', async () => {
       ? {ok: false, status: 409, json: async () => ({detail: {reason: 'existing_exact', message: 'Use it?'}})}
       : {ok: true, url: '/done'},
     confirm: () => true,
-    alert: () => assert.fail('confirmation should retry instead of alerting'),
+    showLauncherMessage: () => assert.fail('confirmation should retry instead of showing an error'),
+    alert: () => assert.fail('No browser alerts'),
     location: {href: '/original'},
   });
   vm.runInContext(fs.readFileSync(__dirname + '/soul-selector.js', 'utf8'), context);

@@ -272,7 +272,6 @@
       }
     }
     function irisAction(action, button) {
-      if (action === 'force-stop' && !confirm('Force Stop may interrupt unfinished work. Continue?')) return;
       return irisRequest('/service/iris-server/' + action + (action === 'force-stop' ? '?confirmed=true' : ''), {method: 'POST'}, button);
     }
     document.querySelectorAll('form[action^="/iris/"], #iris-preparation-retry').forEach(form => {

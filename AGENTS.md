@@ -15,6 +15,10 @@ those introductions. Task progress belongs in its plan or audit.
 OpenAlma owns when an app starts and stops; each app owns how it starts.
 Echo's UI is here; import orchestration belongs to mcp-memu-server.
 
+Routine notices and errors use the shared inline message, not browser alerts.
+Clicking Force Stop is confirmation: do not ask again. Its request supplies
+the existing `confirmed=true`; the direct-API confirmation guard remains.
+
 ## Runtime Dependencies
 
 `requirements.txt` pins runtime dependencies, including transitive packages.

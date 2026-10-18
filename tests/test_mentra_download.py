@@ -56,7 +56,8 @@ let submit,destination,calls,alerts=[];
 global.document={addEventListener:(_name,handler)=>{submit=handler;}};
 global.location={assign:value=>{destination=value;}};
 global.FormData=class {};
-global.alert=value=>alerts.push(value);
+global.alert=()=>assert.fail('Installation errors must not open a browser popup');
+global.showLauncherMessage=value=>alerts.push(value);
 vm.runInThisContext(fs.readFileSync(process.argv[1]+'/static/iris-services.js','utf8'));
 vm.runInThisContext(text.slice(text.indexOf("document.addEventListener('submit'"),text.indexOf('async function svcAction')));
 (async()=>{

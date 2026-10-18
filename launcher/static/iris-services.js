@@ -77,7 +77,7 @@ function renderIrisInstallations(data) {
           view.querySelector('button').focus();
           pollStatus('iris-server');
         } catch (error) {
-          alert(error.message);
+          showLauncherMessage(error.message);
         } finally {
           save.disabled = row.querySelector('.iris-name-view button').disabled;
         }
@@ -132,7 +132,7 @@ function renderIrisInstallations(data) {
           await irisMetadataAction(id, 'forget');
           row.remove();
         } catch (error) {
-          alert(error.message);
+          showLauncherMessage(error.message);
         } finally {
           delete row.dataset.forgetting;
           cell.irisActionsHtml = null;

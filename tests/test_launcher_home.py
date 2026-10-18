@@ -777,6 +777,32 @@ eval(source.slice(source.indexOf('async function irisRequest'),source.indexOf('f
     subprocess.run(["node", "-e", script, str(path)], check=True, timeout=10)
 
 
+def test_launcher_messages_and_iris_force_stop_do_not_open_popups():
+    import subprocess
+    root = Path(__file__).resolve().parents[1] / "launcher"
+    script = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+const root=process.argv[1], message={hidden:true}, text={};
+const context={document:{getElementById:id=>id==='launcher-message'?message:text},
+  alert:()=>assert.fail('No browser alerts'),confirm:()=>assert.fail('No Force Stop popup')};
+vm.createContext(context);
+vm.runInContext(fs.readFileSync(root+'/static/launcher.js','utf8'),context);
+context.showLauncherMessage('<img src=x onerror=alert(1)>');
+assert.equal(text.textContent,'<img src=x onerror=alert(1)>');
+assert.equal(message.hidden,false);assert.equal(text.innerHTML,undefined);
+const header=fs.readFileSync(root+'/templates/_header.html','utf8');
+const dismiss=header.match(/onclick="(this.parentElement.hidden = true)"/);
+assert(dismiss);vm.runInNewContext('(function(){'+dismiss[1]+'}).call(button)',{button:{parentElement:message}});
+assert.equal(message.hidden,true);
+const source=fs.readFileSync(root+'/templates/iris.html','utf8');
+const calls=[];context.irisRequest=(...args)=>calls.push(args);
+vm.runInContext(source.slice(source.indexOf('function irisAction('),source.indexOf("document.querySelectorAll('form[action^=")),context);
+context.irisAction('force-stop',{});
+assert.equal(calls.length,1);assert.equal(calls[0][0],'/service/iris-server/force-stop?confirmed=true');
+"""
+    subprocess.run(["node", "-e", script, str(root)], check=True, timeout=10)
+
+
 def test_iris_status_consumer_node_checks():
     import subprocess
     path = Path(__file__).resolve().parents[1] / "launcher/static/iris-services.test.cjs"

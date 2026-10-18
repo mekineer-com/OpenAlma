@@ -58,8 +58,11 @@ test('Services preserves rows and Rename drafts through outages, then restores c
   };
   const parent = {parentNode: {querySelectorAll: () => [row]}};
   let polls = 0, rejectRequest;
+  const message = {hidden: true}, messageText = {};
   const context = vm.createContext({
-    document: {querySelector: () => parent}, esc: String, confirm: () => true, alert() {},
+    document: {querySelector: () => parent,
+      getElementById: id => id === 'launcher-message' ? message : messageText},
+    esc: String, confirm: () => true, alert: () => assert.fail('Metadata errors must remain inline'),
     pollStatus: () => { polls++; }, fetch: () => new Promise((_resolve, reject) => { rejectRequest = reject; }),
   });
   vm.runInContext(source, context);
@@ -75,6 +78,8 @@ test('Services preserves rows and Rename drafts through outages, then restores c
   for (const button of [name, save, install, forget]) assert.equal(button.disabled, true);
   rejectRequest(new Error('MCP unavailable'));
   await pendingForget;
+  assert.equal(message.hidden, false);
+  assert.equal(messageText.textContent, 'MCP unavailable');
   assert.equal(forget.disabled, true);
   assert.equal(polls, 1);
   context.renderIrisInstallations(ready);

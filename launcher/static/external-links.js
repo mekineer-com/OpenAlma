@@ -14,7 +14,7 @@ async function openExternalLink(event) {
       throw new Error(result.detail || 'The default browser could not be opened');
     }
   } catch (error) {
-    alert(error.message);
+    showLauncherMessage(error.message);
   }
 }
 document.addEventListener('click', openExternalLink);

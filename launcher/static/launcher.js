@@ -1,3 +1,8 @@
+function showLauncherMessage(message) {
+  document.getElementById('launcher-message-text').textContent = message;
+  document.getElementById('launcher-message').hidden = false;
+}
+
 async function quitLauncher(button) {
   button.disabled = true;
   try {
@@ -6,7 +11,7 @@ async function quitLauncher(button) {
     document.body.innerHTML = '<main><h1>OpenAlma Launcher has exited.</h1><p>You may close this tab.</p></main>';
   } catch (error) {
     button.disabled = false;
-    alert(error.message);
+    showLauncherMessage(error.message);
   }
 }
 
@@ -216,6 +221,6 @@ function retryConsolidation(button) {
     .catch(function(error) {
       button.disabled = false;
       button.textContent = 'Retry';
-      window.alert(error.message);
+      showLauncherMessage(error.message);
     });
 }

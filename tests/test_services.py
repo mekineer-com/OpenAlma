@@ -962,28 +962,31 @@ const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const text = fs.readFileSync(process.argv[1], 'utf8');
 const script = text.slice(text.indexOf('var pendingStarts = {}'), text.indexOf('function actionHtml('));
 (async () => {
-  for (const scenario of ['start', 'start-failed', 'decline', 'confirm', 'force']) {
+  for (const scenario of ['start', 'start-failed', 'decline', 'confirm', 'force', 'force-failed', 'force-428']) {
     const urls = [], alerts = []; let polls = 0;
     const context = {
       document: {addEventListener: () => {}},
-      Date, confirm: () => ['confirm', 'force'].includes(scenario), alert: x => alerts.push(x), pollStatus: () => polls++,
+      Date, confirm: () => { assert(!scenario.startsWith('force')); return scenario === 'confirm'; },
+      alert: () => assert.fail('Service messages must not open a browser popup'),
+      showLauncherMessage: x => alerts.push(x), pollStatus: () => polls++,
       fetch: async url => {
         urls.push(url);
-        const status = scenario === 'start' ? 200 : scenario === 'start-failed' || urls.length === 2 ? 409 : 428;
+        const status = ['start', 'force'].includes(scenario) ? 200
+          : ['start-failed', 'force-failed'].includes(scenario) || urls.length === 2 ? 409 : 428;
         return {status, ok: status === 200, json: async () => ({detail: 'Service message'})};
       },
     };
     vm.createContext(context); vm.runInContext(script, context);
-    const action = scenario.startsWith('start') ? 'start' : scenario === 'force' ? 'force-stop' : 'stop';
+    const action = scenario.startsWith('start') ? 'start' : scenario.startsWith('force') ? 'force-stop' : 'stop';
     await context.svcAction('test', action, {
       closest: () => ({querySelector: () => ({innerHTML: ''})}),
     });
     assert.equal(polls, 1);
     assert.equal(Boolean(context.pendingStarts.test), scenario === 'start');
-    assert.equal(urls.length, ['confirm', 'force'].includes(scenario) ? 2 : 1);
-    assert.equal(alerts.length, ['confirm', 'force', 'start-failed'].includes(scenario) ? 1 : 0);
+    assert.equal(urls.length, scenario === 'confirm' ? 2 : 1);
+    assert.equal(alerts.length, ['confirm', 'start-failed', 'force-failed', 'force-428'].includes(scenario) ? 1 : 0);
     if (scenario === 'confirm') assert(urls[1].endsWith('?confirm_unknown=true'));
-    if (scenario === 'force') assert(urls[1].endsWith('?confirmed=true'));
+    if (scenario.startsWith('force')) assert(urls[0].endsWith('?confirmed=true'));
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });
 ''', str(template)], check=True, capture_output=True, text=True)

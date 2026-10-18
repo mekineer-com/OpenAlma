@@ -17,5 +17,9 @@
     </span>
     {% if setup_title %}<h2 class="client-heading">{% if setup_logo %}<img src="{{ setup_logo }}" alt="">{% endif %}{{ setup_title }}</h2>{% endif %}
   </div>
-<script src="/static/launcher.js?v=context-target"></script>
+<div id="launcher-message" class="banner" role="alert" hidden>
+  <span id="launcher-message-text"></span>
+  <button type="button" class="btn" onclick="this.parentElement.hidden = true">Dismiss</button>
+</div>
+<script src="/static/launcher.js?v=inline-messages"></script>
 <script src="/static/external-links.js"></script>

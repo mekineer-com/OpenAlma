@@ -42,13 +42,13 @@ async function submitSoulForm(form, onSuccess) {
         form.querySelector('[name="use_existing"]').value = "true";
         return submitSoulForm(form, onSuccess);
       }
-      alert(message);
+      showLauncherMessage(message);
       return;
     }
     if (onSuccess) onSuccess();
     else location.href = response.url;
   } catch (error) {
-    alert("Could not submit: " + error.message);
+    showLauncherMessage("Could not submit: " + error.message);
   }
 }
 
