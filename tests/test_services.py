@@ -1899,12 +1899,24 @@ def test_channels_needs_soul_selection_before_start(tmp_path, monkeypatch):
     (session / "creds.json").write_text(json.dumps({"me": {"id": "fictional-account"}}))
     (tmp_path / "whatsapp" / "wwebjs_auth").mkdir()
     web_status = tmp_path / "whatsapp" / "web_source_status.json"
-    web_status.write_text(json.dumps({"state": "pairing", "qr": "fixture-qr"}))
-    assert not services.status(spec)["startable"]
-    web_status.write_text(json.dumps({"state": "ready", "qr": None}))
-    assert services.status(spec)["startable"]
-    web_status.write_text(json.dumps({"state": "stopping", "qr": None}))
-    assert services.status(spec)["startable"]
+    for snapshot in [
+        None,
+        {"state": "starting"},
+        {"state": "degraded", "error": "Chromium could not start"},
+        {"state": "stopping"},
+        {"state": "disconnected", "qr": None},
+        {"state": "auth_failure", "qr": None},
+        {"state": "pairing", "qr": "fixture-qr"},
+        {"state": "ready", "qr": None},
+        {"state": "stopping", "qr": None},
+    ]:
+        if snapshot is None:
+            web_status.unlink(missing_ok=True)
+        else:
+            web_status.write_text(json.dumps(snapshot))
+        status = services.status(spec)
+        assert status["startable"], snapshot
+        assert status["state"] == "stopped", snapshot
 
 
 def test_channels_daemon_status_uses_bridge_and_web_source_health(tmp_path, monkeypatch):

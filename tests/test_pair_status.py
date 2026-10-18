@@ -2,6 +2,8 @@ import sys
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "launcher"))
 
@@ -33,16 +35,23 @@ def test_whatsapp_pair_status_trusts_live_web_source_state_over_auth_dir(tmp_pat
     }
 
 
-def test_whatsapp_pair_status_uses_auth_dir_when_status_missing(tmp_path, monkeypatch):
-    (tmp_path / "channels_data" / "whatsapp" / "wwebjs_auth").mkdir(parents=True)
-    monkeypatch.setattr(services, "_read_channels_config", lambda: {})
-    monkeypatch.setattr(services, "_channels_bridge_health", lambda _config=None: {})
+@pytest.mark.parametrize("auth_dir", [False, True])
+@pytest.mark.parametrize("web_enabled", [None, False])
+@pytest.mark.parametrize("bridge_paired", [False, True])
+def test_whatsapp_pair_status_missing_web_status_is_not_pairing_evidence(
+    tmp_path, monkeypatch, auth_dir, web_enabled, bridge_paired,
+):
+    if auth_dir:
+        (tmp_path / "channels_data" / "whatsapp" / "wwebjs_auth").mkdir(parents=True)
+    config = {} if web_enabled is None else {"web_source_enabled": web_enabled}
+    monkeypatch.setattr(services, "_read_channels_config", lambda: config)
+    monkeypatch.setattr(services, "_channels_bridge_health", lambda _config=None: {"paired": bridge_paired})
     monkeypatch.setattr(services, "_read_channels_web_source_status", lambda: {})
     monkeypatch.setattr(services, "_CHANNELS_HOME", tmp_path / "channels_data")
 
     assert services.whatsapp_pair_status() == {
-        "bridge": {"paired": False, "qr": None},
-        "websource": {"paired": True, "qr": None},
+        "bridge": {"paired": bridge_paired, "qr": None},
+        "websource": {"paired": web_enabled is False, "qr": None},
     }
 
 
@@ -65,16 +74,17 @@ def test_pair_button_starts_channels_before_polling():
 const assert = require('node:assert/strict'), vm = require('node:vm');
 const script = require('node:fs').readFileSync(0, 'utf8');
 (async () => {
-  for (const mode of ['waiting', 'paired', 'error']) {
+  for (const mode of ['waiting', 'progression', 'paired', 'error']) {
     const nodes = {}, calls = [];
-    let click, polling = false;
+    const rendered = [];
+    let click, poll, phase = 0, polling = false;
     const context = {
       document: {getElementById(id) { return nodes[id] ||= {
         hidden: true, addEventListener(_event, callback) {click = callback;},
       }; }},
       URLSearchParams, window: {location: {search: ''}},
-      QRCode: {toCanvas() {}},
-      clearInterval() {polling = false;}, setInterval() {polling = true; return 1;},
+      QRCode: {toCanvas(_canvas, qr) {rendered.push(qr);}},
+      clearInterval() {polling = false;}, setInterval(callback) {poll = callback; polling = true; return 1;},
       fetch: async (url, options) => {
         calls.push(url);
         if (url === '/service/channels-daemon/start') {
@@ -83,8 +93,8 @@ const script = require('node:fs').readFileSync(0, 'utf8');
           return {ok: mode !== 'error', json: async () => ({detail: 'Choose a Soul in Setup'})};
         }
         assert.equal(url, '/whatsapp/pair-status');
-        const entry = {paired: mode === 'paired', qr: null};
-        return {json: async () => ({bridge: entry, websource: entry})};
+        const entry = {paired: mode === 'paired' || phase === 2, qr: phase === 1 ? 'web-qr' : null};
+        return {json: async () => ({bridge: mode === 'progression' ? {paired: true, qr: null} : entry, websource: entry})};
       },
     };
     vm.runInNewContext(script, context);
@@ -97,9 +107,22 @@ const script = require('node:fs').readFileSync(0, 'utf8');
       assert.equal(polling, false);
     } else {
       assert.deepEqual(calls, ['/service/channels-daemon/start', '/whatsapp/pair-status']);
-      assert.equal(polling, mode === 'waiting');
-      if (mode === 'waiting') assert.equal(nodes['pair-status'].textContent, 'Waiting for WhatsApp QR codes...');
+      assert.equal(polling, mode !== 'paired');
+      if (mode !== 'paired') assert.equal(nodes['pair-status'].textContent, 'Waiting for WhatsApp QR codes...');
       else assert.equal(nodes['pair-panel'].hidden, true);
+      if (mode === 'progression') {
+        assert.equal(nodes['pair-panel'].hidden, false);
+        phase = 1;
+        await poll();
+        assert.equal(polling, true);
+        assert.equal(nodes['pair-panel'].hidden, false);
+        assert.equal(nodes['websource-qr'].hidden, false);
+        assert.deepEqual(rendered, ['web-qr']);
+        phase = 2;
+        await poll();
+        assert.equal(nodes['pair-panel'].hidden, true);
+        assert.equal(polling, false);
+      }
     }
   }
 })().catch(error => {console.error(error); process.exitCode = 1;});

@@ -590,20 +590,12 @@ def _read_channels_web_source_status() -> dict:
 
 
 def _channels_pairing_saved() -> bool:
+    """Saved bridge credentials permit Start; web-source readiness is checked live."""
     try:
         creds = json.loads((_CHANNELS_HOME / "whatsapp" / "session" / "creds.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
-    if not isinstance(creds, dict) or not creds.get("me"):
-        return False
-    if not _coerce_bool(_read_channels_config().get("web_source_enabled"), True):
-        return True
-    web_source = _read_channels_web_source_status()
-    return (
-        web_source.get("qr", "") is None
-        and web_source.get("state") not in {"auth_failure", "disconnected"}
-        and (_CHANNELS_HOME / "whatsapp" / "wwebjs_auth").is_dir()
-    )
+    return isinstance(creds, dict) and bool(creds.get("me"))
 
 
 def whatsapp_pair_status() -> dict:
@@ -612,7 +604,7 @@ def whatsapp_pair_status() -> dict:
     web_source = _read_channels_web_source_status()
     bridge_paired = bool(bridge.get("paired")) or str(bridge.get("status") or "").strip().lower() == "connected"
     web_source_state = str(web_source.get("state") or "").strip().lower()
-    web_source_paired = web_source_state == "ready" or (not web_source and (_CHANNELS_HOME / "whatsapp" / "wwebjs_auth").exists())
+    web_source_paired = not _coerce_bool(config.get("web_source_enabled"), True) or web_source_state == "ready"
     return {
         "bridge": {
             "paired": bridge_paired,
