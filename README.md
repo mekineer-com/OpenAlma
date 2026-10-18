@@ -94,6 +94,7 @@ Windows users can download the [latest Beta installer](https://github.com/mekine
 | `v0.1.22` | Automatic Windows update download, Host paths, Iris installation feedback, consistent attachment workspaces, launcher-managed ST controls, and retryable removal |
 | `v0.1.23` | Faster Windows navigation, restored SillyTavern controls, optional default-off Auto Start, safer shared-server shutdown, shared Mental Health settings, and Soul names in the launcher and Iris |
 | `v0.1.24` | Iris microphone selection persists across sittings (coordinated memU/Iris pins); Hermes starts through explicit WhatsApp pairing, service buttons stay stable across status polls, Linux shortcuts without a hardcoded home |
+| `v0.1.25` | SillyTavern model-source following and fixed Soul personas; ordinary ST chat opening stays independent of the memory server; corrected WhatsApp pairing readiness and Iris history labels |
 
 ---
 
