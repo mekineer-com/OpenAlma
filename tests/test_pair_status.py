@@ -22,16 +22,28 @@ def test_whatsapp_pair_status_reads_channels_state(tmp_path, monkeypatch):
     }
 
 
-def test_whatsapp_pair_status_trusts_live_web_source_state_over_auth_dir(tmp_path, monkeypatch):
+@pytest.mark.parametrize(("web_status", "paired", "qr"), [
+    ({"state": "pairing", "qr": "web-qr", "wwebjs_ready": False}, False, "web-qr"),
+    ({"state": "ready", "qr": None}, True, None),
+    ({"state": "degraded", "qr": None, "wwebjs_ready": True}, True, None),
+    ({"state": "backfilling", "qr": None, "wwebjs_ready": True}, True, None),
+    ({"state": "degraded", "qr": None, "wwebjs_ready": False}, False, None),
+    ({"state": "authenticated", "qr": None, "wwebjs_ready": False}, False, None),
+    ({"state": "disconnected", "qr": None, "wwebjs_ready": False}, False, None),
+    ({"state": "stopping", "qr": None, "wwebjs_ready": False}, False, None),
+])
+def test_whatsapp_pair_status_trusts_live_web_source_state_over_auth_dir(
+    tmp_path, monkeypatch, web_status, paired, qr,
+):
     (tmp_path / "channels_data" / "whatsapp" / "wwebjs_auth").mkdir(parents=True)
     monkeypatch.setattr(services, "_read_channels_config", lambda: {})
     monkeypatch.setattr(services, "_channels_bridge_health", lambda _config=None: {"paired": True, "qr": "bridge-qr"})
-    monkeypatch.setattr(services, "_read_channels_web_source_status", lambda: {"state": "pairing", "qr": "web-qr"})
+    monkeypatch.setattr(services, "_read_channels_web_source_status", lambda: web_status)
     monkeypatch.setattr(services, "_CHANNELS_HOME", tmp_path / "channels_data")
 
     assert services.whatsapp_pair_status() == {
         "bridge": {"paired": True, "qr": None},
-        "websource": {"paired": False, "qr": "web-qr"},
+        "websource": {"paired": paired, "qr": qr},
     }
 
 

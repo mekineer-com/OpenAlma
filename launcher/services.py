@@ -604,7 +604,11 @@ def whatsapp_pair_status() -> dict:
     web_source = _read_channels_web_source_status()
     bridge_paired = bool(bridge.get("paired")) or str(bridge.get("status") or "").strip().lower() == "connected"
     web_source_state = str(web_source.get("state") or "").strip().lower()
-    web_source_paired = not _coerce_bool(config.get("web_source_enabled"), True) or web_source_state == "ready"
+    web_source_paired = (
+        not _coerce_bool(config.get("web_source_enabled"), True)
+        or web_source_state == "ready"
+        or web_source.get("wwebjs_ready") is True
+    )
     return {
         "bridge": {
             "paired": bridge_paired,
