@@ -429,18 +429,23 @@ def test_pending_core_update_is_visible_and_blocks_start(tmp_path, monkeypatch):
     assert setup_install.start_issue("memu-server", tmp_path) == "Update required: memu"
 
 
-def test_database_backup_restore_roundtrip(tmp_path, monkeypatch):
+@pytest.mark.parametrize("mode", ["explicit", "dsn_only", "missing_dsn", "memory_dsn"])
+def test_database_backup_restore_roundtrip(tmp_path, monkeypatch, mode):
     root = tmp_path / "apps"
     server = root / "mcp-memu-server"
-    sqlite_dir = root / "memu/sqlite"
+    sqlite_dir = root / "memu/sqlite" if mode in {"explicit", "dsn_only"} else server / "sqlite"
     server.mkdir(parents=True)
     sqlite_dir.mkdir(parents=True)
     config_path = server / "config.json"
+    storage = {"metadata_store": {"dsn": "sqlite:///../memu/sqlite/memu.db"}}
+    if mode == "explicit":
+        storage["sqlite_dir"] = "../memu/sqlite"
+    elif mode == "missing_dsn":
+        storage = {}
+    elif mode == "memory_dsn":
+        storage = {"metadata_store": {"dsn": "sqlite:///:memory:"}}
     config_path.write_text(json.dumps({
-        "storage": {
-            "sqlite_dir": "../memu/sqlite",
-            "metadata_store": {"dsn": "../memu/sqlite/memu.db"},
-        },
+        "storage": storage,
         "llm": {"api_key": "fictional-key", "step_models": {"memory_extract": "fictional-model"}},
         "unrelated": {"keep": True},
     }, indent=3) + "\n\n", encoding="utf-8")

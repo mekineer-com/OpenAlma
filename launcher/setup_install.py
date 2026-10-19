@@ -523,9 +523,9 @@ def _sqlite_directory(root: Path) -> Path:
         storage = config["storage"]
         raw = str(storage.get("sqlite_dir") or "").strip()
         if not raw:
-            raw = str((storage.get("metadata_store") or {}).get("dsn") or "../memu/sqlite/memu.db")
-            raw = raw.split("?", 1)[0].removeprefix("sqlite:///")
-            raw = str(Path(raw).parent)
+            dsn = str((storage.get("metadata_store") or {}).get("dsn") or "").strip()
+            raw = ("sqlite" if not dsn or dsn.lower() == "memory" or ":memory:" in dsn else
+                   str(Path(dsn.split("?", 1)[0].removeprefix("sqlite:///")).parent))
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise SetupError("Cannot resolve the configured SQLite directory") from exc
     path = Path(raw).expanduser()

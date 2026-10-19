@@ -73,20 +73,5 @@ def set_active_soul_id(soul_id: str) -> None:
     config = _load_channels_config()
     config["soul_id"] = selected
 
-    souls_raw = config.get("souls")
-    souls: list[str] = []
-    if isinstance(souls_raw, list):
-        for raw in souls_raw:
-            sid = str(raw or "").strip()
-            if sid:
-                souls.append(sid)
-    if selected not in souls:
-        souls.append(selected)
-    souls.sort(key=lambda v: v.lower())
-    config["souls"] = souls
-
-    config.pop("reply_prefix", None)
-    config.pop("reply_prefix_template", None)
-
     _write_channels_config(config)
     _stamp_soul_active_since(selected)

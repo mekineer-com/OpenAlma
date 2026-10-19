@@ -828,7 +828,7 @@ class MentraStatusTest(TestCase):
             saved = json.loads(config.read_text())
             self.assertEqual(saved["soul_id"], "Codexia")
             self.assertNotIn("reply_prefix", saved)
-            self.assertNotIn("reply_prefix_template", saved)
+            self.assertEqual(saved["reply_prefix_template"], "*{soul}*: ")
             self.assertTrue(state_db.exists())
 
     def test_channels_free_pages_and_stop_action_guard(self) -> None:

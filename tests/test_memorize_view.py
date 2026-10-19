@@ -311,8 +311,6 @@ sorted.setup.rows[0].state = 'failure';
 assert.notEqual(statusSignature(status), statusSignature(sorted));
 """
     subprocess.run(["node", "-e", script], check=True, timeout=10)
-    check = Path(__file__).resolve().parents[1] / "launcher/static/iris-services.test.cjs"
-    subprocess.run(["node", str(check)], check=True, timeout=10)
 
 
 def test_polled_iris_subrows_link_setup_to_their_own_app():

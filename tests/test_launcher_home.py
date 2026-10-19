@@ -834,10 +834,11 @@ assert.equal(calls.length,1);assert.equal(calls[0][0],'/service/iris-server/forc
     subprocess.run(["node", "-e", script, str(root)], check=True, timeout=10)
 
 
-def test_iris_status_consumer_node_checks():
+def test_launcher_node_checks():
     import subprocess
-    path = Path(__file__).resolve().parents[1] / "launcher/static/iris-services.test.cjs"
-    subprocess.run(["node", "--test", str(path)], check=True, timeout=10)
+    paths = sorted((Path(__file__).resolve().parents[1] / "launcher/static").glob("*.test.cjs"))
+    assert paths
+    subprocess.run(["node", "--test", *map(str, paths)], check=True, timeout=10)
 
 
 def test_uninstalled_iris_opens_phone_client_section_for_openalma_host(tmp_path, monkeypatch):

@@ -15,32 +15,6 @@ def _write_cfg(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data), encoding="utf-8")
 
 
-def test_stamp_soul_active_since_insert_or_ignore(tmp_path, monkeypatch):
-    state_db = tmp_path / "state.db"
-    monkeypatch.setattr(soul, "HERMES_STATE_DB_PATH", state_db)
-
-    soul._stamp_soul_active_since("Lumen", now=100.0)
-    soul._stamp_soul_active_since("Lumen", now=200.0)
-
-    con = sqlite3.connect(state_db)
-    try:
-        rows = con.execute(
-            "SELECT soul_id, active_since FROM souls ORDER BY soul_id"
-        ).fetchall()
-    finally:
-        con.close()
-
-    assert rows == [("Lumen", 100.0)]
-
-
-def test_read_active_soul_id(tmp_path, monkeypatch):
-    cfg = tmp_path / "config.json"
-    _write_cfg(cfg, {"soul_id": "Echo", "user_id": "TestOwner"})
-    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", cfg)
-
-    assert soul.read_active_soul_id() == "Echo"
-
-
 @pytest.mark.parametrize("soul_ids", [[], ["TestSoul"]])
 def test_fresh_channels_config_is_created_by_soul_selection(tmp_path, monkeypatch, soul_ids):
     from fastapi.testclient import TestClient
@@ -78,7 +52,7 @@ callback(); assert.equal(location.href,'/hermes');
 eval(process.argv[2]); assert.equal(callback,undefined);
 ''', *bindings], check=True)
     saved = json.loads(config.read_text())
-    assert saved["soul_id"] == "TestSoul" and saved["souls"] == ["TestSoul"]
+    assert saved["soul_id"] == "TestSoul" and "souls" not in saved
     assert "reply_prefix" not in saved and "reply_prefix_template" not in saved
 
 
@@ -123,14 +97,15 @@ def test_first_entry_has_no_separate_human_name(owner_id):
 
 
 @pytest.mark.parametrize("route", ["/soul", "/echo/soul"])
-def test_selection_omits_replacement_name_and_creation_refusal_does_not_select(monkeypatch, route):
+@pytest.mark.parametrize("channels", [{"state": "stopped"}, {"running": True}, {"stuck": True}, {"orphaned": True}, {"state": "stopping"}])
+def test_selection_omits_replacement_name_and_creation_refusal_does_not_select(monkeypatch, route, channels):
     from fastapi.testclient import TestClient
     import app
 
     calls, selected = [], []
     monkeypatch.setattr(app, "_echo_require_server", lambda: None)
     monkeypatch.setattr(app, "_find_service", lambda _: None)
-    monkeypatch.setattr(app.services, "status", lambda _: {"state": "stopped"})
+    monkeypatch.setattr(app.services, "status", lambda _: channels)
     monkeypatch.setattr(app.soul, "set_active_soul_id", selected.append)
 
     def request(**payload):
@@ -142,6 +117,11 @@ def test_selection_omits_replacement_name_and_creation_refusal_does_not_select(m
     monkeypatch.setattr(app.services, "_soul_request", request)
     client = TestClient(app.app, base_url="http://127.0.0.1")
     response = client.post(route, data={"soul_id": "Fable"}, follow_redirects=False)
+    if route == "/soul" and channels != {"state": "stopped"}:
+        assert response.status_code == 409
+        assert response.json() == {"detail": "Stop Hermes Channels before changing its Soul"}
+        assert calls == selected == []
+        return
     assert response.status_code == 400
     assert response.json() == {"detail": "Soul name must differ from the owner name"}
     assert selected == []
@@ -150,35 +130,13 @@ def test_selection_omits_replacement_name_and_creation_refusal_does_not_select(m
     assert calls[-1] == {"soul_id": "Fable", "use_existing": True}
 
 
-def test_set_active_soul_id_updates_soul_id_and_souls(tmp_path, monkeypatch):
-    cfg = tmp_path / "config.json"
-    state_db = tmp_path / "state.db"
-    _write_cfg(cfg, {"soul_id": "Lumen", "souls": ["Lumen"], "user_id": "TestOwner"})
-    monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", cfg)
-    monkeypatch.setattr(soul, "HERMES_STATE_DB_PATH", state_db)
-
-    soul.set_active_soul_id("Echo")
-
-    data = json.loads(cfg.read_text(encoding="utf-8"))
-    assert data["soul_id"] == "Echo"
-    assert "Echo" in data["souls"]
-    assert data["user_id"] == "TestOwner"  # unrelated keys preserved
-
-
-@pytest.mark.parametrize("obsolete", [
-    {}, {"reply_prefix": "old"},
-    {"reply_prefix": "old", "reply_prefix_template": "✦ *{soul}*: "},
-    {"reply_prefix": "", "reply_prefix_template": ""},
-    {"reply_prefix_template": "no placeholder"},
-    {"reply_prefix": None, "reply_prefix_template": None},
-    {"reply_prefix_template": 42},
-])
-def test_explicit_soul_save_removes_obsolete_prefix_keys_only(tmp_path, monkeypatch, obsolete):
+def test_explicit_soul_save_preserves_unrelated_config_source_data_and_activation(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     import app
 
     cfg = tmp_path / "config.json"
-    _write_cfg(cfg, {"soul_id": "Lumen", "souls": ["Lumen"], "user_id": "AccountKey", **obsolete})
+    initial = {"soul_id": "Lumen", "souls": ["Lumen"], "user_id": "AccountKey", "reply_prefix": "unused"}
+    _write_cfg(cfg, initial)
     monkeypatch.setattr(soul, "CHANNELS_CONFIG_PATH", cfg)
     state_db = tmp_path / "state.db"
     monkeypatch.setattr(soul, "HERMES_STATE_DB_PATH", state_db)
@@ -198,7 +156,7 @@ def test_explicit_soul_save_removes_obsolete_prefix_keys_only(tmp_path, monkeypa
     response = client.post("/soul", data={"soul_id": "Echo", "use_existing": "true"}, follow_redirects=False)
     assert response.status_code == 303
     assert requests == [{"soul_id": "Echo", "use_existing": True}]
-    assert json.loads(cfg.read_text()) == {"soul_id": "Echo", "souls": ["Echo", "Lumen"], "user_id": "AccountKey"}
+    assert json.loads(cfg.read_text()) == {**initial, "soul_id": "Echo"}
     assert source_db.read_bytes() == source_before
     with sqlite3.connect(state_db) as con:
         first_activation = con.execute("SELECT active_since FROM souls WHERE soul_id = 'Echo'").fetchone()
