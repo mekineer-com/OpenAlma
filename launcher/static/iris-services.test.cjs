@@ -157,7 +157,8 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
         assert.equal(s, '[data-device-session-id]');
         return [item];
       },
-      querySelector: s => s === '.iris-address button' ? address : s === '.iris-repair' ? null : open,
+      querySelector: s => s === '.iris-address button' ? address : s === '.iris-repair' ? null :
+        open || (s.includes('#launcher-message:not([hidden])') && !message.hidden),
     },
     setInterval: callback => { poll = callback; },
     fetch: async () => {
@@ -289,6 +290,10 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
   await poll();
   assert.equal(reloads, 0);
   next = {...ready, blocked: true};
+  await poll();
+  assert.equal(reloads, 0, 'Polling must not erase an undismissed message');
+  assert.equal(install.disabled, true, 'Status and controls must still refresh');
+  message.hidden = true;
   await poll();
   assert.equal(reloads, 1);
   assert.equal(messageText.textContent, 'Invalid address');

@@ -249,8 +249,7 @@ document.addEventListener('submit', async function(event) {
   try {
     var response = await fetch(form.action, {method: 'POST', body: new FormData(form)});
     if (!response.ok) {
-      var result = await response.json();
-      throw new Error(irisErrorMessage(result, 'Installation failed'));
+      throw new Error(await irisErrorMessage(response, 'Installation failed'));
     }
     location.assign(action === '/iris/install'
       ? '/iris?device_session_id=' + encodeURIComponent(form.elements.device_session_id.value)

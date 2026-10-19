@@ -241,9 +241,9 @@
         applyActionStatus(status);
         if (submitting) return;
         if (!statusAvailable) return;
-        // Keep an open Rename form (including an unsaved name) intact.
+        // Preserve unsaved edits and undismissed messages.
         if ((!wasAvailable || statusSignature(status) !== initialSignature) &&
-            !document.querySelector('#iris-installations details[open], .iris-address:focus-within, .iris-repair:focus-within, .iris-repair[data-dirty]')) location.reload();
+            !document.querySelector('#iris-installations details[open], .iris-address:focus-within, .iris-repair:focus-within, .iris-repair[data-dirty], #launcher-message:not([hidden])')) location.reload();
       } catch (_err) { applyActionStatus({}); }
     }, 2000);
     async function irisRequest(url, options, button) {
@@ -253,8 +253,7 @@
       try {
         const response = await fetch(url, options);
         if (!response.ok) {
-          const payload = await response.json();
-          throw new Error(irisErrorMessage(payload, 'Iris action failed.'));
+          throw new Error(await irisErrorMessage(response, 'Iris action failed.'));
         }
         if (url.endsWith('/forget')) location.assign('/iris');
         else if (url.endsWith('/install/iris-server')) location.reload();

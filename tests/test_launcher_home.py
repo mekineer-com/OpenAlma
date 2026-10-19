@@ -328,7 +328,6 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
                 assert "Miniapp Developer Settings" in stock
                 assert "Choose or create a Soul on the phone" in stock
             assert 'id="iris-installer-status"' not in stock
-            assert 'id="iris-action-error"' not in visible
             selected = next((row for row in installations if page.endswith("=" + row["device_session_id"])), None)
             for row in installations:
                 if row is selected:
@@ -772,7 +771,6 @@ const message={hidden:true}, text={};
 const document={getElementById:id=>id==='launcher-message'?message:text};
 eval(fs.readFileSync(root+'/static/launcher.js','utf8').split('async function quitLauncher')[0]);
 eval(fs.readFileSync(root+'/static/iris-services.js','utf8'));
-assert(!source.includes('iris-action-error'));
 let submitting=false, statusAvailable=true, destination='';
 const location={assign:url=>destination=url,reload:()=>{throw new Error('Must leave the Repair chooser');}};
 let fetch=async()=>({ok:true,redirected:true,url:'/iris?device_session_id=test-phone'});
@@ -781,14 +779,20 @@ eval(source.slice(source.indexOf('async function irisRequest'),source.indexOf('f
   await irisRequest('/iris/install',{},null);
   assert.equal(destination,'/iris?device_session_id=test-phone');
   destination=''; submitting=false;
-  for (const [action,url] of [['Rename','/iris/installations/test-phone/rename'],
-      ['Repair','/iris/install'],['Forget','/iris/installations/test-phone/forget'],['Install','/iris/install']]) {
+  for (const [url,body,expected] of [
+      ['/iris/installations/test-phone/rename','{"detail":[{"msg":"Rename failed"}]}','Rename failed'],
+      ['/iris/install','Internal Server Error','Internal Server Error'],
+      ['/iris/installations/test-phone/forget','{"detail":"Forget failed"}','Forget failed'],
+      ['/iris/install','','Iris action failed.']]) {
     const button={disabled:false,closest:()=>null};
-    fetch=async()=>({ok:false,json:async()=>({detail:[{msg:action+' failed'}]})});
+    fetch=async()=>new Response(body,{status:500});
     await irisRequest(url,{},button);
-    assert.equal(text.textContent,action+' failed');assert.equal(message.hidden,false);
+    assert.equal(text.textContent,expected);assert.equal(message.hidden,false);
     assert.equal(submitting,false);assert.equal(button.disabled,false);assert.equal(destination,'');
   }
+  fetch=async()=>new Response('Internal Server Error',{status:500});
+  await assert.rejects(irisMetadataAction('test-phone','rename'),{message:'Internal Server Error'});
+  assert.equal(await irisErrorMessage(new Response('null'),'Fallback'),'Fallback');
   fetch=async()=>{throw new Error('Offline');};
   statusAvailable=false;
   const button={disabled:false,closest:()=>({})};

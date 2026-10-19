@@ -61,14 +61,14 @@ global.showLauncherMessage=value=>alerts.push(value);
 vm.runInThisContext(fs.readFileSync(process.argv[1]+'/static/iris-services.js','utf8'));
 vm.runInThisContext(text.slice(text.indexOf("document.addEventListener('submit'"),text.indexOf('async function svcAction')));
 (async()=>{
-  for(const [action,ok,expected] of [['/install/memu-server',false,''],['/install/memu-server',true,'/'],['/iris/install',true,'/iris?device_session_id=fictional-phone']]) {
+  for(const [action,ok,expected,error='Recovery required'] of [['/install/memu-server',false,''],['/iris/install',false,'','Internal Server Error'],['/install/memu-server',true,'/'],['/iris/install',true,'/iris?device_session_id=fictional-phone']]) {
     destination='';calls=0;alerts=[];
-    global.fetch=async()=>{calls++;return {ok,json:async()=>({detail:'Recovery required'})};};
+    global.fetch=async()=>{calls++;return new Response(error==='Recovery required'?JSON.stringify({detail:error}):error,{status:ok?200:500});};
     const button={disabled:false},form={action,dataset:{},getAttribute:()=>action,elements:{device_session_id:{value:'fictional-phone'}}};
     const event={target:form,submitter:button,preventDefault(){}};
     await Promise.all([submit(event),submit(event)]);
     assert.equal(calls,1);assert.equal(destination,expected);
-    if(!ok){assert.deepEqual(alerts,['Recovery required']);assert.equal(button.disabled,false);assert.equal(form.dataset.submitting,undefined);}
+    if(!ok){assert.deepEqual(alerts,[error]);assert.equal(button.disabled,false);assert.equal(form.dataset.submitting,undefined);}
   }
 })().catch(error=>{console.error(error);process.exitCode=1;});
 """
