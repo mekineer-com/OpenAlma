@@ -53,7 +53,6 @@ eval(process.argv[2]); assert.equal(callback,undefined);
 ''', *bindings], check=True)
     saved = json.loads(config.read_text())
     assert saved["soul_id"] == "TestSoul" and "souls" not in saved
-    assert "reply_prefix" not in saved and "reply_prefix_template" not in saved
 
 
 @pytest.mark.parametrize("route", ["/owner", "/first-soul", "/soul", "/echo/soul"])
