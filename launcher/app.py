@@ -674,7 +674,6 @@ def hermes_page(request: Request) -> HTMLResponse:
         "chats": chat_rows,
         "visible_chats": visible_chats,
         "excluded_chats": excluded_chats,
-        "channel_directory_path": str(policy.DIRECTORY_PATH),
         "policies": policy.ALL_POLICIES,
         "default_policy": default_policy,
         "policy_error": policy_error,

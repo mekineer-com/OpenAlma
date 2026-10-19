@@ -282,7 +282,7 @@ async function svcAction(name, action, btn) {
     }
     if (!response.ok) {
       delete pendingStarts[name];
-      if (response.status !== 428 || action === 'force-stop') showLauncherMessage(result.detail || 'Service action failed');
+      if (response.status !== 428) showLauncherMessage(result.detail || 'Service action failed');
     }
   } catch (error) {
     delete pendingStarts[name];

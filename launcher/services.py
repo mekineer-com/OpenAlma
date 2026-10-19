@@ -426,7 +426,10 @@ def _verified_pid_candidates(spec: ServiceSpec) -> list[int]:
         seen.add(pid)
         if _is_alive(pid) and _matches_managed_process(spec, pid):
             verified.append(pid)
-    if not verified:
+    if not verified or (
+        spec.name == "channels-daemon"
+        and not any(_matches_service_process(spec, pid) for pid in verified)
+    ):
         for pid in _scan_service_pids_cached(spec):
             if pid in seen:
                 continue
@@ -506,7 +509,7 @@ def _runtime_state(spec: ServiceSpec) -> RuntimeState:
             _clear_dead_pidfile(spec.adopt_pid_path)
         return RuntimeState(port_pid=port_pid, port_blocked=port_blocked)
 
-    pid = verified[0]
+    pid = service_pids[0] if service_pids else verified[0]
     _remember_verified_pid(spec, pid)
     if spec.name == "channels-daemon" and not service_pids and child_pids:
         return RuntimeState(

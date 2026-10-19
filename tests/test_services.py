@@ -962,7 +962,7 @@ const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const text = fs.readFileSync(process.argv[1], 'utf8');
 const script = text.slice(text.indexOf('var pendingStarts = {}'), text.indexOf('function actionHtml('));
 (async () => {
-  for (const scenario of ['start', 'start-failed', 'decline', 'confirm', 'force', 'force-failed', 'force-428']) {
+  for (const scenario of ['start', 'start-failed', 'decline', 'confirm', 'force', 'force-failed']) {
     const urls = [], alerts = []; let polls = 0;
     const context = {
       document: {addEventListener: () => {}},
@@ -978,13 +978,18 @@ const script = text.slice(text.indexOf('var pendingStarts = {}'), text.indexOf('
     };
     vm.createContext(context); vm.runInContext(script, context);
     const action = scenario.startsWith('start') ? 'start' : scenario.startsWith('force') ? 'force-stop' : 'stop';
-    await context.svcAction('test', action, {
-      closest: () => ({querySelector: () => ({innerHTML: ''})}),
+    const actionsCell = {innerHTML: '<button>Original action</button>'};
+    const statusCell = {innerHTML: ''};
+    const pending = context.svcAction('test', action, {
+      closest: () => ({querySelector: selector => selector === '.svc-actions' ? actionsCell : statusCell}),
     });
+    assert(actionsCell.innerHTML.includes('spinner'));
+    assert(!actionsCell.innerHTML.includes('<button'));
+    await pending;
     assert.equal(polls, 1);
     assert.equal(Boolean(context.pendingStarts.test), scenario === 'start');
     assert.equal(urls.length, scenario === 'confirm' ? 2 : 1);
-    assert.equal(alerts.length, ['confirm', 'start-failed', 'force-failed', 'force-428'].includes(scenario) ? 1 : 0);
+    assert.equal(alerts.length, ['confirm', 'start-failed', 'force-failed'].includes(scenario) ? 1 : 0);
     if (scenario === 'confirm') assert(urls[1].endsWith('?confirm_unknown=true'));
     if (scenario.startsWith('force')) assert(urls[0].endsWith('?confirmed=true'));
   }
@@ -1000,7 +1005,13 @@ const failed = context.actionHtml('memu-server', {state: 'running', running: tru
 assert(failed.includes("'stop'")); assert(failed.includes("'force-stop'"));
 const starting = context.actionHtml('memu-server', {state: 'starting', running: true, stoppable: true, open_url: 'http://fictional/'});
 assert(starting.includes('spinner')); assert(starting.includes("'stop'"));
+assert(!starting.includes("'start'"));
 assert(!starting.includes('Force Stop')); assert(!starting.includes('openService'));
+for (const force_stoppable of [false, true]) {
+  const stopping = context.actionHtml('channels-daemon', {state: 'stopping', force_stoppable});
+  assert(stopping.includes('spinner')); assert(!stopping.includes("'stop'"));
+  assert.equal(stopping.includes("'force-stop'"), force_stoppable);
+}
 const failedStarting = context.actionHtml('memu-server', {state: 'starting', stoppable: true, force_stoppable: true});
 assert(failedStarting.includes("'stop'")); assert(failedStarting.includes("'force-stop'"));
 for (const state of ['running', 'starting']) {
@@ -1023,6 +1034,11 @@ for (const state of ['running', 'starting']) {
     blocked_starting = renderer.render(s={"name": "memu-server", "state": "starting",
                                         "stop_blocked": True, "force_stoppable": True})
     assert "disabled" in blocked_starting and "Force Stop" not in blocked_starting
+    for force_stoppable in (False, True):
+        stopping = renderer.render(s={"name": "channels-daemon", "state": "stopping",
+                                      "force_stoppable": force_stoppable})
+        assert 'class="spinner"' in stopping and "'stop'" not in stopping
+        assert ("'force-stop'" in stopping) is force_stoppable
 
 
 def test_memu_server_uses_configured_pidfile_for_adoption(tmp_path, monkeypatch):
@@ -1833,7 +1849,8 @@ def test_channels_daemon_match_requires_cwd_and_gateway_module(tmp_path, monkeyp
 
 
 @pytest.mark.parametrize("pidfiles", [True, False])
-def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monkeypatch, pidfiles):
+@pytest.mark.parametrize("supervisor_present", [True, False])
+def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monkeypatch, pidfiles, supervisor_present):
     channels_home = tmp_path / "channels_data"
     whatsapp_home = channels_home / "whatsapp"
     session_path = whatsapp_home / "session"
@@ -1844,16 +1861,18 @@ def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monke
     monkeypatch.setattr(services, "_CHANNELS_HOME", channels_home)
     monkeypatch.setattr(services, "_PROCESS_SCAN_CACHE", {})
     monkeypatch.setattr(services.psutil, "process_iter", lambda _attrs: [
-        type("Process", (), {"pid": pid})() for pid in (41, 42, 43, 44)
+        type("Process", (), {"pid": pid})() for pid in (41, 42, 43, 44, 45)
     ])
     def alive(pid):
         assert pid != 43, "Unrelated processes must not need liveness inspection"
-        return pid in {41, 42}
+        return pid in {41, 42} or pid == 45 and supervisor_present
     monkeypatch.setattr(services, "_is_alive", alive)
     reads = []
 
     def cmdline(pid):
         reads.append(pid)
+        if pid == 45:
+            return "python3 -m gateway.daemon"
         if pid in {41, 44}:
             return f"node bridge.js --port 3000 --session {session_path} --mode self-chat"
         if pid == 42:
@@ -1865,7 +1884,7 @@ def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monke
         return f"node bridge.js --db {whatsapp_home / 'web_source.db'} --status {whatsapp_home / 'web_source_status.json'}"
 
     monkeypatch.setattr(services, "_proc_cmdline", cmdline)
-    monkeypatch.setattr(services, "_proc_cwd", lambda _pid: None)
+    monkeypatch.setattr(services, "_proc_cwd", lambda pid: tmp_path / "hermes-channels" if pid == 45 else None)
     spec = services.ServiceSpec(
         name="channels-daemon",
         label="Hermes Channels",
@@ -1875,10 +1894,29 @@ def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monke
         pid_path=tmp_path / "channels.pid",
     )
 
-    assert services._verified_pid_candidates(spec) == [41, 42]
-    assert reads.count(41) == reads.count(42) == (1 if pidfiles else 2)
-    if not pidfiles:
-        assert reads.count(43) == reads.count(44) == 1
+    spec.pid_path.write_text("41")
+    assert services._verified_pid_candidates(spec) == ([41, 42, 45] if supervisor_present else [41, 42])
+    assert reads.count(41) == reads.count(42) == 2
+    assert reads.count(43) == reads.count(44) == 1
+    runtime = services._runtime_state(spec)
+    assert runtime.running is supervisor_present
+    assert runtime.orphaned is not supervisor_present
+    assert runtime.pid == (45 if supervisor_present else 41)
+    assert spec.pid_path.read_text() == str(runtime.pid)
+    monkeypatch.setattr(services, "_STOP_STARTED", {})
+    monkeypatch.setattr(services, "_STOP_ERRORS", {})
+    monkeypatch.setattr(services, "_STOP_THREADS", {})
+    signals = []
+    monkeypatch.setattr(services.os, "kill", lambda pid, _signal: signals.append(pid))
+    monkeypatch.setattr(services, "_request_windows_shutdown", lambda _spec, pids: signals.extend(pids))
+    monkeypatch.setattr(services, "_start_stop_waiter", lambda _spec: None)
+    if supervisor_present:
+        services.stop(spec)
+        assert signals == [45]
+    else:
+        with pytest.raises(RuntimeError, match="supervisor is not running"):
+            services.stop(spec)
+        assert not signals
 
 
 def test_channels_needs_soul_selection_before_start(tmp_path, monkeypatch):

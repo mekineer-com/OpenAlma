@@ -139,7 +139,7 @@ def test_excluded_whatsapp_chats_are_collapsed():
     assert '<option value="excluded" selected>excluded</option>' in html
 
 
-def test_empty_policy_view_shows_actual_channel_directory_path():
+def test_empty_policy_view_omits_internal_directory_notice():
     template_dir = Path(__file__).resolve().parents[1] / "launcher" / "templates"
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(template_dir),
@@ -150,16 +150,16 @@ def test_empty_policy_view_shows_actual_channel_directory_path():
         chats=[],
         visible_chats=[],
         excluded_chats=[],
-        channel_directory_path="/tmp/hermes-channels/channel_directory.json",
         policies=("full", "listen_only", "excluded"),
-            active_soul="Siri",
-            channels_configured=True,
-        soul_ids=["Siri"],
+        active_soul="Fictional Soul",
+        channels_configured=True,
+        soul_ids=["Fictional Soul"],
         editable_configs=[],
         apps_root="",
         needs_setup=False,
     )
 
-    assert "No WhatsApp chats in" in html
-    assert "/tmp/hermes-channels/channel_directory.json" in html
+    assert "No WhatsApp chats in" not in html
+    assert "channel_directory.json" not in html
+    assert 'id="pair-whatsapp"' in html
     assert "New rows default to" in html

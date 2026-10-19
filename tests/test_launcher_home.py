@@ -791,6 +791,7 @@ context.showLauncherMessage('<img src=x onerror=alert(1)>');
 assert.equal(text.textContent,'<img src=x onerror=alert(1)>');
 assert.equal(message.hidden,false);assert.equal(text.innerHTML,undefined);
 const header=fs.readFileSync(root+'/templates/_header.html','utf8');
+assert(header.indexOf('id="launcher-message"') < header.indexOf('</div>',header.indexOf('class="top-row"')));
 const dismiss=header.match(/onclick="(this.parentElement.hidden = true)"/);
 assert(dismiss);vm.runInNewContext('(function(){'+dismiss[1]+'}).call(button)',{button:{parentElement:message}});
 assert.equal(message.hidden,true);
