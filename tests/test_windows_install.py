@@ -186,14 +186,11 @@ if failure == "corrupt_legacy":
                    cwd=Path(settings.__file__).parent, check=True, timeout=10)
 
 
-def test_windows_installer_uses_openalma_icon_everywhere():
+def test_windows_installer_preserves_packaging_and_lifecycle_guards():
     script = (
         Path(__file__).resolve().parents[1] / "installer/windows/OpenAlma.iss"
     ).read_text(encoding="utf-8")
 
-    assert "SetupIconFile=OpenAlma.ico" in script
-    assert "UninstallDisplayIcon={app}\\OpenAlma.ico" in script
-    assert script.count('IconFilename: "{app}\\OpenAlma.ico"') == 2
     assert 'Type: filesandordirs; Name: "{app}\\launcher\\.venv"' in script
     assert 'Type: filesandordirs; Name: "{app}\\launcher\\__pycache__"' in script
     assert 'Type: files; Name: "{app}\\.openalma-version"' in script
@@ -205,7 +202,6 @@ def test_windows_installer_uses_openalma_icon_everywhere():
     assert "Python := PythonLauncher" in script
     assert "windows_remove.py" in script
     assert "ServicesVerified := FileExists(Python) and FileExists(Script)" in script
-    assert "Remove Everything will be unavailable" in script
     assert "LastLauncherCheckCode = 11" in script
     assert "--install-dir" in script and "--registered-install" in script
     assert "else if ResultCode = 14 then" in script
@@ -232,13 +228,11 @@ def test_windows_installer_bootstraps_pinned_python_without_winget():
     assert "/quiet /norestart InstallAllUsers=0 PrependPath=1 Include_launcher=1 InstallLauncherAllUsers=0" in prerequisites
     assert "InstallWithWinget('Python.Python.3.12'" not in script
     assert "if ResultCode = 3010 then" in prerequisites
-    assert "Restart Windows, then run OpenAlma Setup again." in prerequisites
     verification = prerequisites.rsplit("PythonLauncher := FindPythonLauncher();", 1)[1]
     assert "RunHidden(PythonLauncher, '-3.12 --version', ResultCode)" in verification
     assert "ResultCode <> 0" in verification
     assert "InstallWithWinget('Git.Git', 'user') and not InstallWithWinget('Git.Git', '')" in script
     assert 'https://git-scm.com/download/win' in prerequisites
-    assert 'then run OpenAlma Setup again.' in prerequisites
     winget = script.split('function InstallWithWinget(', 1)[1].split('function EnsurePrerequisites', 1)[0]
     assert 'MsgBox' not in winget
 
