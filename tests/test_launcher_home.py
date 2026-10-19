@@ -328,7 +328,7 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
                 assert "Miniapp Developer Settings" in stock
                 assert "Choose or create a Soul on the phone" in stock
             assert 'id="iris-installer-status"' not in stock
-            assert 'id="iris-action-error"' not in stock
+            assert 'id="iris-action-error"' not in visible
             selected = next((row for row in installations if page.endswith("=" + row["device_session_id"])), None)
             for row in installations:
                 if row is selected:
@@ -762,16 +762,39 @@ def test_iris_preparation_retry_uses_worker_failure(tmp_path, monkeypatch, ready
     assert ('disabled' in stock) == running
 
 
-def test_iris_repair_success_follows_status_redirect():
+def test_iris_requests_use_shared_message_and_preserve_redirects():
     import subprocess
     script = r"""
-const fs=require('fs'), vm=require('vm'), assert=require('assert');
+const fs=require('fs'), path=require('path'), assert=require('assert');
 const source=fs.readFileSync(process.argv[1],'utf8');
-let submitting=false, statusAvailable=true, actionError={}, destination='';
+const root=path.resolve(path.dirname(process.argv[1]),'..');
+const message={hidden:true}, text={};
+const document={getElementById:id=>id==='launcher-message'?message:text};
+eval(fs.readFileSync(root+'/static/launcher.js','utf8').split('async function quitLauncher')[0]);
+eval(fs.readFileSync(root+'/static/iris-services.js','utf8'));
+assert(!source.includes('iris-action-error'));
+let submitting=false, statusAvailable=true, destination='';
 const location={assign:url=>destination=url,reload:()=>{throw new Error('Must leave the Repair chooser');}};
-const fetch=async()=>({ok:true,redirected:true,url:'/iris?device_session_id=test-phone'});
+let fetch=async()=>({ok:true,redirected:true,url:'/iris?device_session_id=test-phone'});
 eval(source.slice(source.indexOf('async function irisRequest'),source.indexOf('function irisAction')));
-(async()=>{await irisRequest('/iris/install',{},null);assert.equal(destination,'/iris?device_session_id=test-phone');})();
+(async()=>{
+  await irisRequest('/iris/install',{},null);
+  assert.equal(destination,'/iris?device_session_id=test-phone');
+  destination=''; submitting=false;
+  for (const [action,url] of [['Rename','/iris/installations/test-phone/rename'],
+      ['Repair','/iris/install'],['Forget','/iris/installations/test-phone/forget'],['Install','/iris/install']]) {
+    const button={disabled:false,closest:()=>null};
+    fetch=async()=>({ok:false,json:async()=>({detail:[{msg:action+' failed'}]})});
+    await irisRequest(url,{},button);
+    assert.equal(text.textContent,action+' failed');assert.equal(message.hidden,false);
+    assert.equal(submitting,false);assert.equal(button.disabled,false);assert.equal(destination,'');
+  }
+  fetch=async()=>{throw new Error('Offline');};
+  statusAvailable=false;
+  const button={disabled:false,closest:()=>({})};
+  await irisRequest('/iris/install',{},button);
+  assert.equal(text.textContent,'Offline');assert.equal(submitting,false);assert.equal(button.disabled,true);
+})().catch(error=>{console.error(error);process.exitCode=1;});
 """
     path = Path(__file__).resolve().parents[1] / "launcher/templates/iris.html"
     subprocess.run(["node", "-e", script, str(path)], check=True, timeout=10)

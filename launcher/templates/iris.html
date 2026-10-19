@@ -6,7 +6,6 @@
   {% set install_disabled = not iris_setup.ready or iris.ready is sameas false or installer_busy or iris.blocked or iris.install_running or iris.state == 'stopping' or iris.installations is not defined %}
   {% set stock_install_disabled = (not iris_setup.ready and iris_setup.step != 'release') or (iris.ready is sameas false and iris.action_kind != 'install') or installer_busy or iris.blocked or iris.install_running or iris.state == 'stopping' or iris.installations is not defined %}
   {% set show_installer = not selected_installation or iris.release_device_session_id == selected_installation.device_session_id %}
-  <p id="iris-action-error" class="banner" role="alert" hidden></p>
   <p id="iris-installer-status" class="banner" role="alert" {% if not (iris.blocked or iris.ready is sameas false or iris.installations is not defined) %}hidden{% endif %}>{% if iris.blocked %}{{ iris.detail or 'Iris installer port 6789 is occupied. Free the port before installing.' }}{% elif iris.ready is sameas false %}{{ iris.status_label }}: {{ iris.detail }}{% elif iris.installations is not defined %}Iris app status is unavailable.{% endif %}</p>
   <p id="iris-foreground-notice" class="banner" role="status" {% if not (show_installer and iris.running and not iris.blocked and iris.release_host_package == 'com.mentra.mentra.openalma') %}hidden{% endif %}>Open OpenAlma Mentra on your phone to finish installing Iris. Installation continues automatically.</p>
   <h2>{{ selected_installation.display_name ~ ' setup' if selected_installation else 'Iris & Phone Setup' }}</h2>
@@ -170,7 +169,6 @@
 <script>
     const initialStatus = {{ iris|tojson }};
     const selectedDevice = {{ (selected_installation.device_session_id if selected_installation else '')|tojson }};
-    const actionError = document.getElementById('iris-action-error');
     const installerStatus = document.getElementById('iris-installer-status');
     let submitting = false;
     let statusAvailable = Array.isArray(initialStatus.installations);
@@ -251,8 +249,6 @@
     async function irisRequest(url, options, button) {
       if (submitting) return;
       submitting = true;
-      actionError.textContent = '';
-      actionError.hidden = true;
       if (button) button.disabled = true;
       try {
         const response = await fetch(url, options);
@@ -265,8 +261,7 @@
         else if (response.redirected) location.assign(response.url);
         else location.reload();
       } catch (err) {
-        actionError.textContent = err.message;
-        actionError.hidden = false;
+        showLauncherMessage(err.message);
         if (button && (statusAvailable || !button.closest('form[action="/iris/install"], #iris-installations'))) button.disabled = false;
         submitting = false;
       }

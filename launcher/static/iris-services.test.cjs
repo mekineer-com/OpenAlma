@@ -132,9 +132,10 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
   retry.action = '/install/iris-server';
   retry.hasAttribute = () => false;
   retry.addEventListener = (_event, handler) => { retrySubmit = handler; };
-  const actionError = {textContent: 'Invalid address'};
+  const message = {hidden: false}, messageText = {textContent: 'Invalid address'};
   const elements = new Map([
-    ['iris-action-error', actionError], ['iris-installer-status', installerStatus], ['iris-address-busy', busyHint],
+    ['launcher-message', message], ['launcher-message-text', messageText],
+    ['iris-installer-status', installerStatus], ['iris-address-busy', busyHint],
     ['iris-installer-progress', progress], ['iris-cancel-controls', cancelControls],
     ['iris-foreground-notice', foregroundNotice],
     ['iris-preparation-retry', retry],
@@ -290,7 +291,7 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
   next = {...ready, blocked: true};
   await poll();
   assert.equal(reloads, 1);
-  assert.equal(actionError.textContent, 'Invalid address');
+  assert.equal(messageText.textContent, 'Invalid address');
   let prevented = false, request, finishRequest;
   context.fetch = async (url, options) => {
     if (url === '/install/iris-server') {
