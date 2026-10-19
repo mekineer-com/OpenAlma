@@ -113,7 +113,7 @@
     </form>
         {% endif %}
       </li>
-      {% else %}<li class="muted">No app installations reported. Connect OpenAlma Mentra in its Settings, or use Stock Mentra installation below.</li>{% endfor %}
+      {% else %}<li class="muted">No app installations reported. Connect OpenAlma Mentra in its Settings, or use Stock Mentra or Glassly installation below.</li>{% endfor %}
     </ul>
     <p class="hint">Forget removes only this launcher record, not phone storage, chats or memories. Close the app and wait 15 seconds first; opening it again restores its row. Update updates Iris, not the Mentra host app. Repair preserves the installation identity and is available only for idle OpenAlma Mentra.</p>
     <p><a href="/iris">General Iris setup</a></p>
@@ -128,37 +128,40 @@
 
     {% if not selected_installation or selected_installation.host_package != 'com.mentra.mentra.openalma' %}
     <details id="iris-stock-installation" {% if (show_installer and installer_busy and iris.release_host_package == 'com.mentra.mentra') or (selected_installation and selected_installation.host_package == 'com.mentra.mentra') %}open{% endif %}>
-      <summary class="iris-section">Stock Mentra installation</summary>
-      <h4>1. Install Mentra on your phone</h4>
+      <summary class="iris-section">Stock Mentra or Glassly installation</summary>
+      <h4>1. Install Mentra or Glassly on your phone</h4>
       <p>Create a trusted private network and assign the server the address above.<br>
       Connect your phone to the private network.<br>
-      <a href="https://play.google.com/store/apps/details?id=com.mentra.mentra">Install Mentra</a> and sign in.</p>
-      <h4>2. Install Iris inside Mentra</h4>
+      <a href="https://play.google.com/store/apps/details?id=com.mentra.mentra">Install stock Mentra</a> and sign in, or install Glassly from
+      <a href="https://play.google.com/store/apps/details?id=com.tetramo.glassly">Google Play</a> or
+      <a href="https://glassly.ai/fdroid">F-Droid</a> and complete its setup.</p>
+      <p class="hint">Glassly's developer reports newer releases on F-Droid than on Google Play.</p>
+      <h4>2. Install Iris inside Mentra or Glassly</h4>
       {% if not selected_installation %}
       <form method="post" action="/iris/install" id="iris-install-form">
-        <p><button class="btn" type="submit" {% if stock_install_disabled or not iris.available_package or not iris.available_version %}disabled{% endif %}>Install Iris in Stock Mentra</button></p>
+        <p><button class="btn" type="submit" {% if stock_install_disabled or not iris.available_package or not iris.available_version %}disabled{% endif %}>Install Iris in Stock Mentra or Glassly</button></p>
       </form>
-      <p class="hint">Click to generate the QR. Scan it using Stock Mentra's Miniapp Developer Settings, following the instructions below.</p>
+      <p class="hint">Click to generate the QR. Scan it using Miniapp Developer Settings in Mentra or Glassly, following the instructions below.</p>
       {% elif selected_installation.host_package == 'com.mentra.mentra' %}
       <p class="hint">Use Install or Update in App status to generate the QR.</p>
       {% endif %}
       {% if show_installer and iris.running and iris.release_uri and iris.release_host_package == 'com.mentra.mentra' %}
-      <p>Scan this QR in Stock Mentra (one app installation only):</p>
+      <p>Scan this QR in Mentra or Glassly (one app installation only):</p>
       <canvas id="iris-install-qr" width="220" height="220"></canvas>
       <p><a href="{{ iris.release_uri }}">Open installation link</a></p>
       {% if iris.release_device_session_id %}<p>Phone ID: <code>{{ iris.release_device_session_id }}</code></p>{% endif %}
       {% endif %}
       <ol class="tight">
-        <li>Open Mentra Settings.</li>
+        <li>Open Settings in Mentra or Glassly.</li>
         <li>If Miniapp Developer Settings is missing, tap the release number ten times.</li>
         <li>Open Miniapp Developer Settings and choose Scan Miniapp QR Code.</li>
         <li>Scan this QR, then open Iris.</li>
-        <li>For an Update, dismiss Iris from Mentra's app switcher, then reopen it.</li>
+        <li>For an Update, dismiss Iris from the host app's app switcher, then reopen it.</li>
         <li>Wait for OpenAlma to confirm installation; cleanup is automatic.</li>
       </ol>
       <h4>3. Open Iris and talk</h4>
-      <p>Open Iris inside Mentra on your phone.<br>
-      Allow Mentra microphone access. Android/Mentra asks for camera or photo access when needed.<br>
+      <p>Open Iris inside Mentra or Glassly on your phone.<br>
+      Allow the app microphone access. Android or the app asks for camera or photo access when needed.<br>
       Choose or create a Soul on the phone, then tap Start to talk; listen for the beep.</p>
     </details>
     {% endif %}

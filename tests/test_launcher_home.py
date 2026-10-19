@@ -320,10 +320,13 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
                 assert 'href="https://play.google.com/store/apps/details?id=com.mentra.mentra"' not in visible
             else:
                 stock = visible.split('<details id="iris-stock-installation"', 1)[1].split('</details>', 1)[0]
-                assert '<summary class="iris-section">Stock Mentra installation</summary>' in stock
+                assert '<summary class="iris-section">Stock Mentra or Glassly installation</summary>' in stock
                 app_heading = '>App status</h3>' if '?device_session_id=' in page else '>App installations</h3>'
-                assert visible.index(app_heading) < visible.index('<summary class="iris-section">Stock Mentra installation</summary>')
+                assert visible.index(app_heading) < visible.index('<summary class="iris-section">Stock Mentra or Glassly installation</summary>')
                 assert 'href="https://play.google.com/store/apps/details?id=com.mentra.mentra"' in stock
+                assert 'href="https://play.google.com/store/apps/details?id=com.tetramo.glassly"' in stock
+                assert 'href="https://glassly.ai/fdroid"' in stock
+                assert "newer releases on F-Droid" in stock
                 assert "and sign in" in stock
                 assert "Miniapp Developer Settings" in stock
                 assert "Choose or create a Soul on the phone" in stock
@@ -342,11 +345,11 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
                     assert row["soul_id"] not in visible
             if selected:
                 assert f'<h2>{selected["display_name"]} setup</h2>' in visible
-                assert '>Install Iris in Stock Mentra</button>' not in visible
+                assert '>Install Iris in Stock Mentra or Glassly</button>' not in visible
                 forget = visible.split('data-forget>', 1)[1].split('</form>', 1)[0]
                 assert 'disabled' in forget
             else:
-                assert '>Install Iris in Stock Mentra</button>' in stock
+                assert '>Install Iris in Stock Mentra or Glassly</button>' in stock
                 for row in installations:
                     assert f'href="/iris?device_session_id={row["device_session_id"]}"' in visible
             assert ('id="iris-install-qr"' in visible) == (selected is not installations[1])

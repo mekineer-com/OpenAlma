@@ -287,7 +287,7 @@ def test_iris_setup_names_open_existing_rename_and_live_fallback_is_readonly():
     assert 'action="/iris/installations/confirmed-app/rename"' in confirmed
     assert 'action="/iris/install"' in confirmed
     assert '<summary>Rename</summary>' not in html
-    assert '>Install Iris in Stock Mentra</button>' not in html
+    assert '>Install Iris in Stock Mentra or Glassly</button>' not in html
     assert 'id="iris-stock-installation"' not in html
     assert 'data-device-session-id="forgotten-app"' not in html
     html = env.get_template("iris.html").render(**context, selected_installation=installations[1])
