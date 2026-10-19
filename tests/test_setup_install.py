@@ -538,7 +538,7 @@ def test_database_backup_copies_all_regular_databases_and_ignores_hidden(tmp_pat
     assert not stale_failed.exists()
 
 
-@pytest.mark.parametrize("failure", ["checkout", "migration", "verification"])
+@pytest.mark.parametrize("failure", ["checkout", "migration", "verification", "restore"])
 def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatch, failure):
     operation = setup_install.InstallOperation("memu-server", tmp_path)
     entries = [
@@ -559,6 +559,9 @@ def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatc
     config_path = tmp_path / "mcp-memu-server" / "config.json"
     original = b'{ "storage": {"sqlite_dir": "../memu"}, "llm": {"api_key": "fictional-key"} }\n\n'
     config_path.write_bytes(original)
+    with sqlite3.connect(tmp_path / "memu" / "FictionalSoul.db") as con:
+        con.execute("CREATE TABLE sentinel (value TEXT)")
+        con.execute("INSERT INTO sentinel VALUES ('original memory')")
     events = []
 
     monkeypatch.setattr(
@@ -577,6 +580,8 @@ def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatc
     def restore_databases(*_args):
         assert config_path.read_bytes() == original
         events.extend(["config", "databases"])
+        if failure == "restore":
+            raise setup_install.SetupError("restore failed")
     monkeypatch.setattr(setup_install, "_restore_databases", restore_databases)
     issues = iter(["core verification failed", ""] if failure == "verification" else [""])
     monkeypatch.setattr(setup_install, "core_issue", lambda *_args, **_kwargs: next(issues))
@@ -585,19 +590,27 @@ def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatc
         if "migrate_release.py" in command:
             assert _kwargs["cwd"] == tmp_path / "mcp-memu-server"
             events.append("migration")
-            if failure == "migration":
+            if failure in {"migration", "restore"}:
                 raise setup_install.SetupError("migration failed")
         if command[:3] == ["git", "checkout", "--detach"]:
             events.append("old-code")
 
     monkeypatch.setattr(setup_install, "_run", run)
 
-    error = {"checkout": "Offline fetch", "migration": "migration failed", "verification": "core verification failed"}[failure]
+    error = {"checkout": "Offline fetch", "migration": "migration failed", "verification": "core verification failed",
+             "restore": "migration failed; recovery required: restore failed"}[failure]
     with pytest.raises(setup_install.SetupError, match=error):
         setup_install._update_core(operation, "v2.0.0", {"memu-server": entries}, None)
 
-    assert events.index("config") < events.index("databases") < events.index("old-code")
     assert config_path.read_bytes() == original
+    if failure == "restore":
+        assert events.index("migration") < events.index("databases") and "old-code" not in events
+        _state, backup = setup_install._recovery_state(tmp_path)
+        assert (backup / "config.json").read_bytes() == original
+        with sqlite3.connect(backup / "FictionalSoul.db") as con:
+            assert con.execute("SELECT value FROM sentinel").fetchone() == ("original memory",)
+        return
+    assert events.index("config") < events.index("databases") < events.index("old-code")
     if failure == "checkout":
         assert "environment" not in events
     else:
