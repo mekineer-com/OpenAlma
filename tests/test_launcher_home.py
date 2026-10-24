@@ -404,10 +404,16 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
         assert '>Force Stop</button>' in visible and '>Force Stop</button>' not in stock
     with pytest.MonkeyPatch.context() as unavailable:
         unavailable.setattr(services, "status", lambda _spec: {"state": "unavailable"})
-        assert client.get("/iris?device_session_id=stock-test").status_code == 503
-        visible = client.get("/iris").text
-        assert 'disabled' in visible.split('id="iris-install-form">', 1)[1].split('</form>', 1)[0]
-        assert 'Iris app status is unavailable.' in visible
+        for page in ("/iris", "/iris?device_session_id=stock-test",
+                     "/iris?device_session_id=fork-test&repair=1"):
+            response = client.get(page)
+            assert response.status_code == 200
+            assert response.headers["content-type"].startswith("text/html")
+            visible = response.text
+            assert 'href="/" title="Back to Services"' in visible
+            assert 'disabled' in visible.split('id="iris-install-form">', 1)[1].split('</form>', 1)[0]
+            assert 'Iris app status is unavailable.' in visible
+    assert client.get("/iris?device_session_id=fork-test").status_code == 200
     assert 'id="pair-panel"' in client.get("/hermes").text
     assert 'id="pair-panel"' not in client.get("/iris").text
 

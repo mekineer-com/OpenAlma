@@ -696,9 +696,9 @@ def iris_page(request: Request, device_session_id: str = "", repair: bool = Fals
     iris_spec = next((spec for spec in services.all_services() if spec.name == "iris-server"), None)
     iris = _setup_aware_status(iris_spec, apps_root, verify_runtime=False) if iris_spec and apps_root else {}
     selected_installation = None
-    if device_session_id:
-        if "installations" not in iris:
-            raise HTTPException(status_code=503, detail="Iris app status is unavailable")
+    if device_session_id and "installations" not in iris:
+        repair = False  # Render the setup page and navigation while MCP is unavailable.
+    elif device_session_id:
         selected_installation = next((row for row in iris.get("installations", [])
                                       if row["device_session_id"] == device_session_id), None)
         if selected_installation is None:
