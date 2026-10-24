@@ -497,6 +497,11 @@ def _runtime_state(spec: ServiceSpec) -> RuntimeState:
             spec.name == "channels-daemon" and _matches_channels_child_process(pid)
         )
     )
+    if (spec.name == "sillytavern" and spec.port is not None
+            and service_pids and _within_startup_grace(spec)):
+        cached = _PORT_PID_CACHE.get(spec.port)
+        if cached is not None and cached[1] is None:
+            _clear_port_cache(spec)
     port_pid = _port_listener_pid(spec.port) if spec.port is not None else None
     port_blocked = (port_pid == UNKNOWN_PORT_PID and not verified) or (
         port_pid not in {None, UNKNOWN_PORT_PID}
@@ -570,12 +575,16 @@ def channels_setup_issue() -> str:
     return "" if str(_read_channels_config().get("soul_id") or "").strip() else "Choose a Soul in Setup"
 
 
-def _channels_bridge_health(config: dict | None = None) -> dict:
+def _channels_bridge_port(config: dict | None = None) -> int:
     port = (config or _read_channels_config()).get("bridge_port", 3000)
     try:
-        port = int(port)
+        return int(port)
     except (TypeError, ValueError):
-        port = 3000
+        return 3000
+
+
+def _channels_bridge_health(config: dict | None = None) -> dict:
+    port = _channels_bridge_port(config)
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=0.5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
@@ -590,6 +599,26 @@ def _read_channels_web_source_status() -> dict:
     except (OSError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _channels_startup_current(runtime: RuntimeState, config: dict, web_source: dict) -> bool:
+    if runtime.pid not in runtime.service_pids:
+        return False
+    markers = _channels_whatsapp_child_markers()
+    enabled = 2 if _coerce_bool(config.get("web_source_enabled"), True) else 1
+    pids = [_read_pid(pidfile) for pidfile, _markers in markers[:enabled]]
+    for pid in pids:
+        if pid not in runtime.child_pids:
+            return False
+        try:
+            if psutil.Process(pid).ppid() != runtime.pid:
+                return False
+        except (psutil.Error, OSError):
+            return False
+    if enabled == 2 and web_source.get("pid") != pids[1]:
+        return False
+    # Only current children may override grace; adopted children keep its fallback.
+    return _port_listener_pid(_channels_bridge_port(config), refresh=True) == pids[0]
 
 
 def _channels_pairing_saved() -> bool:
@@ -1500,15 +1529,15 @@ def status(spec: ServiceSpec) -> dict:
     elif running and spec.port is not None and runtime.port_pid is None and _within_startup_grace(spec):
         state, label, detail = "starting", "◐ starting", "Waiting for the service to listen"
 
-    if spec.name == "channels-daemon" and running and _within_startup_grace(spec):
-        state = "starting"
-        label = "◐ starting"
-        detail = "Starting WhatsApp services"
-    elif spec.name == "channels-daemon" and running:
+    if spec.name == "channels-daemon" and running:
         channels_config = _read_channels_config()
         web_source_enabled = _coerce_bool(channels_config.get("web_source_enabled"), True)
-        bridge = _channels_bridge_health(channels_config)
         web_source = _read_channels_web_source_status()
+        startup_pending = _within_startup_grace(spec) and not _channels_startup_current(
+            runtime, channels_config, web_source)
+        bridge = {} if startup_pending else _channels_bridge_health(channels_config)
+        if startup_pending:
+            web_source = {}
         bridge_state = str(bridge.get("status") or "").strip().lower()
         web_source_state = str(web_source.get("state") or "").strip().lower()
         if bridge:
@@ -1542,6 +1571,9 @@ def status(spec: ServiceSpec) -> dict:
             state = "starting"
             label = "◐ starting"
         detail = f"WhatsApp bridge {bridge_state or 'unknown'}"
+        if startup_pending:
+            detail = "Starting WhatsApp services"
+            children = []
 
     if spec.name == "memu-server" and (running or stuck or orphaned):
         mentra = _read_mentra_status(MEMU_SERVER_PORT)

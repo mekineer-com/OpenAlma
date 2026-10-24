@@ -1320,6 +1320,31 @@ def test_port_listener_lookup_is_cached(monkeypatch):
     assert len(calls) == 1
 
 
+@pytest.mark.parametrize("starting", [True, False])
+@pytest.mark.parametrize("name", ["sillytavern", "memu-server"])
+def test_startup_rechecks_cached_absent_listener(tmp_path, monkeypatch, starting, name):
+    spec = services.ServiceSpec(name, "Fixture", [], tmp_path,
+                                tmp_path / "log", tmp_path / "pid", port=8000)
+    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [123])
+    monkeypatch.setattr(services, "_matches_service_process", lambda *_args: True)
+    monkeypatch.setattr(services, "_within_startup_grace", lambda _spec: starting)
+    monkeypatch.setattr(services, "_PORT_PID_CACHE", {8000: (time.monotonic(), None)})
+    calls = []
+
+    def connections(**_kwargs):
+        calls.append(True)
+        return [SimpleNamespace(status=services.psutil.CONN_LISTEN,
+                                laddr=("127.0.0.1", 8000), pid=123)]
+
+    monkeypatch.setattr(services.psutil, "net_connections", connections)
+    runtime = services._runtime_state(spec)
+    refreshed = starting and name == "sillytavern"
+    assert runtime.port_pid == (123 if refreshed else None)
+    assert len(calls) == int(refreshed)
+    services._runtime_state(spec)
+    assert len(calls) == int(refreshed)  # Positive results remain cached.
+
+
 @pytest.mark.parametrize("listener", ["absent", "present", "unknown_pid", "query_failure"])
 @pytest.mark.parametrize("mentra", [False, True])
 def test_offline_http_is_skipped_only_after_fresh_listener_absence(monkeypatch, listener, mentra):
@@ -2027,6 +2052,7 @@ def test_channels_daemon_hides_stale_child_status_during_startup(tmp_path, monke
         lambda _spec: services.RuntimeState(pid=111, running=True),
     )
     monkeypatch.setattr(services, "_within_startup_grace", lambda _spec: True)
+    monkeypatch.setattr(services, "_read_channels_web_source_status", lambda: {})
     monkeypatch.setattr(
         services,
         "_channels_bridge_health",
@@ -2046,3 +2072,42 @@ def test_channels_daemon_hides_stale_child_status_during_startup(tmp_path, monke
     assert status["state"] == "starting"
     assert status["detail"] == "Starting WhatsApp services"
     assert status["children"] == []
+
+
+@pytest.mark.parametrize("case", ["ready", "pairing", "web_disabled", "old_parent",
+                                  "missing_child", "dead_child", "stale_status", "old_listener"])
+def test_channels_recognizes_only_current_startup_health(tmp_path, monkeypatch, case):
+    monkeypatch.setattr(services, "_CHANNELS_HOME", tmp_path)
+    monkeypatch.setattr(services, "_within_startup_grace", lambda _spec: True)
+    monkeypatch.setattr(services, "_read_channels_config", lambda: {
+        "web_source_enabled": case != "web_disabled", "bridge_port": 3000})
+    for (pidfile, _markers), pid in zip(services._channels_whatsapp_child_markers(), (222, 333)):
+        pidfile.parent.mkdir(parents=True, exist_ok=True)
+        pidfile.write_text(str(pid))
+    monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState(
+        pid=111, service_pids=(111,), child_pids=() if case == "missing_child" else (222, 333), running=True))
+
+    def process(pid):
+        if case == "dead_child":
+            raise services.psutil.NoSuchProcess(pid)
+        return SimpleNamespace(ppid=lambda: 999 if case == "old_parent" else 111)
+
+    monkeypatch.setattr(services.psutil, "Process", process)
+    monkeypatch.setattr(services, "_port_listener_pid", lambda _port, **_kwargs: 999 if case == "old_listener" else 222)
+    monkeypatch.setattr(services, "_read_channels_web_source_status", lambda: {
+        "pid": 444 if case == "stale_status" else 333, "state": "ready"})
+    current = case in {"ready", "pairing", "web_disabled"}
+
+    def bridge(_config=None):
+        assert current, "Old child health must not be consulted during grace"
+        return {"status": "connecting", "qr": "fictional-qr"} if case == "pairing" else {"status": "connected"}
+
+    monkeypatch.setattr(services, "_channels_bridge_health", bridge)
+    spec = services.ServiceSpec("channels-daemon", "Hermes", [], tmp_path,
+                                tmp_path / "log", tmp_path / "pid")
+    status = services.status(spec)
+    assert status["state"] == ("pairing" if case == "pairing" else "healthy" if current else "starting")
+    if not current:
+        assert status["children"] == []
+    if case == "web_disabled":
+        assert [child["name"] for child in status["children"]] == ["bridge"]
