@@ -945,6 +945,31 @@ def test_launcher_update_actions_keep_platform_and_readiness_guards(monkeypatch,
     assert calls == [action]
 
 
+@pytest.mark.parametrize("close_window", [False, True])
+def test_exit_closes_window_only_when_requested_by_the_ui(monkeypatch, close_window):
+    calls = []
+    monkeypatch.setattr(app.app.state, "request_shutdown", lambda: calls.append(True), raising=False)
+    monkeypatch.setattr(app.app.state, "close_window_on_exit", False, raising=False)
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    path = "/launcher/quit?close_window=true" if close_window else "/launcher/quit"
+    assert client.post(path).json() == {"ok": True}
+    assert calls == [True]
+    assert app.app.state.close_window_on_exit is close_window
+
+
+def test_show_installer_only_focuses_and_keeps_platform_and_origin_guards(monkeypatch):
+    calls = []
+    monkeypatch.setattr(app.setup_install, "show_launcher_update", lambda: calls.append(True) or {"ok": True})
+    monkeypatch.setattr(app, "launcher_update_readiness", lambda: pytest.fail("Focusing must not require stopping services"))
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    monkeypatch.setattr(app.sys, "platform", "linux")
+    assert client.post("/launcher/update/show").status_code == 400
+    monkeypatch.setattr(app.sys, "platform", "win32")
+    assert client.post("/launcher/update/show").json() == {"ok": True}
+    assert client.post("/launcher/update/show", headers={"Origin": "https://other.example"}).status_code == 403
+    assert calls == [True]
+
+
 @pytest.mark.parametrize("running", [False, True])
 def test_workspace_save_preserves_config_and_uses_live_api_when_running(tmp_path, monkeypatch, running):
     path = tmp_path / "mcp-memu-server/config.json"

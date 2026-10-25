@@ -320,6 +320,39 @@ def test_launcher_installer_open_is_idempotent_and_waits_for_lock_release(launch
     assert operation.installer_path.is_file()
 
 
+@pytest.mark.parametrize("outcome", [0, 1, "closed", "timeout"])
+def test_show_installer_focuses_only_matching_process_and_children(launcher_update_package, monkeypatch, outcome):
+    case = launcher_update_package
+    operation = setup_install.InstallOperation("launcher", case["directory"])
+    operation.installer_path = case["directory"] / "OpenAlma-v9.8.7-Windows.exe"
+    operation.state = "opened"
+    monkeypatch.setattr(setup_install, "_OPERATIONS", {"launcher": operation})
+    installer = SimpleNamespace(pid=111, info={"exe": str(operation.installer_path)},
+                                children=lambda **_kwargs: [SimpleNamespace(pid=222)])
+    unrelated = SimpleNamespace(pid=999, info={"exe": str(case["directory"] / "unrelated.exe")})
+    monkeypatch.setattr(setup_install.psutil, "process_iter", lambda *_args: [unrelated] if outcome == "closed" else [unrelated, installer])
+    calls = []
+
+    def focus(command, **_kwargs):
+        calls.append(command)
+        assert "@(111,222)" in command[-1] and "999" not in command[-1]
+        if outcome == "timeout":
+            raise subprocess.TimeoutExpired(command, 10)
+        return SimpleNamespace(returncode=outcome)
+
+    monkeypatch.setattr(setup_install.subprocess, "run", focus)
+    if outcome == 0:
+        assert setup_install.show_launcher_update() == {"ok": True}
+    else:
+        with pytest.raises(setup_install.SetupError):
+            setup_install.show_launcher_update()
+    assert len(calls) == (0 if outcome == "closed" else 1)
+    assert case["launched"] == []
+    operation.state = "ready"
+    with pytest.raises(setup_install.SetupConflict):
+        setup_install.show_launcher_update()
+
+
 @pytest.mark.parametrize("selection", [None, {"tag": "v9.8.6", "url": "unused"}])
 def test_launcher_installer_open_rejects_changed_or_absent_selection(launcher_update_package, monkeypatch, selection):
     case = launcher_update_package

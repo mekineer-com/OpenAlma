@@ -204,6 +204,22 @@ def _activate_existing_browser(url: str, *, reload: bool = False) -> bool:
         return False
 
 
+def _close_launcher_window(url: str) -> bool:
+    target = _browser_target(url)
+    if target is None:
+        return False
+    port, target_id, _page_url = target
+    try:
+        with connect(
+            f"ws://127.0.0.1:{port}/devtools/page/{urllib.parse.quote(target_id, safe='')}",
+            open_timeout=1, close_timeout=1,
+        ) as client:
+            client.send(json.dumps({"id": 1, "method": "Page.close"}))
+        return True
+    except (OSError, ValueError, WebSocketException):
+        return False
+
+
 def _window_position() -> tuple[int, int] | None:
     position = settings.read_paths().get("window_position")
     if not isinstance(position, dict):
@@ -310,6 +326,7 @@ def main() -> None:
         launcher_app.app, host=args.host, port=args.port, log_level="info", access_log=False
     )
     server = uvicorn.Server(config)
+    launcher_app.app.state.close_window_on_exit = False
     launcher_app.app.state.request_shutdown = lambda: setattr(server, "should_exit", True)
 
     family = socket.AF_INET6 if ":" in args.host else socket.AF_INET
@@ -333,6 +350,8 @@ def main() -> None:
                 daemon=True,
             ).start()
         server.run(sockets=[listener])
+        if not args.no_browser and launcher_app.app.state.close_window_on_exit:
+            _close_launcher_window(url)
 
 
 if __name__ == "__main__":

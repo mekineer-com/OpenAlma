@@ -6,7 +6,7 @@ function showLauncherMessage(message) {
 async function quitLauncher(button) {
   button.disabled = true;
   try {
-    var response = await fetch('/launcher/quit', {method: 'POST'});
+    var response = await fetch('/launcher/quit?close_window=true', {method: 'POST'});
     if (!response.ok) throw new Error('Exit failed');
     document.body.innerHTML = '<main><h1>OpenAlma Launcher has exited.</h1><p>You may close this tab.</p></main>';
   } catch (error) {
@@ -60,6 +60,7 @@ function renderLauncherUpdate(data) {
   var busy = data.state === 'running' || data.state === 'ready';
   button.disabled = busy;
   button.textContent = busy ? 'Updating…' : data.state === 'error' ? 'Retry' : data.state === 'opened' ? 'Open installer again' : 'Update';
+  document.getElementById('launcher-show-installer').hidden = data.state !== 'opened';
   document.getElementById('launcher-update-status').textContent =
     (data.step || '') + (data.detail ? ': ' + data.detail : '');
   progress.hidden = !busy;
@@ -95,6 +96,17 @@ async function pollLauncherUpdate(start) {
 
 function startLauncherUpdate() {
   return pollLauncherUpdate(true);
+}
+
+async function showLauncherInstaller(button) {
+  button.disabled = true;
+  try {
+    await launcherUpdateRequest('/launcher/update/show', 'POST');
+  } catch (error) {
+    showLauncherMessage(error.message);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function initServiceVisibility() {

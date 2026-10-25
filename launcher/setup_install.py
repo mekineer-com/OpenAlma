@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 import settings
+import psutil
 from process_flags import hidden_process_kwargs
 from windows_install import release_version
 
@@ -325,6 +326,37 @@ def open_launcher_update() -> dict[str, Any]:
             raise SetupError("Could not open the installer. Click Retry.") from exc
         _set_operation(operation, state="opened", step="Installer opened")
     return operation_status(root, "launcher")
+
+
+def show_launcher_update() -> dict[str, bool]:
+    if sys.platform != "win32":
+        raise SetupError("Automatic launcher updates are available on Windows")
+    with _LOCK:
+        operation = _OPERATIONS.get("launcher")
+        if operation is None or operation.state != "opened" or operation.installer_path is None:
+            raise SetupConflict("The launcher installer is not open")
+        installer = os.path.normcase(str(operation.installer_path))
+    pids = []
+    for process in psutil.process_iter(["exe"]):
+        if not process.info["exe"] or os.path.normcase(process.info["exe"]) != installer:
+            continue
+        try:
+            # Inno Setup runs its visible wizard in a child of the downloaded EXE.
+            pids.extend([process.pid, *(child.pid for child in process.children(recursive=True))])
+        except (psutil.Error, OSError):
+            continue
+    if pids:
+        script = ("$shell=New-Object -ComObject WScript.Shell; foreach($target in @("
+                  + ",".join(str(pid) for pid in pids)
+                  + ")){if($shell.AppActivate([int]$target)){exit 0}}; exit 1")
+        try:
+            result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+                                    timeout=10, **hidden_process_kwargs())
+            if result.returncode == 0:
+                return {"ok": True}
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise SetupError("Could not show the installer window") from exc
+    raise SetupError("No installer window was found. Use Open installer again if it was closed.")
 
 
 def _read_release(root: Path, filename: str) -> str | None:

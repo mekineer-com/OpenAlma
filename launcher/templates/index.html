@@ -21,6 +21,7 @@
       <form id="launcher-update-form" class="inline" onsubmit="event.preventDefault(); startLauncherUpdate()">
         <button class="btn" type="submit">Update</button>
       </form>
+      <button id="launcher-show-installer" class="btn" type="button" hidden onclick="showLauncherInstaller(this)">Show installer</button>
       <progress id="launcher-update-progress" hidden aria-label="Update download progress"></progress>
       <span id="launcher-update-status" role="status"></span>
       {% else %}

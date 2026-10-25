@@ -149,12 +149,16 @@ def launcher_update_status() -> dict:
 
 @app.post("/launcher/update")
 @app.post("/launcher/update/open")
+@app.post("/launcher/update/show")
 def launcher_update_action(request: Request) -> dict:
     if sys.platform != "win32":
         raise HTTPException(status_code=400, detail="Automatic launcher updates are available on Windows")
-    if active := launcher_update_readiness()["active_services"]:
+    show_only = request.url.path.endswith("/show")
+    if not show_only and (active := launcher_update_readiness()["active_services"]):
         raise HTTPException(status_code=409, detail="Stop all OpenAlma services before updating: " + ", ".join(active))
     try:
+        if show_only:
+            return setup_install.show_launcher_update()
         return (setup_install.open_launcher_update() if request.url.path.endswith("/open")
                 else setup_install.begin_launcher_update())
     except setup_install.SetupConflict as exc:
@@ -953,10 +957,12 @@ def install_service_logs(request: Request, service_name: str) -> HTMLResponse:
 
 
 @app.post("/launcher/quit")
-def launcher_quit(request: Request) -> dict[str, bool]:
+def launcher_quit(request: Request, close_window: bool = False) -> dict[str, bool]:
     shutdown = getattr(request.app.state, "request_shutdown", None)
     if shutdown is None:
         raise HTTPException(status_code=503, detail="Launcher shutdown is unavailable")
+    if close_window:
+        request.app.state.close_window_on_exit = True
     shutdown()
     return {"ok": True}
 

@@ -56,6 +56,9 @@ def test_launcher_update_controls_keep_linux_download_and_initial_stop_gate(wind
     html = _render({}, windows=windows, services_active=active,
                    launcher_update={"tag": "v1.0.0", "url": "https://example.org/installer.exe"})
     assert ('id="launcher-update-form"' in html) is windows
+    assert ('id="launcher-show-installer"' in html) is windows
+    if windows:
+        assert html.index('id="launcher-update-form"') < html.index('id="launcher-show-installer"') < html.index('id="launcher-update-progress"')
     assert ('>Download Update</a>' in html) is not windows
     download = re.search(r'<div id="update-download"([^>]*)>', html)
     assert ("hidden" in download.group(1)) is active
@@ -68,8 +71,8 @@ def test_launcher_update_poll_opens_once_and_has_explicit_retry():
     script = r"""
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 vm.runInThisContext(fs.readFileSync(process.argv[1],'utf8'));
-const button={},form={dataset:{},querySelector:()=>button},progress={removeAttribute:()=>{delete progress.value;}},status={};
-global.document={getElementById:id=>({'launcher-update-form':form,'launcher-update-progress':progress,'launcher-update-status':status}[id])};
+const button={},showButton={},form={dataset:{},querySelector:()=>button},progress={removeAttribute:()=>{delete progress.value;}},status={};
+global.document={getElementById:id=>({'launcher-update-form':form,'launcher-show-installer':showButton,'launcher-update-progress':progress,'launcher-update-status':status}[id])};
 let calls=[], state='running', fail=false;
 global.fetch=async(url,options)=>{
   calls.push([url,options.method]);
@@ -77,9 +80,17 @@ global.fetch=async(url,options)=>{
 };
 (async()=>{
   await Promise.all([startLauncherUpdate(),startLauncherUpdate()]);assert.equal(calls.length,1);
+  assert.equal(showButton.hidden,true);
   assert.equal(button.disabled,true);assert.equal(progress.value,25);assert.equal(progress.max,100);
   state='ready';await Promise.all([pollLauncherUpdate(),pollLauncherUpdate()]);
   assert.equal(calls.filter(c=>c[0].endsWith('/open')).length,1);assert.equal(button.textContent,'Open installer again');
+  assert.equal(showButton.hidden,false);
+  await showLauncherInstaller(showButton);
+  assert.deepEqual(calls.at(-1),['/launcher/update/show','POST']);
+  assert.equal(showButton.disabled,false);assert.equal(button.textContent,'Open installer again');
+  let notice='';global.showLauncherMessage=message=>{notice=message;};
+  fail=true;await showLauncherInstaller(showButton);assert.equal(notice,'Connection lost');
+  assert.equal(showButton.disabled,false);assert.equal(button.textContent,'Open installer again');fail=false;
   const count=calls.length;await pollLauncherUpdate();assert.equal(calls.length,count);
   state='running';fail=true;await startLauncherUpdate();assert.equal(button.textContent,'Retry');assert.equal(status.textContent,'Connection lost');
   const failed=calls.length;await pollLauncherUpdate();assert.equal(calls.length,failed);
@@ -87,6 +98,20 @@ global.fetch=async(url,options)=>{
   delete form.dataset.paused;state='opened';await pollLauncherUpdate();
   assert.equal(calls.filter(c=>c[0].endsWith('/open')).length,1);
 })().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+    subprocess.run(["node", "-e", script, str(path)], check=True)
+
+
+def test_exit_button_requests_owned_window_close():
+    path = Path(__file__).resolve().parents[1] / "launcher/static/launcher.js"
+    script = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+vm.runInThisContext(fs.readFileSync(process.argv[1],'utf8'));
+global.document={body:{}};
+global.fetch=async(url,options)=>{
+  assert.equal(url,'/launcher/quit?close_window=true');assert.equal(options.method,'POST');return {ok:true};
+};
+quitLauncher({}).catch(error=>{console.error(error);process.exitCode=1;});
 """
     subprocess.run(["node", "-e", script, str(path)], check=True)
 

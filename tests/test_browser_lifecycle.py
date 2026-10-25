@@ -20,6 +20,33 @@ def _isolated_profile(tmp_path, monkeypatch):
     monkeypatch.setattr(run.settings, "BROWSER_PROFILE_PATH", tmp_path / "old-config/chromium-profile")
 
 
+@pytest.mark.parametrize("owned_window", [True, False])
+def test_exit_closes_only_the_owned_launcher_page(monkeypatch, owned_window):
+    target = (41234, "target/id", "http://127.0.0.1:8765/settings") if owned_window else None
+    monkeypatch.setattr(run, "_browser_target", lambda _url: target)
+    messages = []
+
+    class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def send(self, message):
+            messages.append(json.loads(message))
+
+    def connect(url, **kwargs):
+        assert owned_window
+        assert url == "ws://127.0.0.1:41234/devtools/page/target%2Fid"
+        assert kwargs == {"open_timeout": 1, "close_timeout": 1}
+        return Client()
+
+    monkeypatch.setattr(run, "connect", connect)
+    assert run._close_launcher_window("http://127.0.0.1:8765") is owned_window
+    assert messages == ([{"id": 1, "method": "Page.close"}] if owned_window else [])
+
+
 def test_simultaneous_launches_reuse_the_winning_server(tmp_path):
     script = '''
 import sys, types
