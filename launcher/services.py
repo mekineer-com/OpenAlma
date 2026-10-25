@@ -499,6 +499,7 @@ def _runtime_state(spec: ServiceSpec) -> RuntimeState:
     )
     if (spec.name == "sillytavern" and spec.port is not None
             and service_pids and _within_startup_grace(spec)):
+        # ST readiness uses this listener directly; memU HTTP checks already refresh it.
         cached = _PORT_PID_CACHE.get(spec.port)
         if cached is not None and cached[1] is None:
             _clear_port_cache(spec)
@@ -601,7 +602,7 @@ def _read_channels_web_source_status() -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _channels_startup_current(runtime: RuntimeState, config: dict, web_source: dict) -> bool:
+def _channels_startup_current(spec: ServiceSpec, runtime: RuntimeState, config: dict, web_source: dict) -> bool:
     if runtime.pid not in runtime.service_pids:
         return False
     markers = _channels_whatsapp_child_markers()
@@ -611,8 +612,12 @@ def _channels_startup_current(runtime: RuntimeState, config: dict, web_source: d
         if pid not in runtime.child_pids:
             return False
         try:
-            if psutil.Process(pid).ppid() != runtime.pid:
-                return False
+            parent = psutil.Process(pid).ppid()
+            if parent != runtime.pid:
+                # Windows venv python.exe redirects to the interpreter that spawns these children.
+                if (os.name != "nt" or not _matches_service_process(spec, parent)
+                        or psutil.Process(parent).ppid() != runtime.pid):
+                    return False
         except (psutil.Error, OSError):
             return False
     if enabled == 2 and web_source.get("pid") != pids[1]:
@@ -1534,7 +1539,7 @@ def status(spec: ServiceSpec) -> dict:
         web_source_enabled = _coerce_bool(channels_config.get("web_source_enabled"), True)
         web_source = _read_channels_web_source_status()
         startup_pending = _within_startup_grace(spec) and not _channels_startup_current(
-            runtime, channels_config, web_source)
+            spec, runtime, channels_config, web_source)
         bridge = {} if startup_pending else _channels_bridge_health(channels_config)
         if startup_pending:
             web_source = {}

@@ -765,7 +765,7 @@ def _save_memu_config(changes: dict) -> None:
         backup = Path(str(path) + ".orig")
         number = 2
         while backup.exists():
-            backup = Path(str(path) + f"{number}.orig")
+            backup = Path(str(path) + f"_{number}.orig")
             number += 1
         shutil.copy2(path, backup)
         backup.chmod(0o600)

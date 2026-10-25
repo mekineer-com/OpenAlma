@@ -2075,7 +2075,9 @@ def test_channels_daemon_hides_stale_child_status_during_startup(tmp_path, monke
 
 
 @pytest.mark.parametrize("case", ["ready", "pairing", "web_disabled", "old_parent",
-                                  "missing_child", "dead_child", "stale_status", "old_listener"])
+                                  "missing_child", "dead_child", "stale_status", "old_listener",
+                                  "redirector", "redirector_on_posix", "old_interpreter",
+                                  "wrong_interpreter", "interpreter_gone"])
 def test_channels_recognizes_only_current_startup_health(tmp_path, monkeypatch, case):
     monkeypatch.setattr(services, "_CHANNELS_HOME", tmp_path)
     monkeypatch.setattr(services, "_within_startup_grace", lambda _spec: True)
@@ -2086,17 +2088,25 @@ def test_channels_recognizes_only_current_startup_health(tmp_path, monkeypatch, 
         pidfile.write_text(str(pid))
     monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState(
         pid=111, service_pids=(111,), child_pids=() if case == "missing_child" else (222, 333), running=True))
+    redirector = case in {"redirector", "redirector_on_posix", "old_interpreter",
+                          "wrong_interpreter", "interpreter_gone"}
+    if redirector:
+        monkeypatch.setattr(services, "os", SimpleNamespace(name="posix" if case == "redirector_on_posix" else "nt"))
+        monkeypatch.setattr(services, "_matches_service_process",
+                            lambda _spec, pid: pid == 444 and case != "wrong_interpreter")
 
     def process(pid):
-        if case == "dead_child":
+        if case == "dead_child" or case == "interpreter_gone" and pid == 444:
             raise services.psutil.NoSuchProcess(pid)
+        if redirector:
+            return SimpleNamespace(ppid=lambda: (999 if case == "old_interpreter" else 111) if pid == 444 else 444)
         return SimpleNamespace(ppid=lambda: 999 if case == "old_parent" else 111)
 
     monkeypatch.setattr(services.psutil, "Process", process)
     monkeypatch.setattr(services, "_port_listener_pid", lambda _port, **_kwargs: 999 if case == "old_listener" else 222)
     monkeypatch.setattr(services, "_read_channels_web_source_status", lambda: {
         "pid": 444 if case == "stale_status" else 333, "state": "ready"})
-    current = case in {"ready", "pairing", "web_disabled"}
+    current = case in {"ready", "pairing", "web_disabled", "redirector"}
 
     def bridge(_config=None):
         assert current, "Old child health must not be consulted during grace"

@@ -463,7 +463,7 @@ def test_iris_address_save_preserves_config_and_backs_up(tmp_path, monkeypatch, 
         assert client.post("/iris/address", data={"public_base_url": address}, follow_redirects=False).status_code == 303
         assert json.loads(path.read_text()) == {"mentra": {**(mentra or {}), "public_base_url": address}, "other": "keep"}
     assert Path(str(path) + ".orig").read_text() == original
-    assert json.loads(Path(str(path) + "2.orig").read_text())["mentra"]["public_base_url"] == "http://100.90.1.2"
+    assert json.loads(Path(str(path) + "_2.orig").read_text())["mentra"]["public_base_url"] == "http://100.90.1.2"
 
 
 def test_policy_save_returns_to_hermes(monkeypatch):
@@ -1005,6 +1005,25 @@ def test_workspace_save_preserves_config_and_uses_live_api_when_running(tmp_path
         with ThreadPoolExecutor(max_workers=2) as pool:
             list(pool.map(app._save_memu_config, [{"first": 1}, {"second": 2}]))
         assert json.loads(path.read_text()) == {**original, "claude_code_workspace": "", "first": 1, "second": 2}
+
+
+def test_memu_config_backup_numbers_preserve_old_names(tmp_path, monkeypatch):
+    path = tmp_path / "mcp-memu-server/config.json"
+    path.parent.mkdir()
+    original = '{"keep": "fictional setting"}\n'
+    path.write_text(original)
+    for name in ("config.json.orig", "config.json2.orig", "config.json_2.orig"):
+        path.with_name(name).write_text(name)
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "all_services", lambda: [])
+
+    app._save_memu_config({"new": True})
+
+    assert json.loads(path.read_text()) == {"keep": "fictional setting", "new": True}
+    assert path.with_name("config.json_3.orig").read_text() == original
+    for name in ("config.json.orig", "config.json2.orig", "config.json_2.orig"):
+        assert path.with_name(name).read_text() == name
+    assert not path.with_name("config.json3.orig").exists()
 
 
 def test_host_paths_layout_and_independent_settings_saves(tmp_path, monkeypatch):
