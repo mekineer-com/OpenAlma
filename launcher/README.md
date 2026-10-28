@@ -64,8 +64,9 @@ to open OpenAlma from the Start menu without a terminal window. Beta is availabl
 on the Stable channel. Launcher startup/tests are verified; full Windows component
 installation remains separately qualified.
 
-The launcher follows Edge's replacement process when it hands off startup, so
-that handoff no longer stops the server while the app window remains open.
+When a new OpenAlma release is available, stop all apps and choose **Update**.
+The launcher downloads and opens the new installer; **Show installer** brings
+that installer window forward if it is hidden.
 
 The launcher downloads the matching Atomic Windows server during **Install**
 and prepares its web dependencies without Rust or
@@ -92,10 +93,13 @@ The component manifest selects the matching prebuilt server package.
 - Finish your Iris conversation before stopping the memory services.
 - If memory processing fails, the launcher shows the problem and a **Retry**
   button. You decide when to try again; other Souls can continue independently.
-- Closing the launcher does not stop the apps it started. Stop them first if
-  you want to shut down OpenAlma completely.
-- Stop all OpenAlma apps before updating, repairing or uninstalling. If an update
-  needs recovery, follow the launcher's **Recover** action.
+- **Exit** shuts down the launcher and closes its own window. Neither Exit nor
+  closing the window stops the apps it started; stop them first if you want to
+  shut down OpenAlma completely.
+- Stop all OpenAlma apps before updating, repairing or uninstalling. Updating
+  the memory services first backs up their settings and Soul databases, and a
+  failed update puts the previous version back. If the launcher still shows
+  **Recover**, choose it to finish restoring.
 
 ## Echo (In Development)
 

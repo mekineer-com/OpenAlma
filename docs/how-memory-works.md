@@ -27,7 +27,7 @@ The fifth stored type is **Episodes** — short titled summaries of what happene
 
 ## Photos are memories too
 
-A photo you share through Iris becomes a memory: a description of what it shows, plus a stored impression of the image itself that search can match against directly. Ask her about something you saw and she searches photos in their own lane, apart from what was said — so an image isn't drowned out by conversation that happened to use the same words, and it can be found by what it looked like, not only by the words in its description.
+A photo you share through Iris, or a frame she chooses to keep from a Video call, becomes a memory: a description of what it shows, plus a stored impression of the image itself that search can match against directly. Ask her about something you saw and she searches photos in their own lane, apart from what was said — so an image isn't drowned out by conversation that happened to use the same words, and it can be found by what it looked like, not only by the words in its description.
 
 ## Dossiers
 

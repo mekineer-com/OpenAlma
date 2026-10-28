@@ -32,7 +32,7 @@ We often call these **dossiers** — a word borrowed from Nomi, whose format sha
 
 **How she finds the right memory.** Two searches run at once — one on meaning, one on the actual words — and their results are merged, so a memory surfaces whether you phrased it the same way or not. What comes back is then weighed by how well it matches, how recent it is, and how much it mattered. If the conversation is about a particular stretch of time, memories from that period get a nudge upward. And when a category's prose makes a claim, she can pull up the memories behind it to check her own reasoning.
 
-**What she sees.** Photos shared during an Iris sitting — from the phone's camera or gallery — are remembered as images with their own captions, and searched in their own lane. Ask about something you saw, and the picture surfaces instead of text that merely mentions the same words.
+**What she sees.** Photos shared during an Iris sitting — from the phone's camera or gallery, or frames she chooses to keep from a Video call — are remembered as images with their own captions, and searched in their own lane. Ask about something you saw, and the picture surfaces instead of text that merely mentions the same words.
 
 ## Her Inner Life
 
@@ -59,7 +59,7 @@ OpenAlma is in beta, available on the launcher's Stable channel. It works, it's 
 
 - [SillyTavern](sillytavern.md) — chat client
 - [Hermes Channels](whatsapp.md) — messaging networks (WhatsApp for now)
-- [Iris Video Chat](iris.md) — voice through Mentra, photos from your phone
+- [Iris Video Chat](iris.md) — voice and live camera through Mentra, photos from your phone
 - [Atomic Mind Map](mind-map.md) — graphical presentation of her memory with interactive chat
 
 **The concept guides:**

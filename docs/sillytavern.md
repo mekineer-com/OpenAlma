@@ -23,7 +23,7 @@ Choose a persona on the saved character card before turning memU on. Each Soul h
 
 The panel reads `mcp-memu-server/config.json`, including hand edits, and can edit its model settings. Choose your configured OpenAI-compatible providers through ST; unsupported provider formats are unavailable. **SillyTavern Replies (SRMM)** stays in ST and controls ST replies, APImw synthesis and Narrative Suggestion. Other OpenAlma App Replies edits the shared server connection, except Iris's voice model.
 
-Advanced Mapping chooses models for memory work and copies those connections into the shared config, so they work with ST closed. Unchecking it asks for confirmation before removing those overrides, including any hand edits; ST retains profile/model choices for re-enabling. Choosing SRMM or ST selected for a memory step copies the connection once, without following later changes. **Use Claude Code** switches server work to Claude Code while SRMM remains an independent API choice; hiding controls in Claude Code mode does not disable them. The Launcher explains context-window setup for Memorize.
+Advanced Mapping chooses models for memory work and copies those connections into the shared config, so they work with ST closed. Unchecking it asks for confirmation before removing those overrides, including any hand edits; ST retains profile/model choices for re-enabling. A memory step set to SRMM, ST selected or a named profile keeps following that source's later changes while SillyTavern is open; config.json keeps the server's own values. **Use Claude Code** switches server work to Claude Code while SRMM remains an independent API choice; hiding controls in Claude Code mode does not disable them. The Launcher explains context-window setup for Memorize.
 
 Turning memU off restores plain ST replies, without deleting the Soul or changing their memU persona binding. ST's native persona controls remain usable; no uninstall is needed.
 
@@ -46,7 +46,7 @@ shutdown leaves MCP running.
 |--------|---------|------|
 | **Override Summarizer** | on | If on, replace SillyTavern's summary message with memU's. If off, memU's renders alongside it. |
 | **Import Lorebooks** | on | Publishes memU categories as SillyTavern lorebooks named `memU - <Character> - <Category>`, so the soul's knowledge shows up in ST's world info. Unchecking deletes any existing ones for this character. |
-| **Mental Health Addon** | off, shared server setting | Reads and edits `retrieve.mental_health_query` in `config.json`, also affecting WhatsApp. When the conversation touches a relevant theme, she can draw on one of 15 curated coping entries (rumination, grief, panic, self-criticism, loneliness, etc.). Fresh installs default off; existing explicit config values are preserved. |
+| **Mental Health Addon** | off, per Soul | Applies to this Soul's SillyTavern chats, saved in this browser. When the conversation touches a relevant theme, she can draw on one of 15 curated coping entries (rumination, grief, panic, self-criticism, loneliness, etc.). Other surfaces such as WhatsApp follow the server's `retrieve.mental_health_query` setting, off by default. |
 
 ## Relationships
 

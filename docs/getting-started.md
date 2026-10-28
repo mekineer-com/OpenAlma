@@ -178,9 +178,10 @@ Memorize works the same way as SillyTavern: sleep gaps trigger extraction automa
 
 **Iris** is the OpenAlma MiniApp that gives her sight and hearing — where she stops being text. Voice comes through Mentra, with optional smartglasses; photos come from your phone's camera or gallery. The MiniApp talks to your own server for memory and to Google Gemini Live for voice and photos.
 
-- **Continuous conversation** — speak to her naturally, voice to voice (native audio, no transcription round-trip in between).
+- **Audio or Video calls** — speak to her naturally, voice to voice (native audio, no transcription round-trip in between). A Video call also shows her your phone camera's view, and she may keep a few frames as memories.
+- **Thinking switch** — choose Gemini 3.8 Live or its extended-thinking variant before a call.
 - **Manual mode** — she records one memory-only take, then waits for your Send or Redo. Done never sends by itself.
-- **Photos she remembers** — take or choose a phone photo during a sitting; it goes to Gemini, and its caption must be acknowledged before it is filed as a visual memory.
+- **Photos she remembers** — take or choose a phone photo during a sitting; it goes to Gemini, and its caption must be acknowledged before it is filed as a visual memory. A failed filing can be retried or discarded from Iris.
 - **Sittings that survive** — Iris can reconnect after a short drop; longer outages end the sitting, and a reply in progress may be cut off.
 - **Private updates** — new versions arrive through your launcher the same private way she installed; no app store involved.
 

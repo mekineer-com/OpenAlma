@@ -7,7 +7,7 @@
 
 # OpenAlma
 
-_Last updated: 2026-10-16_
+_Last updated: 2026-10-28_
 
 **OpenAlma, by Team GhostMaker**
 
@@ -25,7 +25,7 @@ OpenAlma runs locally on your machine, watches your conversations, and quietly b
 
 - **She remembers.** Conversations become episodes with their own stories; the people, patterns, and knowledge in them become dossiers she maintains and revises. Photos shared through Iris are remembered as images.
 - **She has an inner life.** She rehearses or saves working thoughts before replying, carries those thoughts between turns, and reflects on her experience during consolidation.
-- **She meets you where you are.** Chat through SillyTavern, WhatsApp, or Iris — voice through Mentra, with photos from your phone's camera or gallery. See and correct what she knows in Atomic.
+- **She meets you where you are.** Chat through SillyTavern, WhatsApp, or Iris — voice through Mentra, with photos from your phone's camera or gallery, or a live camera view in Video calls. See and correct what she knows in Atomic.
 
 Her memory database stays on your machine. Replies and memory work use your configured AI providers; embeddings use Google Gemini, and Iris sends voice and photos to Gemini Live.
 
@@ -64,13 +64,13 @@ You can also trigger extraction manually without waiting. Iris photos are filed 
 
 **OpenAlma Beta** is a normal release on the launcher's **Stable** channel. Beta describes its maturity, not its update channel.
 
-Back up your data before upgrades. Launcher-managed core updates include database backups, supported migrations and recovery; compatibility with every historical database is not guaranteed. Start with a test companion before importing irreplaceable conversations.
+Back up your data before upgrades. Launcher-managed core updates back up the Soul databases and memory-server settings, apply supported migrations, and restore the backup if an update fails; compatibility with every historical database is not guaranteed. Start with a test companion before importing irreplaceable conversations.
 
 Back up anything you want to retain before **Remove Everything**; it permanently removes application data and settings.
 
 Use the launcher to install matching components and follow any component Update buttons after upgrading the launcher. The [component manifest](release-components.json) pins compatible versions; unchanged components keep their earlier versions. The Mentra phone app keeps its separate version line.
 
-Windows users can download the [latest Beta installer](https://github.com/mekineer-com/OpenAlma/releases/latest). The launcher shows installation steps and elapsed time, missing basic AI settings, and Hermes Setup before a Soul is selected. Page display no longer repeats heavy Python validation. Windows launcher installation and upgrades have been tested; full Windows component-install acceptance remains separate. Atomic's compatible Windows server is downloaded during Install, without Rust or Visual Studio. Other platforms still need a manually built Rust server binary.
+Windows users can download the [latest Beta installer](https://github.com/mekineer-com/OpenAlma/releases/latest). The launcher shows installation steps and elapsed time, missing basic AI settings, and Hermes Setup before a Soul is selected. Windows launcher installation and upgrades have been tested; full Windows component-install acceptance remains separate. Atomic's compatible Windows server is downloaded during Install, without Rust or Visual Studio. Other platforms still need a manually built Rust server binary.
 
 ### Selected release tags
 
@@ -95,6 +95,7 @@ Windows users can download the [latest Beta installer](https://github.com/mekine
 | `v0.1.23` | Faster Windows navigation, restored SillyTavern controls, optional default-off Auto Start, safer shared-server shutdown, shared Mental Health settings, and Soul names in the launcher and Iris |
 | `v0.1.24` | Iris microphone selection persists across sittings (coordinated memU/Iris pins); Hermes starts through explicit WhatsApp pairing, service buttons stay stable across status polls, Linux shortcuts without a hardcoded home |
 | `v0.1.25` | SillyTavern model-source following and fixed Soul personas; ordinary ST chat opening stays independent of the memory server; corrected WhatsApp pairing readiness and Iris history labels |
+| `v0.1.26` | Gemini 3.8 Live and Thinking for Iris 0.1.29 (Audio or Video calls, photo captions, retryable photo filing); OpenAlma Mentra build 302014047 with account-free use; launcher errors stay visible and Iris setup works while the memory server is down; settings included in update backups; WhatsApp Baileys security update |
 
 ---
 
@@ -128,7 +129,7 @@ Bugs or specific changes? Open an issue on the relevant repo.
 
 ## Future Development
 
-**Streaming video** — today she sees in captured moments; the direction is continuous sight — watching what you watch, live, instead of photo by photo.
+**Continuous sight** — Iris Video calls already show her the phone camera's view every couple of seconds, and she keeps a few frames she chooses. The direction is sight that is truly continuous — watching what you watch, live.
 
 ---
 

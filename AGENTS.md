@@ -8,6 +8,8 @@ those introductions. Task progress belongs in its plan or audit.
 
 - `launcher/run.py`: bootstrap and launcher process entry.
 - `launcher/app.py`, `services.py`, `soul.py`: web app, service lifecycle and Soul setup.
+- `launcher/setup_install.py`: component install, updates, pre-update backup and recovery.
+- `launcher/windows_*.py`, `installer/windows/`: packaged Windows installer, stop and removal.
 - `launcher/templates/`, `launcher/static/`: launcher and Echo UI.
 - `release-components.json`: coordinated component versions and installation sources.
 - `docs/`: the public website; describe released behavior in plain language.

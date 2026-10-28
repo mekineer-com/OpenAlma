@@ -11,9 +11,9 @@ to your OpenAlma Soul. No glasses or Mentra Store are required.
 
 1. Connect your phone and server through WireGuard or another trusted private connection, then configure the [proxy and server settings](#connection) below.
 2. [Download the OpenAlma Mentra APK](https://github.com/mekineer-com/MentraOS/releases/latest). Open the downloaded file and allow installation when Android asks. If no release is available, no public APK is published yet.
-3. Open OpenAlma Mentra and sign in. If it cannot connect, enter your OpenAlma server address in Mentra Settings.
+3. Open OpenAlma Mentra. Build 302014047 and later can run without a Mentra account: new installs start that way, and a signed-in install can switch with **Use without Mentra account** in Settings (force-stop and reopen the app to apply it; there is currently no way back to account mode). If it cannot connect, enter your OpenAlma server address in Mentra Settings.
 4. In the launcher's Services section, click **Install** beside your phone app. Keep Mentra in the foreground; Iris installs automatically.
-5. Open Iris, allow microphone access, choose or create a Soul, then tap **Start**.
+5. Open Iris, allow microphone access, choose or create a Soul, then tap **Audio** or **Video**.
 
 For [stock Mentra](https://play.google.com/store/apps/details?id=com.mentra.mentra),
 use **Setup → Stock Mentra installation** in the launcher instead.

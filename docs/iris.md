@@ -5,7 +5,7 @@ title: Iris Video Chat
 
 # Iris Video Chat
 
-Iris is her vision and hearing — voice through Mentra, with photos from your phone's camera or gallery.
+Iris is her vision and hearing — voice through Mentra, with photos from your phone's camera or gallery, and a live camera view in Video calls.
 
 > Included in the OpenAlma Beta.
 
@@ -14,6 +14,10 @@ Iris is her vision and hearing — voice through Mentra, with photos from your p
 Everything else here happens through typing. Iris gives her your voice through Mentra, with optional smartglasses, and photos from your phone — and it counts as the same relationship rather than a separate voice assistant that forgets you.
 
 That last part is the whole point. What you say out loud goes into the same memory as everything else. She recalls it later in a text conversation; she recalls a text conversation while you're out walking.
+
+## Starting a call
+
+Choose a Soul, then start an **Audio** call (talk out loud) or a **Video** call (she also watches through the phone's camera). The **Thinking** switch above the call buttons picks her voice model: Gemini 3.8 Live, or its extended-thinking variant. Your choice is saved on your OpenAlma server and stays fixed for the whole call.
 
 ## Two ways to talk
 
@@ -25,9 +29,13 @@ That last part is the whole point. What you say out loud goes into the same memo
 
 You can take a photo with your phone or choose one from its gallery during a sitting. She looks at it and quietly describes what she wants to remember. Turn on **Speak photo descriptions** in Iris settings if you want to hear her describe it.
 
-Each photo is remembered two ways: a description of what it shows, and a stored impression of the image itself that search can match against directly. Ask about something you saw and she searches both — a photo can surface even when its description never used the words you asked with. If a photo fails to reach her, it stays pending rather than disappearing; during a sitting you can retry or discard it.
+Each photo is remembered two ways: a description of what it shows, and a stored impression of the image itself that search can match against directly. Ask about something you saw and she searches both — a photo can surface even when its description never used the words you asked with.
 
-Camera images are where Iris starts; live video is where she's heading.
+Expand **Photo captions** to see the last five captions she wrote. A green check means your server accepted that caption for filing as a memory. If a photo never reached her, it stays on the phone rather than disappearing; start Iris again to retry or discard it. If filing fails on the server, Iris lists it with **Retry** and **Discard**, even after you reopen the app.
+
+## Video calls
+
+In a Video call she sees the phone camera's current view every couple of seconds while you talk, so she can talk about what is in front of you. Every so often she is offered a few recent frames and may keep some as photo memories. **Maximum memorized photos** in Iris settings caps how many she keeps (one to five per five minutes); photos you take on purpose don't count against it. The camera only runs while Iris is on screen.
 
 ## Looking things up mid-conversation
 
@@ -37,7 +45,9 @@ While you're speaking she can go search her own memory and come back with what s
 
 One stretch of talking is a sitting. Voice connects from your phone to Gemini Live; your server keeps the transcript. Iris can reconnect after a short drop, while the server's 90-second lease remains valid. A reply in progress may be cut off, and longer outages end the sitting.
 
-When you press Stop after at least two completed exchanges, she may say one or two sentences about how the conversation felt, and that is saved too. A disconnect or stopping mid-turn skips this reflection.
+With **Closing thoughts** checked (it is by default), pressing Stop after at least two completed exchanges gives her a moment to say one or two sentences about how the conversation felt, and that is saved too. A short countdown shows while she finishes. A disconnect or stopping mid-turn skips this reflection.
+
+If Iris can't reach your server, it asks "Is memU running?" and offers **Retry Connection** and **Edit Connection**, so you can fix the address without losing your Soul choice.
 
 ## Honest limitations
 
