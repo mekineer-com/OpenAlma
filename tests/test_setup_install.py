@@ -1438,6 +1438,14 @@ def test_sillytavern_can_start_before_integration_setup_finishes(tmp_path):
 
     assert setup_install.start_issue("sillytavern", tmp_path) == ""
     assert "memU server plugin" in setup_install.optional_issue("sillytavern", tmp_path)
+    for path in (stock / "plugins/memu-plugin/dist/index.js",
+                 stock / "data/default-user/extensions/memu-extension/dist/index.js"):
+        path.parent.mkdir(parents=True)
+        path.write_text("")
+    plugin = stock / "plugins/memu-plugin"
+    (plugin / "package.json").write_text('{"dependencies": {}}')
+    (plugin / "node_modules").mkdir()
+    assert setup_install.optional_setup_status("sillytavern", tmp_path) == {"ready": True}
 
 
 def test_start_waits_for_same_service_install_operation(tmp_path, monkeypatch):

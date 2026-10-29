@@ -681,7 +681,7 @@ def test_iris_status_tracks_target_not_lock_and_preserves_rows_on_outage(tmp_pat
               "package_name": services.IRIS_PACKAGE}]}
     monkeypatch.setattr(services, "mentra_readiness", lambda: {"ready": False, "step": "server"})
     stopped = services.status(spec)
-    assert stopped["detail"] == "Start memU Server in Services"
+    assert stopped["detail"] == ""
     assert stopped["installations"][0]["detail"] == ""
     mentra["installations"][0]["seen_at"] = time.time() - 3600
     assert services.status(spec)["installations"][0]["detail"].startswith("Last reached server")
@@ -1945,6 +1945,7 @@ def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monke
 
 
 def test_channels_needs_soul_selection_before_start(tmp_path, monkeypatch):
+    monkeypatch.setattr(services, "_channels_memu_available", lambda: False)
     monkeypatch.setattr(services, "_CHANNELS_HOME", tmp_path)
     monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState())
     monkeypatch.setattr(services, "_spawn_background", lambda *_args, **_kwargs: pytest.fail("Must not start before setup"))
@@ -1985,7 +1986,29 @@ def test_channels_needs_soul_selection_before_start(tmp_path, monkeypatch):
         assert status["state"] == "stopped", snapshot
 
 
-def test_channels_daemon_status_uses_bridge_and_web_source_health(tmp_path, monkeypatch):
+@pytest.mark.parametrize("override", [False, True])
+def test_channels_checks_its_configured_memu_endpoint(monkeypatch, override):
+    monkeypatch.setattr(services, "_read_channels_config", lambda: {"memu_base_url": "http://memu.invalid:1234/"})
+    monkeypatch.delenv("CHANNELS_MEMU_BASE_URL", raising=False)
+    if override:
+        monkeypatch.setenv("CHANNELS_MEMU_BASE_URL", "http://override.invalid/")
+    seen = []
+    def healthy(url, timeout):
+        seen.append((url, timeout))
+        return _FakeResponse()
+    monkeypatch.setattr(services.urllib.request, "urlopen", healthy)
+    assert services._channels_memu_available()
+    assert seen == [("http://override.invalid/health" if override else "http://memu.invalid:1234/health", 0.5)]
+    def offline(*_args, **_kwargs):
+        raise OSError("Connection refused")
+    monkeypatch.setattr(services.urllib.request, "urlopen", offline)
+    assert not services._channels_memu_available()
+
+
+@pytest.mark.parametrize("web_state,memu_available,expected", [
+    ("pairing", True, "starting"), ("ready", True, "healthy"), ("ready", False, "waiting"),
+])
+def test_channels_daemon_status_uses_bridge_and_web_source_health(tmp_path, monkeypatch, web_state, memu_available, expected):
     monkeypatch.setattr(
         services,
         "_runtime_state",
@@ -1997,7 +2020,8 @@ def test_channels_daemon_status_uses_bridge_and_web_source_health(tmp_path, monk
         ),
     )
     monkeypatch.setattr(services, "_channels_bridge_health", lambda _config=None: {"status": "connected", "mode": "bot"})
-    monkeypatch.setattr(services, "_read_channels_web_source_status", lambda: {"state": "pairing"})
+    monkeypatch.setattr(services, "_read_channels_web_source_status", lambda: {"state": web_state})
+    monkeypatch.setattr(services, "_channels_memu_available", lambda: memu_available)
     spec = services.ServiceSpec(
         name="channels-daemon",
         label="Hermes Channels",
@@ -2009,11 +2033,12 @@ def test_channels_daemon_status_uses_bridge_and_web_source_health(tmp_path, monk
 
     status = services.status(spec)
 
-    assert status["state"] == "starting"
-    assert status["status_label"] == "◐ starting"
+    assert status["state"] == expected
+    assert status["status_label"] == {"starting": "◐ starting", "healthy": "● healthy", "waiting": "○ waiting for memU Server"}[expected]
+    assert status["stoppable"] and not status["startable"]
     assert status["children"] == [
         {"name": "bridge", "state": "connected", "detail": "mode bot"},
-        {"name": "web-source", "state": "pairing", "detail": ""},
+        {"name": "web-source", "state": web_state, "detail": ""},
     ]
 
 
@@ -2079,6 +2104,7 @@ def test_channels_daemon_hides_stale_child_status_during_startup(tmp_path, monke
                                   "redirector", "redirector_on_posix", "old_interpreter",
                                   "wrong_interpreter", "interpreter_gone"])
 def test_channels_recognizes_only_current_startup_health(tmp_path, monkeypatch, case):
+    monkeypatch.setattr(services, "_channels_memu_available", lambda: True)
     monkeypatch.setattr(services, "_CHANNELS_HOME", tmp_path)
     monkeypatch.setattr(services, "_within_startup_grace", lambda _spec: True)
     monkeypatch.setattr(services, "_read_channels_config", lambda: {

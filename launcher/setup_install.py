@@ -1570,8 +1570,7 @@ def optional_setup_status(service_name: str, root: Path) -> dict[str, Any]:
         }
     issue = optional_issue(service_name, root) or (operation["detail"] if operation["state"] == "error" else "")
     if not issue:
-        guidance = "Enable server plugins in SillyTavern configuration" if service_name == "sillytavern" else ""
-        return {"ready": True, "guidance": guidance}
+        return {"ready": True}
 
     present = _optional_repositories_complete(service_name, root)
     manual = _optional_tool_issue(service_name) or (

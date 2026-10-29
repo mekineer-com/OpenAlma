@@ -594,6 +594,16 @@ def _channels_bridge_health(config: dict | None = None) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _channels_memu_available() -> bool:
+    base_url = str(os.environ.get("CHANNELS_MEMU_BASE_URL") or _read_channels_config().get("memu_base_url")
+                   or f"http://127.0.0.1:{MEMU_SERVER_PORT}").rstrip("/")
+    try:
+        with urllib.request.urlopen(f"{base_url}/health", timeout=0.5) as response:
+            return response.status == 200
+    except (OSError, ValueError):
+        return False
+
+
 def _read_channels_web_source_status() -> dict:
     try:
         data = json.loads((_CHANNELS_HOME / "whatsapp" / "web_source_status.json").read_text(encoding="utf-8"))
@@ -1365,7 +1375,7 @@ def _iris_product_status(
     elif runtime.port_blocked:
         state, label, detail, action = "blocked", "▲ installer port occupied", "Free port 6789 before installing Iris", None
     elif readiness and readiness.get("step") == "server":
-        state, label, detail, action = "stopped", "○ waiting for memU Server", "Start memU Server in Services", None
+        state, label, detail, action = "stopped", "○ waiting for memU Server", "", None
     elif setup_required:
         state, label, detail, action = "setup", "▲ setup needed", str(readiness.get("reason") or "Open Iris & Phone Setup"), "settings"
     elif not mentra:
@@ -1564,8 +1574,9 @@ def status(spec: ServiceSpec) -> dict:
             state = "pairing"
             label = "Pairing required"
         elif bridge_state == "connected" and web_source_ok:
-            state = "healthy"
-            label = "● healthy"
+            available = _channels_memu_available()
+            state = "healthy" if available else "waiting"
+            label = "● healthy" if available else "○ waiting for memU Server"
         elif bridge_state in {"connecting", "starting"} or web_source_starting:
             state = "starting"
             label = "◐ starting"

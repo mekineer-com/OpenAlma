@@ -602,7 +602,7 @@ class MentraStatusTest(TestCase):
             {"ready": False, "step": "server", "reason": "Start memU Server"},
         )
         self.assertIsNone(result["action_kind"])
-        self.assertEqual(result["detail"], "Start memU Server in Services")
+        self.assertEqual(result["detail"], "")
 
     def test_iris_release_status_verifies_wrapper_independently_of_parent_pid(self) -> None:
         root = Path(self._testMethodName)

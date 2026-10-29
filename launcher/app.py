@@ -276,8 +276,6 @@ def _setup_aware_status(spec: services.ServiceSpec, root: Path, *, verify_runtim
         return ({**runtime, **row, "ready": False, "install_running": bool(setup.get("install_running")),
                  "install_progress": setup.get("install_progress")}
                 if spec.name == "iris-server" else row)
-    if setup["guidance"]:
-        runtime["detail"] = "; ".join(filter(None, (runtime.get("detail"), setup["guidance"])))
     return runtime
 
 
