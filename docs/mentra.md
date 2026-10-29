@@ -18,9 +18,9 @@ to your OpenAlma Soul. No glasses or Mentra Store are required.
 For [stock Mentra](https://play.google.com/store/apps/details?id=com.mentra.mentra)
 or [Glassly](https://play.google.com/store/apps/details?id=com.tetramo.glassly),
 use **Setup → Stock Mentra or Glassly installation** in the launcher instead.
-Both use the same Iris bundle. In Glassly, open **Miniapp Developer** from the
-home screen, or **Settings → Advanced settings → Miniapp Developer Settings**,
-then choose **Scan Miniapp QR Code**.
+Both use the same Iris bundle. In Glassly, open **Settings** and tap the release
+number ten times. Open **Debug settings**, enable **Developer Tools**, then go
+back and open **Miniapp Developer Settings → Scan Miniapp QR Code**.
 
 ## Connection
 
