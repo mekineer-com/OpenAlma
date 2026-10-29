@@ -32,6 +32,8 @@ ROOT = Path(__file__).resolve().parent
 LAUNCHER_ID = "openalma-launcher"
 _ECHO_CONFIRM_LOCKS: dict[str, Lock] = {}
 _CONFIG_WRITE_LOCK = Lock()
+# Admission and process spawn must not race an install touching the same runtime.
+_SERVICE_INSTALL_LOCK = Lock()
 templates = Jinja2Templates(
     directory=str(ROOT / "templates"),
     context_processors=[lambda _request: {"launcher_version": setup_install.read_packaged_release() or "Development"}],
@@ -884,14 +886,24 @@ def soul_workspace_save(soul_workspace: str = Form(default="")) -> RedirectRespo
 
 @app.post("/install/{service_name}")
 def install_service(service_name: str) -> RedirectResponse:
+    with _SERVICE_INSTALL_LOCK:
+        return _install_service(service_name)
+
+
+def _install_service(service_name: str) -> RedirectResponse:
     root = settings.setup_apps_root() if service_name == "memu-server" else settings.apps_root()
     if root is None:
         raise HTTPException(status_code=400, detail="Install core and restart OpenAlma first")
-    spec = next((item for item in services.services_for_root(root) if item.name == service_name), None)
+    specs = services.services_for_root(root)
+    spec = next((item for item in specs if item.name == service_name), None)
     if spec is None:
         raise HTTPException(status_code=404, detail=f"Unknown service: {service_name}")
     if _runtime_active(services.status(spec)):
         raise HTTPException(status_code=409, detail=f"Stop {spec.label} before changing its installation")
+    if service_name == "atomic":
+        core = next((item for item in specs if item.name == "memu-server"), None)
+        if core is not None and _runtime_active(services.status(core)):
+            raise HTTPException(status_code=409, detail="Stop memU Server before Atomic installation updates its Python environment")
     try:
         if service_name == "memu-server":
             setup_install.begin_core_install(root)
@@ -994,6 +1006,11 @@ def logs(request: Request, service_name: str, lines: int = 200) -> HTMLResponse:
 
 @app.post("/service/{service_name}/start")
 def service_start(service_name: str) -> dict:
+    with _SERVICE_INSTALL_LOCK:
+        return _service_start(service_name)
+
+
+def _service_start(service_name: str) -> dict:
     if service_name == "iris-server":
         raise HTTPException(status_code=404, detail="Use Iris Install")
     spec = _find_service(service_name)

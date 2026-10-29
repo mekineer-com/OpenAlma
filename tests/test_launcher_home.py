@@ -1078,6 +1078,64 @@ def test_install_conflict_returns_http_409(tmp_path, monkeypatch):
     assert response.status_code == 409
 
 
+def test_atomic_install_requires_memory_server_stopped(tmp_path, monkeypatch):
+    specs = [services.ServiceSpec(name, name, [], tmp_path, tmp_path / f"{name}.log", tmp_path / f"{name}.pid")
+             for name in ("atomic", "memu-server")]
+    begun = []
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "services_for_root", lambda _root: specs)
+    monkeypatch.setattr(app.services, "status", lambda spec: {"running": spec.name == "memu-server"})
+    monkeypatch.setattr(app.setup_install, "begin_optional_install", lambda *_args: begun.append(True))
+    response = TestClient(app.app, base_url="http://127.0.0.1").post("/install/atomic")
+    assert response.status_code == 409 and "Stop memU Server" in response.json()["detail"]
+    assert not begun
+
+
+@pytest.mark.parametrize("first_action", ["install", "start"])
+def test_atomic_install_and_core_start_share_admission_guard(tmp_path, monkeypatch, first_action):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    entered, release, second_entered = Event(), Event(), Event()
+    runtime = {"running": False, "installing": False}
+    specs = {name: services.ServiceSpec(name, name, [], tmp_path, tmp_path / f"{name}.log", tmp_path / f"{name}.pid")
+             for name in ("atomic", "memu-server")}
+    def status(spec):
+        if first_action == "install" and spec.name == "atomic":
+            entered.set()
+            assert release.wait(3)
+        return {"running": spec.name == "memu-server" and runtime["running"]}
+    def start_issue(*_args):
+        if first_action == "start":
+            entered.set()
+            assert release.wait(3)
+        return "Atomic installation is running" if runtime["installing"] else ""
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app, "_find_service", lambda name: specs[name])
+    monkeypatch.setattr(app.services, "services_for_root", lambda _root: list(specs.values()))
+    monkeypatch.setattr(app.services, "status", status)
+    monkeypatch.setattr(app.services, "start", lambda _spec: runtime.update(running=True))
+    monkeypatch.setattr(app.setup_install, "start_issue", start_issue)
+    monkeypatch.setattr(app.setup_install, "begin_optional_install", lambda *_args: runtime.update(installing=True))
+    actions = {"install": lambda: app.install_service("atomic"), "start": lambda: app.service_start("memu-server")}
+    def second():
+        second_entered.set()
+        return actions["start" if first_action == "install" else "install"]()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(actions[first_action])
+        try:
+            assert entered.wait(3)
+            other = pool.submit(second)
+            assert second_entered.wait(3)
+            assert not other.done()
+        finally:
+            release.set()
+        first.result(timeout=3)
+        with pytest.raises(app.HTTPException) as refused:
+            other.result(timeout=3)
+        assert refused.value.status_code == 409
+    assert runtime == {"running": first_action == "start", "installing": first_action == "install"}
+
+
 def test_recovery_route_reuses_update_readiness(tmp_path, monkeypatch):
     begun = []
     monkeypatch.setattr(app.settings, "setup_apps_root", lambda: tmp_path)

@@ -1353,6 +1353,39 @@ def test_atomic_dependency_command_preserves_platform_behavior(tmp_path, monkeyp
     command, directory = setup_install._optional_commands("atomic", tmp_path)[0]
     assert directory == tmp_path / "atomic"
     assert command == (["ci", "--ignore-scripts", "--include=dev", "--include=optional"] if target_platform == "win32" else ["ci"])
+    helper = tmp_path / "atomic/scripts/claude_session"
+    helper.mkdir(parents=True)
+    (helper / "pyproject.toml").touch()
+    commands = setup_install._optional_commands("atomic", tmp_path)
+    assert commands[1] == ([str(setup_install._venv_python(tmp_path)), "-m", "pip", "install",
+                            "--no-deps", "--force-reinstall", str(helper)], tmp_path / "atomic")
+
+
+@pytest.mark.parametrize("target_platform", ["linux", "win32"])
+def test_atomic_helper_failure_offers_repair_not_compile_guidance(tmp_path, monkeypatch, target_platform):
+    helper = tmp_path / "atomic/scripts/claude_session"
+    helper.mkdir(parents=True)
+    (helper / "pyproject.toml").touch()
+    (tmp_path / "atomic/package.json").write_text("{}")
+    (tmp_path / "atomic/node_modules").mkdir()
+    monkeypatch.setattr(setup_install, "_OPERATION", None)
+    monkeypatch.setattr(setup_install.sys, "platform", target_platform)
+    monkeypatch.setattr(setup_install, "release_issue", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(setup_install.shutil, "which", lambda _name: "/fictional/npm")
+    def fail(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, args[0])
+    monkeypatch.setattr(setup_install.subprocess, "run", fail)
+    status = setup_install.optional_setup_status("atomic", tmp_path)
+    assert status["action_kind"] == "install"
+    assert "helper" in status["detail"] and "compile" not in status["detail"]
+    monkeypatch.setattr(setup_install.subprocess, "run", lambda *args, **kwargs: None)
+    assert setup_install._atomic_helper_issue(tmp_path) == ""
+
+
+def test_core_start_waits_for_atomic_installation(tmp_path, monkeypatch):
+    monkeypatch.setattr(setup_install, "operation_status", lambda _root, service="memu-server":
+                        {"state":"running" if service == "atomic" else "idle"})
+    assert "Atomic installation" in setup_install.start_issue("memu-server", tmp_path)
 
 
 def test_partial_node_modules_is_not_setup_complete(tmp_path):

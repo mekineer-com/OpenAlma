@@ -12,6 +12,8 @@ OpenAlma. Start the apps you want to use and leave the rest stopped:
 Use **Setup** beside an app to configure it. Hermes lets you choose which
 WhatsApp chats your companion can hear and answer; Iris connects her to your
 phone or smartglasses. **Settings** holds general OpenAlma preferences.
+Stop memU Server before installing/updating Atomic: its Claude session helper
+is installed into the memory server's Python environment.
 
 For a guided installation, start with [Getting started](https://openalma.org/getting-started.html).
 

@@ -1028,6 +1028,19 @@ def _node_dependencies_ready(directory: Path, *, include_dev: bool = False) -> b
     return modules.is_dir() and all((modules.joinpath(*name.split("/")) / "package.json").exists() for name in names)
 
 
+def _atomic_helper_issue(root: Path) -> str:
+    # Releases without native cleanup do not ship this optional Atomic package.
+    if not (root / "atomic/scripts/claude_session/pyproject.toml").is_file():
+        return ""
+    try:
+        subprocess.run([str(_venv_python(root)), "-B", "-c",
+                        "from atomic_claude_session import prepare_atomic_session; assert callable(prepare_atomic_session)"],
+                       capture_output=True, timeout=10, check=True, **hidden_process_kwargs())
+    except (OSError, subprocess.SubprocessError):
+        return "Atomic Claude session helper needs installation; run Install again"
+    return ""
+
+
 def optional_issue(service_name: str, root: Path) -> str:
     repositories = {
         "channels-daemon": (
@@ -1069,6 +1082,8 @@ def optional_issue(service_name: str, root: Path) -> str:
         if not _node_dependencies_ready(directory, include_dev=include_dev):
             return f"Missing {label}"
     if service_name == "atomic":
+        if issue := _atomic_helper_issue(root):
+            return issue
         binary = settings.atomic_server_binary(root)
         if not binary.exists():
             return ("Missing Atomic Windows server package; run Install again" if sys.platform == "win32"
@@ -1150,6 +1165,8 @@ def _install_atomic_windows(entry: dict[str, str], root: Path, log: Any) -> None
 
 
 def start_issue(service_name: str, root: Path) -> str:
+    if service_name == "memu-server" and operation_status(root, "atomic")["state"] == "running":
+        return "Atomic installation is updating the memory server environment; wait for it to finish"
     if operation_status(root, service_name)["state"] == "running":
         return f"{service_name} installation is still running"
     if _active_install_owner() == (service_name, str(root.resolve())):
@@ -1185,7 +1202,11 @@ def _optional_commands(service_name: str, root: Path) -> list[tuple[list[str] | 
         return [([str(settings.bun_binary(root)), "install", "--frozen-lockfile"], root / "mentra-os/miniapps/openalma")]
     if service_name == "atomic":
         flags = ("--ignore-scripts", "--include=dev", "--include=optional") if sys.platform == "win32" else ()
-        return [(_npm_command("ci", *flags), root / "atomic")]
+        commands = [(_npm_command("ci", *flags), root / "atomic")]
+        helper = root / "atomic/scripts/claude_session"
+        if (helper / "pyproject.toml").is_file():
+            commands.append(([str(_venv_python(root)), "-m", "pip", "install", "--no-deps", "--force-reinstall", str(helper)], root / "atomic"))
+        return commands
     if service_name == "sillytavern":
         return [
             (_npm_command("ci"), root / "sillytavern/SillyTavern"),
@@ -1241,6 +1262,9 @@ def _install_optional(operation: InstallOperation) -> None:
             issue = _optional_tool_issue(operation.service_name)
             if issue:
                 raise SetupError(issue)
+            if operation.service_name == "atomic":
+                _set_operation(operation, total_steps=operation.step_number
+                               + len(_optional_commands("atomic", operation.root)) + 1 + (sys.platform == "win32"))
             if operation.service_name == "iris-server":
                 _set_operation(operation, step="Preparing Iris runtime")
                 _install_bun(operation.root, log)
@@ -1539,7 +1563,7 @@ def optional_setup_status(service_name: str, root: Path) -> dict[str, Any]:
     manual = _optional_tool_issue(service_name) or (
         _iris_workspace_issue(root) if service_name == "iris-server" else ""
     )
-    if service_name == "atomic" and sys.platform != "win32" and present and _node_dependencies_ready(root / "atomic", include_dev=True):
+    if service_name == "atomic" and sys.platform != "win32" and issue.startswith("Missing Atomic server binary"):
         manual = issue
     detail = operation["detail"] if operation["state"] == "error" else (manual or issue)
     action = not present or not manual or (service_name == "iris-server" and operation["state"] == "error")
