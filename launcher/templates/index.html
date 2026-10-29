@@ -320,7 +320,7 @@ function actionHtml(name, data) {
   if (data.action_kind === 'install') {
     var start = data.startable ? ' <button class="btn" onclick="svcAction(\'' + esc(name) + '\',\'start\',this)">Start</button>' : '';
     return '<form class="inline" method="post" action="/install/' + esc(name) + '"><button class="btn" type="submit">' +
-      esc(data.action_label || 'Continue Install') + '</button></form>' + start + setup;
+      esc(data.action_label || 'Install') + '</button></form>' + start + setup;
   }
   if (data.action_kind === 'recover') {
     return '<form class="inline" method="post" action="/install/memu-server/recover"><button class="btn" type="submit">Recover</button></form>' + setup;

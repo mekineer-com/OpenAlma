@@ -1530,7 +1530,7 @@ def setup_status(
         "detail": prerequisite or detail, "startable": False,
         "action_kind": None if prerequisite else "install",
         "action_label": (
-            "Retry" if operation["state"] == "error" else ("Continue Install" if present else "Install")
+            "Retry" if operation["state"] == "error" else ("Update" if present else "Install")
         ),
     }
 
@@ -1603,7 +1603,7 @@ def optional_setup_status(service_name: str, root: Path) -> dict[str, Any]:
         "action_kind": "install" if action else None,
         "action_label": (
             "Retry" if operation["state"] == "error"
-            else ("Continue Install" if checkout_present else "Install")
+            else ("Update" if checkout_present else "Install")
         ),
     }
 

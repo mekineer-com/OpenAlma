@@ -367,7 +367,7 @@ def test_windows_upgrade_resumes_partial_core_as_first_install(tmp_path, monkeyp
     monkeypatch.setattr(setup_install, "_prerequisite_issue", lambda _root: "")
     status = setup_install.setup_status(apps_root, verify_runtime=False)
     assert status["action_kind"] == "install"
-    assert status["action_label"] == "Continue Install"
+    assert status["action_label"] == "Update"
 
 
 def test_windows_upgrade_uses_saved_apps_root(tmp_path, monkeypatch):

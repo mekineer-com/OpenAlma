@@ -754,7 +754,7 @@ def test_iris_page_and_poll_share_setup_status(tmp_path, monkeypatch, setup, run
 def test_iris_preparation_retry_uses_worker_failure(tmp_path, monkeypatch, ready, running, failed, show_retry, setup_ready):
     spec = services.ServiceSpec("iris-server", "Iris", [], tmp_path, tmp_path / "log", tmp_path / "pid")
     status = {"ready": ready, "install_running": running,
-              "action_kind": "install", "action_label": "Retry" if failed else "Continue Install", "installations": [],
+              "action_kind": "install", "action_label": "Retry" if failed else "Update", "installations": [],
               "available_package": services.IRIS_PACKAGE, "available_version": "0.1.12",
               "setup": {"ready": setup_ready, "step": 'release', "rows": []}}
     monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)

@@ -1377,6 +1377,7 @@ def test_atomic_helper_failure_offers_repair_not_compile_guidance(tmp_path, monk
     monkeypatch.setattr(setup_install.subprocess, "run", fail)
     status = setup_install.optional_setup_status("atomic", tmp_path)
     assert status["action_kind"] == "install"
+    assert status["action_label"] == "Update"
     assert "helper" in status["detail"] and "compile" not in status["detail"]
     source = helper / "atomic_claude_session.py"
     source.write_text("def prepare_atomic_session(data): return data\n")
@@ -1426,6 +1427,7 @@ def test_optional_status_allows_clone_before_missing_runtime(tmp_path, monkeypat
 
     assert status["status_label"] == "Not installed"
     assert status["action_kind"] == "install"
+    assert status["action_label"] == "Install"
 
 
 def test_sillytavern_can_start_before_integration_setup_finishes(tmp_path):
