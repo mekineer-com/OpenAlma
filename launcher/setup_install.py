@@ -12,6 +12,7 @@ import sqlite3
 import stat
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import threading
 import time
@@ -1028,20 +1029,30 @@ def _node_dependencies_ready(directory: Path, *, include_dev: bool = False) -> b
     return modules.is_dir() and all((modules.joinpath(*name.split("/")) / "package.json").exists() for name in names)
 
 
-def _atomic_helper_issue(root: Path) -> str:
+def _atomic_helper_path(root: Path) -> Path:
+    environment = str(_venv_python(root).parent.parent)
+    return Path(sysconfig.get_path("purelib", vars={"base": environment, "platbase": environment})) / "atomic_claude_session.py"
+
+
+def _atomic_helper_issue(root: Path, *, verify_runtime: bool = False) -> str:
     # Releases without native cleanup do not ship this optional Atomic package.
     if not (root / "atomic/scripts/claude_session/pyproject.toml").is_file():
         return ""
     try:
-        subprocess.run([str(_venv_python(root)), "-B", "-c",
-                        "from atomic_claude_session import prepare_atomic_session; assert callable(prepare_atomic_session)"],
-                       capture_output=True, timeout=10, check=True, **hidden_process_kwargs())
+        source = root / "atomic/scripts/claude_session/atomic_claude_session.py"
+        with source.open("rb") as stream, _atomic_helper_path(root).open("rb") as installed:
+            if hashlib.file_digest(stream, "sha256").digest() != hashlib.file_digest(installed, "sha256").digest():
+                return "Atomic Claude session helper is stale; run Install again"
+        if verify_runtime:
+            subprocess.run([str(_venv_python(root)), "-B", "-c",
+                            "from atomic_claude_session import prepare_atomic_session; assert callable(prepare_atomic_session)"],
+                           capture_output=True, timeout=10, check=True, **hidden_process_kwargs())
     except (OSError, subprocess.SubprocessError):
         return "Atomic Claude session helper needs installation; run Install again"
     return ""
 
 
-def optional_issue(service_name: str, root: Path) -> str:
+def optional_issue(service_name: str, root: Path, *, check_helper: bool = True) -> str:
     repositories = {
         "channels-daemon": (
             ("hermes-channels/gateway/daemon.py", "Hermes Channels checkout"),
@@ -1082,7 +1093,7 @@ def optional_issue(service_name: str, root: Path) -> str:
         if not _node_dependencies_ready(directory, include_dev=include_dev):
             return f"Missing {label}"
     if service_name == "atomic":
-        if issue := _atomic_helper_issue(root):
+        if check_helper and (issue := _atomic_helper_issue(root)):
             return issue
         binary = settings.atomic_server_binary(root)
         if not binary.exists():
@@ -1181,7 +1192,8 @@ def start_issue(service_name: str, root: Path) -> str:
         if not _node_dependencies_ready(root / "sillytavern/SillyTavern"):
             return "Missing SillyTavern dependencies"
         return ""
-    return optional_issue(service_name, root)
+    # Native dispatch remains dormant until N4; helper repair must not block API Start.
+    return optional_issue(service_name, root, check_helper=False)
 
 
 def _optional_entries(service_name: str, root: Path) -> list[dict[str, str]]:
@@ -1278,6 +1290,8 @@ def _install_optional(operation: InstallOperation) -> None:
                 _set_operation(operation, step="Installing Atomic Windows server")
                 _install_atomic_windows(entries[0], operation.root, log)
             _set_operation(operation, step="Verifying installation")
+            if operation.service_name == "atomic" and (issue := _atomic_helper_issue(operation.root, verify_runtime=True)):
+                raise SetupError(issue)
             issue = optional_issue(operation.service_name, operation.root)
             if issue and (operation.service_name != "atomic" or sys.platform == "win32"):
                 raise SetupError(issue)
@@ -1563,7 +1577,9 @@ def optional_setup_status(service_name: str, root: Path) -> dict[str, Any]:
     manual = _optional_tool_issue(service_name) or (
         _iris_workspace_issue(root) if service_name == "iris-server" else ""
     )
-    if service_name == "atomic" and sys.platform != "win32" and issue.startswith("Missing Atomic server binary"):
+    if (service_name == "atomic" and sys.platform != "win32" and present
+            and _node_dependencies_ready(root / "atomic", include_dev=True)
+            and not settings.atomic_server_binary(root).exists() and not _atomic_helper_issue(root)):
         manual = issue
     detail = operation["detail"] if operation["state"] == "error" else (manual or issue)
     action = not present or not manual or (service_name == "iris-server" and operation["state"] == "error")
@@ -1575,6 +1591,8 @@ def optional_setup_status(service_name: str, root: Path) -> dict[str, Any]:
     }[service_name]
     checkout_present = (root / primary).exists()
     startable = service_name == "sillytavern" and not start_issue(service_name, root)
+    if service_name == "atomic":
+        startable = not optional_issue(service_name, root, check_helper=False)
     return {
         "ready": False,
         "state": "setup",

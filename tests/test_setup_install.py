@@ -1378,8 +1378,30 @@ def test_atomic_helper_failure_offers_repair_not_compile_guidance(tmp_path, monk
     status = setup_install.optional_setup_status("atomic", tmp_path)
     assert status["action_kind"] == "install"
     assert "helper" in status["detail"] and "compile" not in status["detail"]
-    monkeypatch.setattr(setup_install.subprocess, "run", lambda *args, **kwargs: None)
+    source = helper / "atomic_claude_session.py"
+    source.write_text("def prepare_atomic_session(data): return data\n")
+    installed = setup_install._atomic_helper_path(tmp_path)
+    installed.parent.mkdir(parents=True)
+    installed.write_bytes(source.read_bytes())
+    # Polls compare files only, even when launching Python would fail.
     assert setup_install._atomic_helper_issue(tmp_path) == ""
+    assert setup_install._atomic_helper_issue(tmp_path, verify_runtime=True)
+    calls = []
+    monkeypatch.setattr(setup_install.subprocess, "run", lambda *args, **kwargs: calls.append(args))
+    assert setup_install._atomic_helper_issue(tmp_path, verify_runtime=True) == ""
+    assert len(calls) == 1
+    source.write_text("def prepare_atomic_session(data): return bytes(data)\n")
+    assert "stale" in setup_install._atomic_helper_issue(tmp_path)
+    assert len(calls) == 1, "readiness polls must not launch Python"
+    binary = tmp_path / "atomic/target/debug" / ("atomic-server.exe" if setup_install.os.name == "nt" else "atomic-server")
+    binary.parent.mkdir(parents=True)
+    binary.touch()
+    monkeypatch.setattr(setup_install.settings, "atomic_server_binary", lambda _root: binary)
+    status = setup_install.optional_setup_status("atomic", tmp_path)
+    assert status["ready"] is False and "stale" in status["detail"]
+    assert status["startable"] is True, "helper repair must not block API mode before N4"
+    assert setup_install.start_issue("atomic", tmp_path) == ""
+    assert len(calls) == 1
 
 
 def test_core_start_waits_for_atomic_installation(tmp_path, monkeypatch):
