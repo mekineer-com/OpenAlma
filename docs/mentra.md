@@ -15,8 +15,12 @@ to your OpenAlma Soul. No glasses or Mentra Store are required.
 4. In the launcher's Services section, click **Install** beside your phone app. Keep Mentra in the foreground; Iris installs automatically.
 5. Open Iris, allow microphone access, choose or create a Soul, then tap **Audio** or **Video**.
 
-For [stock Mentra](https://play.google.com/store/apps/details?id=com.mentra.mentra),
-use **Setup → Stock Mentra installation** in the launcher instead.
+For [stock Mentra](https://play.google.com/store/apps/details?id=com.mentra.mentra)
+or [Glassly](https://play.google.com/store/apps/details?id=com.tetramo.glassly),
+use **Setup → Stock Mentra or Glassly installation** in the launcher instead.
+Both use the same Iris bundle. In Glassly, open **Miniapp Developer** from the
+home screen, or **Settings → Advanced settings → Miniapp Developer Settings**,
+then choose **Scan Miniapp QR Code**.
 
 ## Connection
 
