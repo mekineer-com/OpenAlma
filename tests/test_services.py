@@ -1832,9 +1832,9 @@ def test_memu_shutdown_request_has_no_drain_deadline(monkeypatch):
     }
 
 
-@pytest.mark.parametrize("elapsed", [14.9, 15.0, 30.0])
+@pytest.mark.parametrize("elapsed", [15.0, 20.7, 29.9, 30.0, 45.0])
 def test_elapsed_graceful_stop_exposes_manual_force_for_any_service(tmp_path, monkeypatch, elapsed):
-    assert services.FORCE_STOP_RECOVERY_SECONDS == 15
+    assert services.FORCE_STOP_RECOVERY_SECONDS == 30
     monkeypatch.setattr(services.time, "monotonic", lambda: 100)
     for name in ("memu-server", "channels-daemon", "iris-server", "atomic", "sillytavern"):
         spec = services.ServiceSpec(name, name, [], tmp_path, tmp_path / "log", tmp_path / "pid")
@@ -1843,10 +1843,10 @@ def test_elapsed_graceful_stop_exposes_manual_force_for_any_service(tmp_path, mo
             services._STOP_STARTED[name] = 100 - elapsed
         try:
             status = services._stop_status(spec, {"running": True, "stuck": False})
-            assert status["force_stoppable"] is (elapsed >= 15)
+            assert status["force_stoppable"] is (elapsed >= 30)
             assert status["state"] == "stopping" and not status["startable"]
             assert services._STOP_THREADS[name] is services.threading.current_thread()
-            if elapsed >= 15:
+            if elapsed >= 30:
                 assert status["status_label"] == "Still finishing…"
                 assert "Force Stop is available" in status["detail"]
         finally:
