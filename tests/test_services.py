@@ -2099,7 +2099,7 @@ def test_channels_daemon_hides_stale_child_status_during_startup(tmp_path, monke
     assert status["children"] == []
 
 
-@pytest.mark.parametrize("case", ["ready", "pairing", "web_disabled", "old_parent",
+@pytest.mark.parametrize("case", ["ready", "pairing", "web_disabled", "old_parent", "old_parent_on_windows",
                                   "missing_child", "dead_child", "stale_status", "old_listener",
                                   "redirector", "redirector_on_posix", "old_interpreter",
                                   "wrong_interpreter", "interpreter_gone"])
@@ -2116,17 +2116,17 @@ def test_channels_recognizes_only_current_startup_health(tmp_path, monkeypatch, 
         pid=111, service_pids=(111,), child_pids=() if case == "missing_child" else (222, 333), running=True))
     redirector = case in {"redirector", "redirector_on_posix", "old_interpreter",
                           "wrong_interpreter", "interpreter_gone"}
-    if redirector:
+    if redirector or case == "old_parent_on_windows":
         monkeypatch.setattr(services, "os", SimpleNamespace(name="posix" if case == "redirector_on_posix" else "nt"))
-        monkeypatch.setattr(services, "_matches_service_process",
-                            lambda _spec, pid: pid == 444 and case != "wrong_interpreter")
+    monkeypatch.setattr(services, "_matches_service_process",
+                        lambda _spec, pid: redirector and pid == 444 and case != "wrong_interpreter")
 
     def process(pid):
         if case == "dead_child" or case == "interpreter_gone" and pid == 444:
             raise services.psutil.NoSuchProcess(pid)
         if redirector:
             return SimpleNamespace(ppid=lambda: (999 if case == "old_interpreter" else 111) if pid == 444 else 444)
-        return SimpleNamespace(ppid=lambda: 999 if case == "old_parent" else 111)
+        return SimpleNamespace(ppid=lambda: 999 if case in {"old_parent", "old_parent_on_windows"} else 111)
 
     monkeypatch.setattr(services.psutil, "Process", process)
     monkeypatch.setattr(services, "_port_listener_pid", lambda _port, **_kwargs: 999 if case == "old_listener" else 222)
