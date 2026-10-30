@@ -104,6 +104,7 @@ Windows users can download the [latest Beta installer](https://github.com/mekine
 - **[openalma.org](https://openalma.org)** — the project home: guides on how her memory works, her inner life, your data, and each surface you meet her on
 - **[Getting started](https://openalma.org/getting-started.html)** — installing the stack, choosing clients, and day-to-day use
 - **[Discussions](https://github.com/mekineer-com/OpenAlma/discussions)** — questions and open-ended ideas across the OpenAlma stack
+- **[help@openalma.org](mailto:help@openalma.org)** — direct help when something is stuck or broken
 
 The same guides also live in [`docs/`](docs/) in this repo.
 

@@ -71,4 +71,4 @@ OpenAlma is in beta, available on the launcher's Stable channel. It works, it's 
 
 ---
 
-*OpenAlma, by Team GhostMaker · [View source on GitHub](https://github.com/mekineer-com/OpenAlma)*
+*OpenAlma, by Team GhostMaker · [View source on GitHub](https://github.com/mekineer-com/OpenAlma) · Help: [help@openalma.org](mailto:help@openalma.org)*

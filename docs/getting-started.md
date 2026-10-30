@@ -16,7 +16,7 @@ The complete OpenAlma stack has been tested on Alpine Linux 3.23 x86-64. Some co
 | memU | Alpine Linux 3.23 x86-64 | The installer includes sqlite-vec for Linux (glibc) x86-64/ARM64, macOS Intel/Apple Silicon, and Windows x86-64, but complete OpenAlma setups on those platforms have not been tested. |
 | mcp-memu-server | Alpine Linux 3.23 x86-64; Windows installation fixtures | Full Windows stack acceptance remains separate. |
 | OpenAlma launcher | Alpine Linux and Windows startup/tests | Windows has an installer; source setup uses Python 3.12. |
-| Iris MiniApp | Mentra on Android | Mentra also supports iOS, but Iris has not yet been tested there. |
+| Iris MiniApp | Mentra and Glassly on Android | Mentra also supports iOS, but Iris has not yet been tested there. |
 | OpenAlma Mentra app | Android | Android only. On iOS, stock Mentra is expected to work. |
 | Hermes Channels | Alpine Linux 3.23 x86-64 | Other operating systems have not yet been tested. |
 | SillyTavern integration | Stock SillyTavern on Linux | Other platforms remain subject to client installation and shutdown qualification. |
