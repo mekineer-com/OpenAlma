@@ -12,7 +12,7 @@
       {% endif %}
       {% if field.name == 'context_window_tokens' %}
       <button class="btn" type="button" data-ai-autofill>Auto-fill</button>
-      <p class="hint field-help">Auto-fill suggests a conservative OpenRouter allowance. Other connections need manual entry. Clear this value to request a suggestion.</p>
+      <p class="hint field-help">Auto-fill supports direct NanoGPT, OpenRouter, Gemini, Mistral and xAI connections. It suggests a conservative allowance. Clear this value to request a suggestion; other connections need manual entry.</p>
       {% elif field.name == 'claude_code_context_window_tokens' %}
       <p class="hint field-help">Enter the context allowance for your Claude Code model and account.</p>
       {% endif %}

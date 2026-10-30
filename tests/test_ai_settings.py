@@ -210,3 +210,92 @@ def test_metadata_errors_are_sanitized_and_redirects_not_followed(configured, mo
     assert result.status_code == 400
     assert "fictional-chat-secret" not in result.text
     assert ai_settings._NoRedirect().redirect_request(None, None, 302, "", {}, "https://fictional.invalid") is None
+
+
+@pytest.mark.parametrize("base_url, model, payload, metadata_url, auth_header", [
+    ("https://nano-gpt.com/api/v1", "fictional/model", {"data": [
+        {"id": "fictional/wrong", "context_length": 999999},
+        {"id": "fictional/model", "context_length": 64000, "max_output_tokens": 8000}]},
+        "https://nano-gpt.com/api/v1/models?detailed=true", "Authorization"),
+    ("https://api.nano-gpt.com/api/v1", "fictional/model", {"data": [
+        {"id": "fictional/model", "context_length": 64000}]},
+        "https://api.nano-gpt.com/api/v1/models?detailed=true", "Authorization"),
+    (ai_settings.GEMINI_URL, "fictional-model", {
+        "name": "models/fictional-model", "inputTokenLimit": 64000, "outputTokenLimit": 8000},
+        "https://generativelanguage.googleapis.com/v1beta/models/fictional-model", "X-goog-api-key"),
+    (ai_settings.MISTRAL_URL, "fictional-model", {"id": "fictional-model", "max_context_length": 64000},
+        "https://api.mistral.ai/v1/models/fictional-model", "Authorization"),
+    (ai_settings.XAI_URL, "fictional-model", {"id": "fictional-model", "context_length": 64000},
+        "https://api.x.ai/v1/language-models/fictional-model", "Authorization"),
+])
+def test_other_providers_use_their_own_metadata_without_writing(
+        configured, monkeypatch, base_url, model, payload, metadata_url, auth_header):
+    path, config, client = configured
+    config["llm"].update(base_url=base_url, chat_model=model)
+    path.write_text(json.dumps(config))
+    before = path.read_bytes()
+    calls = []
+
+    def opened(request, timeout):
+        calls.append(request)
+        return io.BytesIO(json.dumps(payload).encode())
+
+    monkeypatch.setattr(ai_settings.urllib.request, "build_opener", lambda *_args: SimpleNamespace(open=opened))
+    result = client.post("/settings/ai/context", data={"base_url": base_url + "/", "chat_model": model})
+    assert result.json() == {"context_window_tokens": 64000}
+    assert calls[0].full_url == metadata_url
+    expected = "fictional-chat-secret" if auth_header == "X-goog-api-key" else "Bearer fictional-chat-secret"
+    assert calls[0].get_header(auth_header) == expected
+    assert "fictional-chat-secret" not in result.text
+    assert path.read_bytes() == before
+    assert not path.with_name("config.json.orig").exists()
+
+    # Incomplete limits never become a guessed allowance or another host's data.
+    row = payload["data"][-1] if "data" in payload else payload
+    field = "inputTokenLimit" if base_url == ai_settings.GEMINI_URL else "max_context_length" if base_url == ai_settings.MISTRAL_URL else "context_length"
+    row[field] = None
+    assert client.post("/settings/ai/context", data={"base_url": base_url, "chat_model": model}).status_code == 400
+    assert len(calls) == 2
+    row[field] = 64000
+    row["name" if base_url == ai_settings.GEMINI_URL else "id"] = "fictional/wrong-model"
+    assert client.post("/settings/ai/context", data={"base_url": base_url, "chat_model": model}).status_code == 400
+    assert len(calls) == 3
+
+
+def test_nanogpt_hosts_do_not_share_catalogs_or_saved_credentials(configured, monkeypatch):
+    path, config, client = configured
+    config["llm"].update(base_url="https://nano-gpt.com/api/v1")
+    path.write_text(json.dumps(config))
+    calls = []
+
+    def opened(request, timeout):
+        calls.append(request)
+        return io.BytesIO(json.dumps({"data": [{"id": "fictional/other", "context_length": 32000}]}).encode())
+
+    monkeypatch.setattr(ai_settings.urllib.request, "build_opener", lambda *_args: SimpleNamespace(open=opened))
+    result = client.post("/settings/ai/context", data={
+        "base_url": "https://api.nano-gpt.com/api/v1", "chat_model": "fictional/model"})
+    assert result.status_code == 400
+    assert "Model not found" in result.json()["detail"]
+    assert len(calls) == 1
+    assert calls[0].full_url == "https://api.nano-gpt.com/api/v1/models?detailed=true"
+    assert calls[0].get_header("Authorization") is None
+
+
+@pytest.mark.parametrize("base_url, field", [
+    (ai_settings.MISTRAL_URL, "max_context_length"), (ai_settings.XAI_URL, "context_length")])
+@pytest.mark.parametrize("canonical, aliases, expected", [
+    ("fictional-canonical", ["fictional-latest"], 64000),
+    ("fictional-canonical", ["fictional-other"], None),
+    ("fictional-canonical", "fictional-latest", None),
+    ("", ["fictional-latest"], None),
+])
+def test_provider_aliases_must_be_explicit_and_well_formed(configured, monkeypatch, base_url, field, canonical, aliases, expected):
+    _path, _config, client = configured
+    payload = {"id": canonical, "aliases": aliases, field: 64000}
+    monkeypatch.setattr(ai_settings.urllib.request, "build_opener", lambda *_args: SimpleNamespace(
+        open=lambda *_args, **_kwargs: io.BytesIO(json.dumps(payload).encode())))
+    result = client.post("/settings/ai/context", data={"base_url": base_url, "chat_model": "fictional-latest"})
+    assert result.status_code == (200 if expected else 400)
+    if expected:
+        assert result.json() == {"context_window_tokens": expected}

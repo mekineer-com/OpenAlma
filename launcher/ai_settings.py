@@ -8,6 +8,10 @@ import urllib.request
 
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
+NANOGPT_URLS = {"https://nano-gpt.com/api/v1", "https://api.nano-gpt.com/api/v1"}
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+MISTRAL_URL = "https://api.mistral.ai/v1"
+XAI_URL = "https://api.x.ai/v1"
 
 
 def _missing(value: object) -> bool:
@@ -111,17 +115,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def suggest_context(base_url: str, model: str, api_key: str) -> int:
-    if base_url.rstrip("/") != OPENROUTER_URL:
-        raise ValueError("Auto-fill currently supports the direct OpenRouter API only. Enter this connection's size manually.")
-    parts = model.split("/")
-    if len(parts) != 2 or not all(parts) or any(part in {".", ".."} for part in parts):
-        raise ValueError("Enter the exact OpenRouter model ID, including its author.")
-    if "\n" in api_key or "\r" in api_key:
-        raise ValueError("API keys must be a single line.")
-    path = "/".join(urllib.parse.quote(part, safe="") for part in parts)
-    request = urllib.request.Request(f"{OPENROUTER_URL}/models/{path}/endpoints",
-                                     headers={"Authorization": f"Bearer {api_key}"} if api_key else {})
+def _model_metadata(request: urllib.request.Request) -> dict:
     try:
         with urllib.request.build_opener(_NoRedirect()).open(request, timeout=10) as response:
             payload = response.read(1_000_001)
@@ -130,11 +124,72 @@ def suggest_context(base_url: str, model: str, api_key: str) -> int:
     if len(payload) > 1_000_000:
         raise ValueError("Model metadata is too large. Enter the context size manually.")
     try:
-        data = json.loads(payload).get("data")
-    except (UnicodeError, json.JSONDecodeError, AttributeError) as exc:
+        data = json.loads(payload)
+    except (UnicodeError, json.JSONDecodeError) as exc:
         raise ValueError("Could not read provider metadata. Enter the context size manually.") from exc
-    if not isinstance(data, dict) or data.get("id") != model:
+    if not isinstance(data, dict):
+        raise ValueError("Could not read provider metadata. Enter the context size manually.")
+    return data
+
+
+def _positive_limit(value: object) -> int:
+    if type(value) is not int or value <= 0:
+        raise ValueError("Incomplete model limits; enter the context size manually.")
+    return value
+
+
+def suggest_context(base_url: str, model: str, api_key: str) -> int:
+    base_url = base_url.rstrip("/")
+    if not model or any(part in {"", ".", ".."} for part in model.split("/")):
+        raise ValueError("Enter the exact provider model ID.")
+    if "\n" in api_key or "\r" in api_key:
+        raise ValueError("API keys must be a single line.")
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    encoded_model = urllib.parse.quote(model, safe="")
+    if base_url == OPENROUTER_URL:
+        parts = model.split("/")
+        if len(parts) != 2:
+            raise ValueError("Enter the exact OpenRouter model ID, including its author.")
+        path = "/".join(urllib.parse.quote(part, safe="") for part in parts)
+        url = f"{base_url}/models/{path}/endpoints"
+    elif base_url in NANOGPT_URLS:
+        url = f"{base_url}/models?detailed=true"
+    elif base_url == GEMINI_URL:
+        google_model = model.removeprefix("models/")
+        url = "https://generativelanguage.googleapis.com/v1beta/models/" + urllib.parse.quote(google_model, safe="")
+        headers = {"x-goog-api-key": api_key} if api_key else {}
+    elif base_url == MISTRAL_URL:
+        url = f"{base_url}/models/{encoded_model}"
+    elif base_url == XAI_URL:
+        url = f"{base_url}/language-models/{encoded_model}"
+    else:
+        raise ValueError("Auto-fill is unavailable for this API address. Enter the context size manually.")
+    data = _model_metadata(urllib.request.Request(url, headers=headers))
+    if base_url in NANOGPT_URLS:
+        rows = data.get("data")
+        data = next((row for row in rows if isinstance(row, dict) and row.get("id") == model), None) if isinstance(rows, list) else None
+        if not data:
+            raise ValueError("Model not found in this host's catalog. Enter its context size manually.")
+        # NanoGPT reports an input bound: keep it as a conservative total allowance.
+        return _positive_limit(data.get("context_length"))
+    if base_url == GEMINI_URL:
+        if data.get("name") != f"models/{google_model}":
+            raise ValueError("Provider metadata did not match the requested model.")
+        # Do not add outputTokenLimit: the existing budget already reserves output.
+        return _positive_limit(data.get("inputTokenLimit"))
+    if base_url == OPENROUTER_URL:
+        data = data.get("data")
+    identity_matches = isinstance(data, dict) and data.get("id") == model
+    if isinstance(data, dict) and base_url in {MISTRAL_URL, XAI_URL}:
+        identity_matches = identity_matches or (
+            isinstance(data.get("id"), str) and bool(data["id"].strip())
+            and isinstance(data.get("aliases"), list) and model in data["aliases"])
+    if not identity_matches:
         raise ValueError("Provider metadata did not match the requested model.")
+    if base_url == MISTRAL_URL:
+        return _positive_limit(data.get("max_context_length"))
+    if base_url == XAI_URL:
+        return _positive_limit(data.get("context_length"))
     endpoints = data.get("endpoints")
     if not isinstance(endpoints, list) or not endpoints:
         raise ValueError("No endpoint limits were reported for this model.")

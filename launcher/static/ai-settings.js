@@ -43,7 +43,7 @@ document.querySelectorAll('form[data-ai-settings]').forEach(form => {
         return;
       }
       context.value = result.context_window_tokens;
-      status.textContent = 'Conservative allowance suggested from reported endpoint limits. Review it, then Save AI settings.';
+      status.textContent = 'Conservative allowance suggested from provider metadata. Review it, then Save AI settings.';
     } catch (error) { if (revision === started) showError(error); }
     finally { autofill.disabled = false; }
   });
