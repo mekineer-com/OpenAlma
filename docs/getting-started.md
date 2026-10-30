@@ -14,7 +14,7 @@ The complete OpenAlma stack has been tested on Alpine Linux 3.23 x86-64. Some co
 | Component | Tested on | Other platforms |
 |---|---|---|
 | memU | Alpine Linux 3.23 x86-64 | The installer includes sqlite-vec for Linux (glibc) x86-64/ARM64, macOS Intel/Apple Silicon, and Windows x86-64, but complete OpenAlma setups on those platforms have not been tested. |
-| mcp-memu-server | Alpine Linux 3.23 x86-64; Windows installation fixtures | Full Windows stack acceptance remains separate. |
+| mcp-memu-server | Alpine Linux 3.23 x86-64; native Windows Atomic/Claude Code acceptance | Windows acceptance used a local embedding stub; other client combinations remain untested. |
 | OpenAlma launcher | Alpine Linux and Windows startup/tests | Windows has an installer; source setup uses Python 3.12. |
 | Iris MiniApp | Mentra and Glassly on Android | Mentra also supports iOS, but Iris has not yet been tested there. |
 | OpenAlma Mentra app | Android | Android only. On iOS, stock Mentra is expected to work. |
@@ -194,7 +194,7 @@ Works with Mentra on Android. The voice she uses today is Gemini Live's; see [Pl
 - **Correct her.** Edit any memory's text — the fix is live for her from that point on. The review queue holds what she produces herself: new memories she forms on her own, and her updated summaries.
 - **People and things.** Everyone and everything she's recognized by name has a permanent identity. Correct a name, merge two entries that turn out to be the same person (with a preview of exactly what moves over), or hide one so she stops tracking it — hiding destroys nothing, and deletion is refused while memories still point at it.
 - **Curate dossiers.** Open a category and the memories behind its prose are listed beneath it. Attach a memory and the prose rewrites itself to match on the next pass; detach is only offered for memories the prose doesn't quote.
-- **Chat in sittings.** Each chat runs in API mode or Claude Code mode (not available with a Windows memory server) and has a fixed budget set by `llm.context_window_tokens` or `claude_code_context_window_tokens`, shown on a meter. When it fills, or when you choose End Session, she writes a recap and the sitting closes; Start new sitting keeps your unsent draft.
+- **Chat in sittings.** Each chat runs in API mode or Claude Code mode and has a fixed budget set by `llm.context_window_tokens` or `claude_code_context_window_tokens`, shown on a meter. When it fills, or when you choose End Session, she writes a recap and the sitting closes; Start new sitting keeps your unsent draft.
 - **Every session memorizes.** Close a mind map session and the conversation you just had becomes memory, same as every other surface.
 
 Full guide: [The mind map](mind-map.md).
