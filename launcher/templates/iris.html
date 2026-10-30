@@ -284,6 +284,7 @@
     try {
       QRCode.toCanvas(document.getElementById('iris-install-qr'), {{ iris.release_uri|tojson }}, { width: 220, margin: 1 });
     } catch (_err) {}
+    document.getElementById('iris-install-qr').after(document.getElementById('iris-cancel-controls'));
     document.getElementById('iris-install-qr').scrollIntoView({block: 'center'});
     {% endif %}
 
