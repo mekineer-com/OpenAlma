@@ -197,12 +197,6 @@ Works with Mentra on Android. The voice she uses today is Gemini Live's; see [Pl
 - **Chat in sittings.** Each chat runs in API mode or Claude Code mode and has a fixed budget set by `llm.context_window_tokens` or `claude_code_context_window_tokens`, shown on a meter. When it fills, or when you choose End Session, she writes a recap and the sitting closes; Start new sitting keeps your unsent draft.
 - **Every session memorizes.** Close a mind map session and the conversation you just had becomes memory, same as every other surface.
 
-For Claude Code on Windows, enable Windows long-path support, or configure a short
-writable `claude_code_workspace` before starting new sittings (for example,
-`C:\\OpenAlma-workspace` in `config.json`). Long Windows usernames can otherwise
-cause native cleanup to fail. Do not change the workspace of existing sittings;
-enable long-path support and restart the memory server instead.
-
 Full guide: [The mind map](mind-map.md).
 
 ## Things to know
