@@ -166,6 +166,8 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
       return {ok: responseOK, json: async () => next};
     },
     location: {reload: () => { reloads++; }},
+    window: {scrollY: 420},
+    sessionStorage: {setItem() {}},
     FormData: class {},
   });
   const template = fs.readFileSync(__dirname + '/../templates/iris.html', 'utf8');

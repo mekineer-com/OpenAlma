@@ -354,7 +354,7 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
                 for row in installations:
                     assert f'href="/iris?device_session_id={row["device_session_id"]}"' in visible
             assert ('id="iris-install-qr"' in visible) == (selected is not installations[1])
-            assert (".scrollIntoView({block: 'center'})" in response.text) == (selected is not installations[1])
+            assert 'scrollIntoView' not in response.text
             assert (".after(document.getElementById('iris-cancel-controls'))" in response.text) == (selected is not installations[1])
             assert "dismiss Iris from the host app's app switcher" not in visible
             assert ("Stock installer active" in visible) == (selected is not installations[1])
@@ -780,17 +780,28 @@ def test_iris_requests_use_shared_message_and_preserve_redirects():
 const fs=require('fs'), path=require('path'), assert=require('assert');
 const source=fs.readFileSync(process.argv[1],'utf8');
 const root=path.resolve(path.dirname(process.argv[1]),'..');
-const message={hidden:true}, text={};
-const document={getElementById:id=>id==='launcher-message'?message:text};
+const message={hidden:true}, text={}, stockSection={open:true};
+const document={getElementById:id=>id==='launcher-message'?message:id==='iris-stock-installation'?stockSection:text};
 eval(fs.readFileSync(root+'/static/launcher.js','utf8').split('async function quitLauncher')[0]);
 eval(fs.readFileSync(root+'/static/iris-services.js','utf8'));
-let submitting=false, statusAvailable=true, destination='';
-const location={assign:url=>destination=url,reload:()=>{throw new Error('Must leave the Repair chooser');}};
+let submitting=false, statusAvailable=true, destination='', reloads=0;
+const window={scrollY:420,scrollTo:(_x,y)=>window.scrollY=y};
+const requestAnimationFrame=callback=>callback();
+const saved=new Map(), sessionStorage={setItem:(key,value)=>saved.set(key,value),getItem:key=>saved.get(key),removeItem:key=>saved.delete(key)};
+const location={assign:url=>destination=url,reload:()=>reloads++};
 let fetch=async()=>({ok:true,redirected:true,url:'/iris?device_session_id=test-phone'});
-eval(source.slice(source.indexOf('async function irisRequest'),source.indexOf('function irisAction')));
+eval(source.slice(source.indexOf('function irisNavigate'),source.indexOf('function irisAction')));
 (async()=>{
   await irisRequest('/iris/install',{},null);
   assert.equal(destination,'/iris?device_session_id=test-phone');
+  assert.equal(JSON.parse(saved.get('iris-setup-view')).scrollY,420);
+  stockSection.open=false;window.scrollY=0;
+  eval(source.slice(source.indexOf('const savedView ='),source.indexOf('</script>',source.indexOf('const savedView ='))));
+  assert.equal(stockSection.open,true);assert.equal(window.scrollY,420);
+  assert.equal(saved.has('iris-setup-view'),false);
+  submitting=false;fetch=async()=>({ok:true,redirected:false});
+  await irisRequest('/service/iris-server/stop',{},null);
+  assert.equal(reloads,1);assert.equal(JSON.parse(saved.get('iris-setup-view')).stockOpen,true);
   destination=''; submitting=false;
   for (const [url,body,expected] of [
       ['/iris/installations/test-phone/rename','{"detail":[{"msg":"Rename failed"}]}','Rename failed'],

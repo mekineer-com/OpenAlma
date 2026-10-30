@@ -245,9 +245,17 @@
         if (!statusAvailable) return;
         // Preserve unsaved edits and undismissed messages.
         if ((!wasAvailable || statusSignature(status) !== initialSignature) &&
-            !document.querySelector('#iris-installations details[open], .iris-address:focus-within, .iris-repair:focus-within, .iris-repair[data-dirty], #launcher-message:not([hidden])')) location.reload();
+            !document.querySelector('#iris-installations details[open], .iris-address:focus-within, .iris-repair:focus-within, .iris-repair[data-dirty], #launcher-message:not([hidden])')) irisNavigate();
       } catch (_err) { applyActionStatus({}); }
     }, 2000);
+    function irisNavigate(url) {
+      sessionStorage.setItem('iris-setup-view', JSON.stringify({
+        scrollY: window.scrollY,
+        stockOpen: document.getElementById('iris-stock-installation')?.open
+      }));
+      if (url) location.assign(url);
+      else location.reload();
+    }
     async function irisRequest(url, options, button) {
       if (submitting) return;
       submitting = true;
@@ -257,10 +265,10 @@
         if (!response.ok) {
           throw new Error(await irisErrorMessage(response, 'Iris action failed.'));
         }
-        if (url.endsWith('/forget')) location.assign('/iris');
-        else if (url.endsWith('/install/iris-server')) location.reload();
-        else if (response.redirected) location.assign(response.url);
-        else location.reload();
+        if (url.endsWith('/forget')) irisNavigate('/iris');
+        else if (url.endsWith('/install/iris-server')) irisNavigate();
+        else if (response.redirected) irisNavigate(response.url);
+        else irisNavigate();
       } catch (err) {
         showLauncherMessage(err.message);
         if (button && (statusAvailable || !button.closest('form[action="/iris/install"], #iris-installations'))) button.disabled = false;
@@ -285,9 +293,15 @@
       QRCode.toCanvas(document.getElementById('iris-install-qr'), {{ iris.release_uri|tojson }}, { width: 220, margin: 1 });
     } catch (_err) {}
     document.getElementById('iris-install-qr').after(document.getElementById('iris-cancel-controls'));
-    document.getElementById('iris-install-qr').scrollIntoView({block: 'center'});
     {% endif %}
 
+    const savedView = JSON.parse(sessionStorage.getItem('iris-setup-view') || 'null');
+    sessionStorage.removeItem('iris-setup-view');
+    if (savedView) {
+      const stockSection = document.getElementById('iris-stock-installation');
+      if (stockSection && savedView.stockOpen !== undefined) stockSection.open = savedView.stockOpen;
+      requestAnimationFrame(() => window.scrollTo(0, savedView.scrollY));
+    }
 </script>
 <script src="/static/window-position.js"></script>
 {% include "_footer.html" %}
