@@ -354,6 +354,8 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
                 for row in installations:
                     assert f'href="/iris?device_session_id={row["device_session_id"]}"' in visible
             assert ('id="iris-install-qr"' in visible) == (selected is not installations[1])
+            assert (".scrollIntoView({block: 'center'})" in response.text) == (selected is not installations[1])
+            assert "dismiss Iris from the host app's app switcher" not in visible
             assert ("Stock installer active" in visible) == (selected is not installations[1])
             assert ('id="iris-install-qr"' in stock) == (selected is not installations[1])
             assert ('open' in stock.split('>', 1)[0]) == (selected is not installations[1])

@@ -156,7 +156,6 @@
         <li>In Glassly, open Settings and tap the release number ten times. Open Debug settings, enable Developer Tools, then go back and open Miniapp Developer Settings.</li>
         <li>Choose Scan Miniapp QR Code.</li>
         <li>Scan this QR, then open Iris.</li>
-        <li>For an Update, dismiss Iris from the host app's app switcher, then reopen it.</li>
         <li>Wait for OpenAlma to confirm installation; cleanup is automatic.</li>
       </ol>
       <h4>3. Open Iris and talk</h4>
@@ -285,6 +284,7 @@
     try {
       QRCode.toCanvas(document.getElementById('iris-install-qr'), {{ iris.release_uri|tojson }}, { width: 220, margin: 1 });
     } catch (_err) {}
+    document.getElementById('iris-install-qr').scrollIntoView({block: 'center'});
     {% endif %}
 
 </script>
