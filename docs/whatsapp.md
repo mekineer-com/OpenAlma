@@ -33,6 +33,13 @@ And sometimes she'd rather say something just to you than to the group. Those re
 
 Each companion has a start date, set when you first activate her. WhatsApp history older than that date is invisible to her — she isn't handed years of backlog she wasn't present for. Her perspective begins when she does.
 
+## When the memory server is off
+
+Hermes can start and keep recording WhatsApp messages while the memory server
+is stopped; the launcher shows it as waiting for memU Server. Messages that
+arrive in that time stay in the chat's history, but she doesn't reply to them
+late once the server is back. Queued replies of hers go out when it returns.
+
 ## Honest limitations
 
 WhatsApp has no official API for this. OpenAlma uses linked-device sessions on your own account, and these occasionally need re-pairing by scanning a QR code. If she goes quiet across every chat at once, that's usually why.

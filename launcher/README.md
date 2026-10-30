@@ -80,14 +80,18 @@ The component manifest selects the matching prebuilt server package.
 
 - OpenAlma prepares Iris's computer-side tools automatically after a
   phone connects. The main row has APK/QR/Setup links only; installing Iris on a
-  phone still requires its Install action. Stock's explicit Install prepares
-  tools as needed. Preparation failures offer Retry in Setup.
+  phone still requires its Install action. Stock Mentra and Glassly use the same
+  Iris install from Setup, which prepares tools as needed. Preparation failures
+  offer Retry in Setup.
 - On first use, confirm your name and choose or create your companion's Soul.
 - Settings groups Apps root, Soul Workspace, launcher preferences and the log under **Host paths**. Source installs keep `paths.json` and `launcher.log` in the OpenAlma folder; Windows uses `%LOCALAPPDATA%\OpenAlma`. Existing preferences are moved once with their original kept as an `.orig` backup. Changing Soul Workspace does not move its files.
 - Each Soul has its own memory progress and recovery controls.
 - **Hide not installed** moves uninstalled services into the existing collapsed section. It disappears when all services are installed.
 - Echo's **Install** enables the bundled importer once; only **Setup** remains afterward. Echo updates with the memory server.
 - Stop Hermes before switching its Soul, then start it again.
+- Hermes can run while the memory services are stopped. It shows **waiting for
+  memU Server** and keeps saving WhatsApp history, but messages that arrive in
+  the meantime get no catch-up replies.
 - New WhatsApp chats are excluded until you choose to include them. Changing
   the default for new chats does not change the choices for existing chats.
 - **Stop** gives an app time to finish safely. If it gets stuck, you can choose

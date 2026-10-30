@@ -16,6 +16,8 @@ those introductions. Task progress belongs in its plan or audit.
 
 OpenAlma owns when an app starts and stops; each app owns how it starts.
 Echo's UI is here; import orchestration belongs to mcp-memu-server.
+Atomic Install pip-installs its Claude session helper into memU Server's venv,
+so it refuses while memU runs and install/start share `_SERVICE_INSTALL_LOCK`.
 
 Routine notices and errors use the shared inline message, not browser alerts.
 Clicking Force Stop is confirmation: do not ask again. Its request supplies

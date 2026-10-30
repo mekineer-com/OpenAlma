@@ -50,11 +50,36 @@ soul: switch souls and you switch workspaces. The memory tools stay open in
 tabs while you work, instead of closing after every look. The workspace is
 included in the OpenAlma Beta.
 
+## Talking with her
+
+Chat in Atomic uses the same model setup as the rest of OpenAlma: your API
+provider, or Claude Code when it is turned on (`claude_code` in the memory
+server's config, or **Use Claude Code** in SillyTavern). Each chat shows **API
+mode** or **Claude Code mode**. Claude Code mode isn't available when the memory
+server runs on Windows; use API mode there.
+
+A chat is a *sitting* with a fixed amount of room. You set that room in the
+memory server's config: `llm.context_window_tokens` for API mode,
+`claude_code_context_window_tokens` for Claude Code. Use what your provider or
+account really allows. OpenAlma keeps 20,000 tokens in reserve, and a meter in
+the chat header shows how full the sitting is. Older messages are never quietly
+dropped to make space. In Claude Code mode, older tool and thinking details are
+cleaned up as the sitting fills; your conversation itself is kept.
+
+When the sitting is full, she writes a short recap and the sitting closes. It
+stays readable but takes no new messages. **Start new sitting** opens a fresh
+one with the same topics and your unsent draft. A sitting stays in the mode it
+started in: if you switch Claude Code on or off, switch it back to continue
+that sitting, or start a new one.
+
+Closing the browser tab doesn't cancel a reply in progress; it is saved when it
+finishes.
+
 ## When you close it
 
-Ending a session saves the conversation and an activity recap. The transcript
-joins ordinary memory processing; closing a session does not itself start a
-paid extraction.
+**End Session** closes the sitting the same way: she writes a recap, and the
+conversation is saved. The transcript joins ordinary memory processing; closing
+a session does not itself start a paid extraction.
 
 If failed memory work has paused her, a refused send restores your unsent draft
 instead of making up an error reply from her. Recover in the launcher.
