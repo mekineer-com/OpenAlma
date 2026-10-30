@@ -5,12 +5,12 @@
       "repositories": [
         {
           "repository": "https://github.com/mekineer-com/mcp-memu-server.git",
-          "ref": "v0.1.27",
+          "ref": "v0.1.28",
           "destination": "mcp-memu-server"
         },
         {
           "repository": "https://github.com/mekineer-com/memU.git",
-          "ref": "v0.1.27",
+          "ref": "v0.1.28",
           "destination": "memu"
         }
       ]
