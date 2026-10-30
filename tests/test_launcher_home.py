@@ -97,33 +97,33 @@ def test_ai_setup_notice_lists_only_missing_values_and_clears_after_save(tmp_pat
 
     config["llm"].update(api_key="fictional-key", chat_model="fictional-model", context_window_tokens=32000)
     config_path.write_text(json.dumps(config))
-    assert app._ai_setup_message(tmp_path) == "to enter embedding API key."
+    assert app._ai_setup(tmp_path)["message"] == "to enter embedding API key."
     config["llm"]["embedding"]["api_key"] = "fictional-embedding-key"
     config_path.write_text(json.dumps(config))
     assert "AI setup needed." not in client.get("/").text
 
     config["llm"]["api_key"] = ""
     config_path.write_text(json.dumps(config))
-    assert app._ai_setup_message(tmp_path) == ""
+    assert app._ai_setup(tmp_path)["message"] == ""
     config["llm"].update(chat_model="", context_window_tokens=None,
                          step_models={"memory_extract": "fictional-model"})
     config_path.write_text(json.dumps(config))
-    assert app._ai_setup_message(tmp_path) == "to enter chat model and your model's context-window size."
+    assert app._ai_setup(tmp_path)["message"] == "to enter chat model and your model's context-window size."
     config["llm"]["embedding"]["api_key"] = ""
     config_path.write_text(json.dumps(config))
-    assert app._ai_setup_message(tmp_path) == "to enter chat model, embedding API key, and your model's context-window size."
+    assert app._ai_setup(tmp_path)["message"] == "to enter chat model, embedding API key, and your model's context-window size."
     config["llm"]["embedding"]["api_key"] = "fictional-embedding-key"
     config["llm"].update(step_models={}, step_context_window_tokens={"memory_extract": 32000})
     config_path.write_text(json.dumps(config))
-    assert app._ai_setup_message(tmp_path) == "to enter chat model and your model's context-window size."
+    assert app._ai_setup(tmp_path)["message"] == "to enter chat model and your model's context-window size."
 
     config["claude_code"] = True
     config["llm"].update(api_key="", chat_model="")
     config_path.write_text(json.dumps(config))
-    assert "context-window size" in app._ai_setup_message(tmp_path)
+    assert "context-window size" in app._ai_setup(tmp_path)["message"]
     config["claude_code_context_window_tokens"] = 200000
     config_path.write_text(json.dumps(config))
-    assert app._ai_setup_message(tmp_path) == ""
+    assert app._ai_setup(tmp_path)["message"] == ""
 
     config_path.write_text("{broken")
     assert "unreadable AI configuration" in client.get("/").text
@@ -146,13 +146,13 @@ def test_ai_readiness_requires_base_fields_with_step_models(tmp_path, step):
         "embedding": {"api_key": "fictional-embedding-key"},
     }}
     config_path.write_text(json.dumps(config))
-    assert app._ai_setup_message(tmp_path) == (
+    assert app._ai_setup(tmp_path)["message"] == (
         "to enter chat API key, chat model, and your model's context-window size."
     )
     config["llm"].update(api_key="", chat_model="fictional-base", context_window_tokens=64000)
     config_path.write_text(json.dumps(config))
     original = config_path.read_bytes()
-    assert app._ai_setup_message(tmp_path) == ""
+    assert app._ai_setup(tmp_path)["message"] == ""
     assert config_path.read_bytes() == original
 
 

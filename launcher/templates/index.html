@@ -31,11 +31,12 @@
   </div>
   {% endif %}
 
-  {% if ai_setup_message %}
+  {% if ai_setup.message %}
   <div class="banner">
     <strong>AI setup needed.</strong>
-    Open <form class="inline" method="post" action="/edit/memu-server-config"><button class="config-link" type="submit" title="Open config.json on the launcher machine">config.json</button></form>
-    {{ ai_setup_message }} Save the file, then restart memU Server.
+    <p>Update your settings {{ ai_setup.message }}</p>
+    {% with ai_missing_only = true %}{% include "_ai_settings.html" %}{% endwith %}
+    <form class="inline" method="post" action="/edit/memu-server-config"><button class="config-link" type="submit" title="Open config.json on the launcher machine">Open config.json for advanced settings</button></form>
   </div>
   {% endif %}
 

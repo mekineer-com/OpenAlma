@@ -35,6 +35,7 @@ def _render(
         soul_ids=["Fictional Soul"],
         editable_configs=editable_configs or [],
         host_prerequisites={"rows": []},
+        ai_setup={"fields": [], "message": "", "error": ""},
         apps_root="",
         needs_setup=False,
         memorize=memorize if isinstance(memorize, list) else ([{"soul_id": "Fictional Soul", **memorize}] if memorize else []),

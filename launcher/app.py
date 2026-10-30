@@ -13,14 +13,16 @@ import urllib.parse
 import webbrowser
 from contextlib import asynccontextmanager
 from pathlib import Path
-from threading import Event, Lock, Thread
+from threading import Event, Lock, RLock, Thread
 from typing import Annotated, Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 
+import ai_settings
 import policy
 import chat_import
 import services
@@ -31,7 +33,7 @@ import soul
 ROOT = Path(__file__).resolve().parent
 LAUNCHER_ID = "openalma-launcher"
 _ECHO_CONFIRM_LOCKS: dict[str, Lock] = {}
-_CONFIG_WRITE_LOCK = Lock()
+_CONFIG_WRITE_LOCK = RLock()
 # Admission and process spawn must not race an install touching the same runtime.
 _SERVICE_INSTALL_LOCK = Lock()
 templates = Jinja2Templates(
@@ -186,38 +188,22 @@ def _editable_configs(apps_root: Path | None) -> dict[str, Path]:
     return out
 
 
-def _ai_setup_message(root: Path | None) -> str:
+def _ai_setup(root: Path | None) -> dict:
+    empty = {"fields": [], "message": "", "error": ""}
     if root is None:
-        return ""
+        return empty
     try:
         config = json.loads((root / "mcp-memu-server/config.json").read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return ""
+        return empty
     except (OSError, ValueError):
-        return "to correct the unreadable AI configuration."
+        return {**empty, "message": "to correct the unreadable AI configuration.", "error": "Open config.json to repair the unreadable AI configuration."}
     if not isinstance(config, dict):
-        return "to correct the AI configuration: expected a JSON object."
-    llm = config.get("llm", {})
-    if not isinstance(llm, dict):
-        return "to correct the AI configuration: llm must be a JSON object."
-    embedding = llm.get("embedding", {})
-    if not isinstance(embedding, dict):
-        return "to correct the AI configuration: llm.embedding must be a JSON object."
-    required = [("embedding API key", embedding.get("api_key"))]
-    # Leave advanced model validation to the server.
-    if not config.get("claude_code"):
-        required.insert(0, ("chat model", llm.get("chat_model")))
-        if llm.get("api_key") != "":
-            required.insert(0, ("chat API key", llm.get("api_key")))
-    missing = [label for label, value in required
-               if not str(value or "").strip() or str(value).strip().startswith("YOUR_")]
-    capacity = config.get("claude_code_context_window_tokens") if config.get("claude_code") else llm.get("context_window_tokens")
-    if type(capacity) is not int or capacity <= 0:
-        missing.append("your model's context-window size")
-    if not missing:
-        return ""
-    fields = ", ".join(missing[:-1]) + ", and " + missing[-1] if len(missing) > 2 else " and ".join(missing)
-    return f"to enter {fields}."
+        return {**empty, "message": "to correct the AI configuration: expected a JSON object.", "error": "config.json must contain a JSON object."}
+    try:
+        return ai_settings.describe(config)
+    except ValueError as exc:
+        return {**empty, "message": f"to correct the AI configuration: {exc}", "error": str(exc)}
 
 
 def _find_service(name: str) -> services.ServiceSpec:
@@ -359,7 +345,7 @@ def index(request: Request) -> HTMLResponse:
             "apps_root": str(apps_root) if apps_root else "",
             "setup_root": str(setup_root) if setup_root else "",
             "needs_setup": apps_root is None,
-            "ai_setup_message": _ai_setup_message(apps_root),
+            "ai_setup": _ai_setup(apps_root),
             "owner_id": owner_id,
             "owner_error": owner_error,
             "launcher_update": setup_install.launcher_update(),
@@ -759,6 +745,11 @@ def _save_memu_config(changes: dict) -> None:
                 section = config.setdefault(key, {})
                 if not isinstance(section, dict):
                     raise ValueError(f"{key} must be a JSON object")
+                if key == "llm" and "embedding" in value:
+                    embedding = section.get("embedding", {})
+                    if not isinstance(embedding, dict) or not isinstance(value["embedding"], dict):
+                        raise ValueError("llm.embedding must be a JSON object")
+                    value = {**value, "embedding": {**embedding, **value["embedding"]}}
                 section.update(value)
             else:
                 config[key] = value
@@ -785,6 +776,43 @@ def _save_memu_config(changes: dict) -> None:
             finally:
                 if temporary:
                     temporary.unlink(missing_ok=True)
+
+
+@app.post("/settings/ai")
+async def ai_settings_save(request: Request) -> JSONResponse:
+    form = await request.form()
+    if len(form.multi_items()) != len(form):
+        raise HTTPException(status_code=400, detail="Duplicate AI settings submitted.")
+
+    def save() -> None:
+        with _CONFIG_WRITE_LOCK:
+            _path, config = _memu_config()
+            changes = ai_settings.changes_from_form(dict(form), config)
+            if changes:
+                _save_memu_config(changes)
+
+    try:
+        await run_in_threadpool(save)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return JSONResponse({"ok": True})
+
+
+@app.post("/settings/ai/context")
+def ai_context_suggestion(base_url: str = Form(), chat_model: str = Form(),
+                          chat_api_key: str = Form(default=""), keyless: bool = Form(default=False)) -> JSONResponse:
+    try:
+        _path, config = _memu_config()
+        llm = config.get("llm") or {}
+        if config.get("claude_code") or any((llm.get("endpoint_overrides") or {}).get(name) for name in ("chat", "summary")):
+            raise ValueError("This connection needs a manually entered context size.")
+        key = "" if keyless else chat_api_key.strip()
+        if not key and not keyless and base_url.rstrip("/") == str(llm.get("base_url") or "https://api.openai.com/v1").rstrip("/"):
+            key = str(llm.get("api_key") or "")
+        capacity = ai_settings.suggest_context(base_url, chat_model.strip(), key)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return JSONResponse({"context_window_tokens": capacity})
 
 
 @app.post("/iris/address")
@@ -846,6 +874,7 @@ def settings_page(request: Request) -> HTMLResponse:
             "apps_root_pending": setup_root is not None and candidate is None,
             "apps_root_restart_required": candidate is not None and candidate != apps_root,
             "editable_configs": editable,
+            "ai_setup": _ai_setup(apps_root),
             "settings_path": str(settings.SETTINGS_PATH),
             "launcher_log_path": str(settings.LAUNCHER_LOG_PATH),
             "soul_workspace": workspace,

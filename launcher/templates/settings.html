@@ -38,6 +38,9 @@
     <a href="/logs/launcher">View</a>
   </div>
 
+  <h2>AI settings</h2>
+  {% with ai_missing_only = false %}{% include "_ai_settings.html" %}{% endwith %}
+
   <h2>Embedding model</h2>
   <div class="field-row">
     <label for="embedding-model">Model</label>

@@ -88,6 +88,7 @@ def test_first_entry_has_no_separate_human_name(owner_id):
     templates = Path(__file__).resolve().parents[1] / "launcher/templates"
     html = Environment(loader=FileSystemLoader(templates), autoescape=True).get_template("index.html").render(
         owner_id=owner_id, owner_error="", soul_ids=[], soul_error="",
+        ai_setup={"fields": [], "message": "", "error": ""},
         services=[], not_installed_services=[], memorize=[], host_prerequisites={"rows": []},
     )
     assert 'name="soul_id"' in html

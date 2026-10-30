@@ -1,0 +1,29 @@
+{% if ai_setup.error %}
+  <p class="failure">{{ ai_setup.error }}</p>
+{% elif ai_setup.fields %}
+  <form method="post" action="/settings/ai" data-ai-settings>
+    {% for field in ai_setup.fields %}
+    {% if not ai_missing_only or field.missing %}
+    <div class="field-row">
+      <label for="ai-{{ field.name }}">{% if field.type == 'number' %}Context-window size{% else %}{{ field.label[0]|upper }}{{ field.label[1:] }}{% endif %}</label>
+      <input id="ai-{{ field.name }}" data-ai-field="{{ field.name }}" name="{{ field.name }}" type="{{ field.type }}" value="{{ field.value }}" {% if field.type == 'password' %}autocomplete="new-password" placeholder="{% if field.saved %}Saved; leave blank to keep{% else %}Enter API key{% endif %}"{% elif field.type == 'number' %}min="1" step="1" required{% else %}required{% endif %}>
+      {% if field.name == 'chat_api_key' %}
+      <label><input type="checkbox" name="keyless" value="true" {% if ai_setup.keyless %}checked{% endif %}> No chat API key (keyless endpoint)</label>
+      {% endif %}
+      {% if field.name == 'context_window_tokens' %}
+      <button class="btn" type="button" data-ai-autofill>Auto-fill</button>
+      <p class="hint field-help">Auto-fill suggests a conservative OpenRouter allowance. Other connections need manual entry. Clear this value to request a suggestion.</p>
+      {% elif field.name == 'claude_code_context_window_tokens' %}
+      <p class="hint field-help">Enter the context allowance for your Claude Code model and account.</p>
+      {% endif %}
+    </div>
+    {% elif field.name in ['base_url', 'chat_model'] %}
+    <input type="hidden" data-ai-field="{{ field.name }}" value="{{ field.value }}">
+    {% endif %}
+    {% endfor %}
+    <button class="btn" type="submit">Save AI settings</button>
+    <p class="hint">Saved to config.json. Blank key fields keep saved keys; changing the API address requires an explicit key or keyless choice. Review the context size whenever you change models.</p>
+    <p data-ai-status role="status" aria-live="polite"></p>
+  </form>
+  <script src="/static/ai-settings.js"></script>
+{% endif %}
