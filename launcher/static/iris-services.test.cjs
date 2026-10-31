@@ -180,7 +180,7 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
   });
   const template = fs.readFileSync(__dirname + '/../templates/iris.html', 'utf8');
   const inlineStart = template.indexOf('const initialStatus = ');
-  const included = template.slice(0, inlineStart).match(/<script src="\/static\/iris-services\.js\?v=single-action"><\/script>/);
+  const included = template.slice(0, inlineStart).match(/<script src="\/static\/iris-services\.js(?:\?[^"]*)?"><\/script>/);
   assert.ok(included, 'Setup must load the real shared guard before its inline script');
   vm.runInContext(fs.readFileSync(__dirname + '/iris-services.js', 'utf8'), context);
   assert.equal(typeof context.irisInstallDisabled, 'function');

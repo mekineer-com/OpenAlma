@@ -594,12 +594,14 @@ def _channels_bridge_health(config: dict | None = None) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _channels_memu_available() -> bool:
-    base_url = str(os.environ.get("CHANNELS_MEMU_BASE_URL") or _read_channels_config().get("memu_base_url")
+def _channels_memu_available(config: dict) -> bool:
+    base_url = str(os.environ.get("CHANNELS_MEMU_BASE_URL") or config.get("memu_base_url")
                    or f"http://127.0.0.1:{MEMU_SERVER_PORT}").rstrip("/")
     try:
         with urllib.request.urlopen(f"{base_url}/health", timeout=0.5) as response:
-            return response.status == 200
+            health = json.loads(response.read())
+            return (response.status == 200 and isinstance(health, dict) and health.get("ok") is True
+                    and not health.get("shutdown", {}).get("draining"))
     except (OSError, ValueError):
         return False
 
@@ -1576,7 +1578,7 @@ def status(spec: ServiceSpec) -> dict:
             state = "pairing"
             label = "Pairing required"
         elif bridge_state == "connected" and web_source_ok:
-            available = _channels_memu_available()
+            available = _channels_memu_available(channels_config)
             state = "healthy" if available else "waiting"
             label = "● healthy" if available else "○ waiting for memU Server"
         elif bridge_state in {"connecting", "starting"} or web_source_starting:

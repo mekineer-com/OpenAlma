@@ -250,6 +250,7 @@
     }, 2000);
     function irisNavigate(url) {
       sessionStorage.setItem('iris-setup-view', JSON.stringify({
+        page: location.pathname + location.search,
         scrollY: window.scrollY,
         stockOpen: document.getElementById('iris-stock-installation')?.open
       }));
@@ -309,11 +310,12 @@
       });
     });
 
-    const savedView = JSON.parse(sessionStorage.getItem('iris-setup-view') || 'null');
+    const savedState = JSON.parse(sessionStorage.getItem('iris-setup-view') || 'null');
+    const savedView = savedState?.page === location.pathname + location.search ? savedState : null;
     sessionStorage.removeItem('iris-setup-view');
     if (savedView) {
       const stockSection = document.getElementById('iris-stock-installation');
-      if (stockSection && savedView.stockOpen !== undefined) stockSection.open = savedView.stockOpen;
+      if (stockSection && savedView.stockOpen) stockSection.open = true;
     }
     // Navigation can restore its own scroll position before the page finishes loading.
     window.addEventListener('load', () => {

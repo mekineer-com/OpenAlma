@@ -742,8 +742,8 @@ def test_iris_page_and_poll_share_setup_status(tmp_path, monkeypatch, setup, run
         assert '>Retry</button>' in retry and '>Install</button>' not in retry
         if initial.get("ready") is False and not initial.get("blocked"):
             assert initial["detail"] in html.split('id="iris-installer-status"', 1)[1].split('</p>', 1)[0]
-        script = '<script src="/static/iris-services.js?v=single-action"></script>'
-        assert html.index(script) < html.index("const initialStatus = ")
+        script = re.search(r'<script src="/static/iris-services\.js(?:\?[^"]*)?"></script>', html)
+        assert script and html.index(script.group()) < html.index("const initialStatus = ")
         if not runtime and setup["ready"] and url == "/iris":
             shared = client.get("/static/iris-services.js")
             assert shared.status_code == 200
@@ -817,7 +817,7 @@ const history={replaceState:(_state,_title,url)=>{historyUrl=url;location.hash=u
 let fetch=async()=>({ok:true,redirected:true,url:'/iris?device_session_id=test-phone'});
 eval(source.slice(source.indexOf('function irisNavigate'),source.indexOf('function irisAction')));
 (async()=>{
-  eval(source.slice(source.indexOf("document.querySelector('#iris-stock-installation > summary')"),source.indexOf('const savedView =')));
+  eval(source.slice(source.indexOf("document.querySelector('#iris-stock-installation > summary')"),source.indexOf('const savedState =')));
   summaryClick.call(summary);assert.equal(sectionReveals,1);
   stockSection.open=false;summaryClick.call(summary);assert.equal(sectionReveals,1);
   stockSection.open=true;
@@ -825,17 +825,26 @@ eval(source.slice(source.indexOf('function irisNavigate'),source.indexOf('functi
   assert.equal(historyUrl,'/iris?device_session_id=test-phone#iris-install-qr');
   assert.equal(destination,'');assert.equal(reloads,1);
   assert.equal(JSON.parse(saved.get('iris-setup-view')).scrollY,420);
+  assert.equal(JSON.parse(saved.get('iris-setup-view')).page,location.pathname+location.search);
   stockSection.open=false;window.scrollY=0;
-  eval(source.slice(source.indexOf('const savedView ='),source.indexOf('</script>',source.indexOf('const savedView ='))));
+  eval(source.slice(source.indexOf('const savedState ='),source.indexOf('</script>',source.indexOf('const savedState ='))));
   assert.equal(stockSection.open,true);assert.equal(window.scrollY,420);
   assert.equal(saved.has('iris-setup-view'),false);
+  saved.set('iris-setup-view',JSON.stringify({page:location.pathname+location.search,scrollY:160,stockOpen:false}));
+  stockSection.open=true;window.scrollY=0;
+  eval(source.slice(source.indexOf('const savedState ='),source.indexOf('</script>',source.indexOf('const savedState ='))));
+  assert.equal(stockSection.open,true);assert.equal(window.scrollY,160); // Keep the server-open QR and Cancel visible.
+  saved.set('iris-setup-view',JSON.stringify({page:'/iris?device_session_id=another-phone',scrollY:900,stockOpen:true}));
+  stockSection.open=false;window.scrollY=0;
+  eval(source.slice(source.indexOf('const savedState ='),source.indexOf('</script>',source.indexOf('const savedState ='))));
+  assert.equal(stockSection.open,false);assert.equal(window.scrollY,0); // Do not restore another page's view.
   location.hash='#iris-install-qr';
-  eval(source.slice(source.indexOf('const savedView ='),source.indexOf('</script>',source.indexOf('const savedView ='))));
+  eval(source.slice(source.indexOf('const savedState ='),source.indexOf('</script>',source.indexOf('const savedState ='))));
   assert.equal(location.hash,'#iris-install-qr'); // Keep the target while QR preparation finishes.
   qr={scrollIntoView:()=>reveals++};stockSection.open=false;
-  eval(source.slice(source.indexOf('const savedView ='),source.indexOf('</script>',source.indexOf('const savedView ='))));
+  eval(source.slice(source.indexOf('const savedState ='),source.indexOf('</script>',source.indexOf('const savedState ='))));
   assert.equal(reveals,1);assert.equal(stockSection.open,true);assert.equal(location.hash,'');
-  eval(source.slice(source.indexOf('const savedView ='),source.indexOf('</script>',source.indexOf('const savedView ='))));
+  eval(source.slice(source.indexOf('const savedState ='),source.indexOf('</script>',source.indexOf('const savedState ='))));
   assert.equal(reveals,1); // Later polling and Cancel must not force another QR jump.
   submitting=false;
   await irisRequest('/iris/install',{}, {form:{elements:{host_package:{value:'com.mentra.mentra.openalma'}}}});
