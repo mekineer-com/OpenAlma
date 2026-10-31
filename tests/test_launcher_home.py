@@ -802,8 +802,10 @@ const fs=require('fs'), path=require('path'), assert=require('assert');
 const source=fs.readFileSync(process.argv[1],'utf8');
 const root=path.resolve(path.dirname(process.argv[1]),'..');
 const message={hidden:true}, text={}, stockSection={open:true};
-let qr=null, reveals=0;
-const document={getElementById:id=>id==='launcher-message'?message:id==='iris-stock-installation'?stockSection:id==='iris-install-qr'?qr:text};
+let qr=null, reveals=0, sectionReveals=0, summaryClick, historyUrl='';
+const summary={parentElement:stockSection,addEventListener:(kind,callback)=>{assert.equal(kind,'click');summaryClick=callback;}};
+stockSection.querySelector=()=>({scrollIntoView:()=>sectionReveals++});
+const document={querySelector:()=>summary,getElementById:id=>id==='launcher-message'?message:id==='iris-stock-installation'?stockSection:id==='iris-install-qr'?qr:text};
 eval(fs.readFileSync(root+'/static/launcher.js','utf8').split('async function quitLauncher')[0]);
 eval(fs.readFileSync(root+'/static/iris-services.js','utf8'));
 let submitting=false, statusAvailable=true, destination='', reloads=0;
@@ -811,12 +813,17 @@ const window={scrollY:420,scrollTo:(_x,y)=>window.scrollY=y,addEventListener:(_e
 const requestAnimationFrame=callback=>callback();
 const saved=new Map(), sessionStorage={setItem:(key,value)=>saved.set(key,value),getItem:key=>saved.get(key),removeItem:key=>saved.delete(key)};
 const location={hash:'',pathname:'/iris',search:'?device_session_id=test-phone',assign:url=>destination=url,reload:()=>reloads++};
-const history={replaceState:()=>location.hash=''};
+const history={replaceState:(_state,_title,url)=>{historyUrl=url;location.hash=url.includes('#')?'#iris-install-qr':'';}};
 let fetch=async()=>({ok:true,redirected:true,url:'/iris?device_session_id=test-phone'});
 eval(source.slice(source.indexOf('function irisNavigate'),source.indexOf('function irisAction')));
 (async()=>{
+  eval(source.slice(source.indexOf("document.querySelector('#iris-stock-installation > summary')"),source.indexOf('const savedView =')));
+  summaryClick.call(summary);assert.equal(sectionReveals,1);
+  stockSection.open=false;summaryClick.call(summary);assert.equal(sectionReveals,1);
+  stockSection.open=true;
   await irisRequest('/iris/install',{},null);
-  assert.equal(destination,'/iris?device_session_id=test-phone#iris-install-qr');
+  assert.equal(historyUrl,'/iris?device_session_id=test-phone#iris-install-qr');
+  assert.equal(destination,'');assert.equal(reloads,1);
   assert.equal(JSON.parse(saved.get('iris-setup-view')).scrollY,420);
   stockSection.open=false;window.scrollY=0;
   eval(source.slice(source.indexOf('const savedView ='),source.indexOf('</script>',source.indexOf('const savedView ='))));
@@ -835,7 +842,8 @@ eval(source.slice(source.indexOf('function irisNavigate'),source.indexOf('functi
   assert.equal(destination,'/iris?device_session_id=test-phone');
   submitting=false;fetch=async()=>({ok:true,redirected:false});
   await irisRequest('/service/iris-server/stop',{},null);
-  assert.equal(reloads,1);assert.equal(JSON.parse(saved.get('iris-setup-view')).stockOpen,true);
+  assert.equal(reloads,2);assert.equal(JSON.parse(saved.get('iris-setup-view')).stockOpen,true);
+  assert.equal(sectionReveals,1); // Restoring an open section must not trigger click scrolling.
   destination=''; submitting=false;
   for (const [url,body,expected] of [
       ['/iris/installations/test-phone/rename','{"detail":[{"msg":"Rename failed"}]}','Rename failed'],

@@ -267,8 +267,14 @@
         }
         if (url.endsWith('/forget')) irisNavigate('/iris');
         else if (url.endsWith('/install/iris-server')) irisNavigate();
-        else if (response.redirected) irisNavigate(response.url +
-          (url.endsWith('/iris/install') && button?.form?.elements.host_package?.value !== 'com.mentra.mentra.openalma' ? '#iris-install-qr' : ''));
+        else if (response.redirected) {
+          const manualInstall = url.endsWith('/iris/install') && button?.form?.elements.host_package?.value !== 'com.mentra.mentra.openalma';
+          if (manualInstall) {
+            // A fragment-only navigation would retain this page's submitting state.
+            history.replaceState(null, '', response.url + '#iris-install-qr');
+            irisNavigate();
+          } else irisNavigate(response.url);
+        }
         else irisNavigate();
       } catch (err) {
         showLauncherMessage(err.message);
@@ -295,6 +301,13 @@
     } catch (_err) {}
     document.getElementById('iris-install-qr').after(document.getElementById('iris-cancel-controls'));
     {% endif %}
+
+    document.querySelector('#iris-stock-installation > summary')?.addEventListener('click', function() {
+      requestAnimationFrame(() => {
+        const section = this.parentElement;
+        if (section.open) section.querySelector('h4').scrollIntoView({block: 'center'});
+      });
+    });
 
     const savedView = JSON.parse(sessionStorage.getItem('iris-setup-view') || 'null');
     sessionStorage.removeItem('iris-setup-view');
