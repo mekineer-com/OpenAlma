@@ -14,12 +14,12 @@ The complete OpenAlma stack has been tested on Alpine Linux 3.23 x86-64. Some co
 | Component | Tested on | Other platforms |
 |---|---|---|
 | memU | Alpine Linux 3.23 x86-64 | The installer includes sqlite-vec for Linux (glibc) x86-64/ARM64, macOS Intel/Apple Silicon, and Windows x86-64, but complete OpenAlma setups on those platforms have not been tested. |
-| mcp-memu-server | Alpine Linux 3.23 x86-64; native Windows Atomic/Claude Code acceptance | Windows acceptance used a local embedding stub; other client combinations remain untested. |
+| mcp-memu-server | Alpine Linux 3.23 x86-64; Windows with Atomic and Claude Code | The Windows test used real Claude Code chat with a stand-in for the embedding provider; other client combinations have not been tested. |
 | OpenAlma launcher | Alpine Linux and Windows startup/tests | Windows has an installer; source setup uses Python 3.12. |
 | Iris MiniApp | Mentra and Glassly on Android | Mentra also supports iOS, but Iris has not yet been tested there. |
 | OpenAlma Mentra app | Android | Android only. On iOS, stock Mentra is expected to work. |
 | Hermes Channels | Alpine Linux 3.23 x86-64 | Other operating systems have not yet been tested. |
-| SillyTavern integration | Stock SillyTavern on Linux | Other platforms remain subject to client installation and shutdown qualification. |
+| SillyTavern integration | Stock SillyTavern on Linux | Installation and shutdown on other platforms have not been tested. |
 | Atomic integration | Alpine Linux; packaged Windows server | Windows Install downloads the server. Linux/macOS server builds remain manual. |
 
 OpenAlma does not alter your firewall or create VPN services automatically. The Windows installer can install Python and Git; install other system prerequisites for the clients you choose. On Alpine 3.23, `install-alpine-prerequisites.sh` in this repo installs the reference system packages.
@@ -185,7 +185,7 @@ Memorize works the same way as SillyTavern: sleep gaps trigger extraction automa
 - **Sittings that survive** — Iris can reconnect after a short drop; longer outages end the sitting, and a reply in progress may be cut off.
 - **Private updates** — new versions arrive through your launcher the same private way she installed; no app store involved.
 
-Works with Mentra on Android. The voice she uses today is Gemini Live's; see [Platform compatibility](#platform-compatibility). Full guide: [Iris](iris.md).
+Works with Mentra or Glassly on Android. The voice she uses today is Gemini Live's; see [Platform compatibility](#platform-compatibility). Full guide: [Iris](iris.md).
 
 ### Atomic Mind Map
 

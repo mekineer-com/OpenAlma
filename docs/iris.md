@@ -35,7 +35,7 @@ Expand **Photo captions** to see the last five captions she wrote. A green check
 
 ## Video calls
 
-In a Video call she sees the phone camera's current view every couple of seconds while you talk, so she can talk about what is in front of you. Every so often she is offered a few recent frames and may keep some as photo memories. **Maximum memorized photos** in Iris settings caps how many she keeps (one to five per five minutes); photos you take on purpose don't count against it. The camera only runs while Iris is on screen.
+In a Video call she sees the phone camera's current view every couple of seconds while you talk, so she can talk about what is in front of you. Every so often she is offered a few recent frames and may keep some as photo memories. **Maximum memorized photos** in Iris settings caps how many she keeps: one to five in the first five minutes, then the allowance grows more slowly (twice that by 15 minutes, three times by 45); photos you take on purpose don't count against it. The camera only runs while Iris is on screen.
 
 ## Looking things up mid-conversation
 

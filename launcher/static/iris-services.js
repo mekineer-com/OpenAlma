@@ -90,7 +90,7 @@ function renderIrisInstallations(data) {
     var known = installation.metadata_known !== false;
     if (!known || row.querySelector('.iris-name-view button').disabled) row.querySelector('button[type="submit"]').disabled = !known;
     row.querySelector('.iris-name-view button').disabled = !known;
-    var appName = !known ? 'App details unavailable' : installation.host_package === 'com.mentra.mentra.openalma' ? 'OpenAlma Mentra' : 'Mentra';
+    var appName = !known ? 'App details unavailable' : installation.host_package === 'com.mentra.mentra.openalma' ? 'OpenAlma Mentra' : 'Mentra or Glassly';
     var tooltip = appName + (installation.host_version ? ' v' + installation.host_version : ' (version unknown)') +
       ', Iris ' + (installation.installed_version ? 'v' + installation.installed_version : known ? 'not installed' : '(version unknown)');
     var name = row.querySelector('.iris-name');

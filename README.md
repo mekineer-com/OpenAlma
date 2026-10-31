@@ -70,7 +70,7 @@ Back up anything you want to retain before **Remove Everything**; it permanently
 
 Use the launcher to install matching components and follow any component Update buttons after upgrading the launcher. The [component manifest](release-components.json) pins compatible versions; unchanged components keep their earlier versions. The Mentra phone app keeps its separate version line.
 
-Windows users can download the [latest Beta installer](https://github.com/mekineer-com/OpenAlma/releases/latest). The launcher shows installation steps and elapsed time, missing basic AI settings, and Hermes Setup before a Soul is selected. Windows launcher installation and upgrades have been tested; full Windows component-install acceptance remains separate. Atomic's compatible Windows server is downloaded during Install, without Rust or Visual Studio. Other platforms still need a manually built Rust server binary.
+Windows users can download the [latest Beta installer](https://github.com/mekineer-com/OpenAlma/releases/latest). The launcher shows installation steps and elapsed time, missing basic AI settings, and Hermes Setup before a Soul is selected. Windows launcher installation and upgrades have been tested; installing every component on Windows has not been fully tested. Atomic's compatible Windows server is downloaded during Install, without Rust or Visual Studio. Other platforms still need a manually built Rust server binary.
 
 ### Selected release tags
 
@@ -96,6 +96,7 @@ Windows users can download the [latest Beta installer](https://github.com/mekine
 | `v0.1.24` | Iris microphone selection persists across sittings (coordinated memU/Iris pins); Hermes starts through explicit WhatsApp pairing, service buttons stay stable across status polls, Linux shortcuts without a hardcoded home |
 | `v0.1.25` | SillyTavern model-source following and fixed Soul personas; ordinary ST chat opening stays independent of the memory server; corrected WhatsApp pairing readiness and Iris history labels |
 | `v0.1.26` | Gemini 3.8 Live and Thinking for Iris 0.1.29 (Audio or Video calls, photo captions, retryable photo filing); OpenAlma Mentra build 302014047 with account-free use; launcher errors stay visible and Iris setup works while the memory server is down; settings included in update backups; WhatsApp Baileys security update |
+| `v0.1.28` | Atomic API and Claude Code sittings, including Windows memory-server hosts; Hermes starts without memU; Iris 0.1.30 works with Mentra and Glassly; WhatsApp reply-to-self regression and media-history fixes; Windows startup, Exit and Force Stop timing fixes |
 
 ---
 

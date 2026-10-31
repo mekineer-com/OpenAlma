@@ -55,8 +55,7 @@ included in the OpenAlma Beta.
 Chat in Atomic uses the same model setup as the rest of OpenAlma: your API
 provider, or Claude Code when it is turned on (`claude_code` in the memory
 server's config, or **Use Claude Code** in SillyTavern). Each chat shows **API
-mode** or **Claude Code mode**. Claude Code mode isn't available when the memory
-server runs on Windows; use API mode there.
+mode** or **Claude Code mode**.
 
 A chat is a *sitting* with a fixed amount of room. You set that room in the
 memory server's config: `llm.context_window_tokens` for API mode,

@@ -59,7 +59,7 @@ OpenAlma is in beta, available on the launcher's Stable channel. It works, it's 
 
 - [SillyTavern](sillytavern.md) — chat client
 - [Hermes Channels](whatsapp.md) — messaging networks (WhatsApp for now)
-- [Iris Video Chat](iris.md) — voice and live camera through Mentra, photos from your phone
+- [Iris Video Chat](iris.md) — voice and live camera through Mentra or Glassly, photos from your phone
 - [Atomic Mind Map](mind-map.md) — graphical presentation of her memory with interactive chat
 
 **The concept guides:**

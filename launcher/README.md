@@ -68,8 +68,8 @@ running `python3.12 run.py` in a terminal also shows installation diagnostics.
 
 Download the [latest OpenAlma Beta installer](https://github.com/mekineer-com/OpenAlma/releases/latest)
 to open OpenAlma from the Start menu without a terminal window. Beta is available
-on the Stable channel. Launcher startup/tests are verified; full Windows component
-installation remains separately qualified.
+on the Stable channel. Launcher startup and tests pass on Windows; installing
+every component on Windows has not been fully tested.
 
 When a new OpenAlma release is available, stop all apps and choose **Update**.
 The launcher downloads and opens the new installer; **Show installer** brings

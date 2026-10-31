@@ -23,4 +23,4 @@ Short guides for people who want to understand the system, not just install it.
 - [SillyTavern](sillytavern.md) — typing, and letting her author herself
 - [Hermes Channels](whatsapp.md) — messaging networks (WhatsApp for now)
 - [Atomic](mind-map.md) — her memory, opened up
-- [Iris](iris.md) — voice and live camera through Mentra, photos from your phone
+- [Iris](iris.md) — voice and live camera through Mentra or Glassly, photos from your phone
