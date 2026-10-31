@@ -720,7 +720,7 @@ def test_iris_page_and_poll_share_setup_status(tmp_path, monkeypatch, setup, run
         assert '>Retry</button>' in retry and '>Install</button>' not in retry
         if initial.get("ready") is False and not initial.get("blocked"):
             assert initial["detail"] in html.split('id="iris-installer-status"', 1)[1].split('</p>', 1)[0]
-        script = '<script src="/static/iris-services.js"></script>'
+        script = '<script src="/static/iris-services.js?v=single-action"></script>'
         assert html.index(script) < html.index("const initialStatus = ")
         if not runtime and setup["ready"] and url == "/iris":
             shared = client.get("/static/iris-services.js")

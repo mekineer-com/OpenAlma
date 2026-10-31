@@ -167,7 +167,7 @@
 
 {% include "_mentra_apk_popup.html" %}
 <script src="/static/vendor/qrcode.min.js"></script>
-<script src="/static/iris-services.js"></script>
+<script src="/static/iris-services.js?v=single-action"></script>
 <script>
     const initialStatus = {{ iris|tojson }};
     const selectedDevice = {{ (selected_installation.device_session_id if selected_installation else '')|tojson }};
