@@ -122,7 +122,11 @@ async def browser_mutations(request: Request, call_next):
         if (origin is not None and origin != f"{request.url.scheme}://{request.url.netloc}"
                 or site is not None and site not in {"same-origin", "none"}):
             return JSONResponse(status_code=403, content={"detail": "Use the OpenAlma launcher page for this action"})
-    return await call_next(request)
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        # Revalidate assets without requiring manual script/CSS version bumps.
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 @app.get("/favicon.svg", include_in_schema=False)

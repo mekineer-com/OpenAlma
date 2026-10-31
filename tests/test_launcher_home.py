@@ -21,6 +21,28 @@ def _no_live_status(monkeypatch):
     monkeypatch.setattr(app.services, "memorize_pending", lambda *_args, **_kwargs: {})
 
 
+@pytest.mark.parametrize("extension", ["js", "css"])
+def test_static_assets_revalidate_at_the_same_url(tmp_path, monkeypatch, extension):
+    asset = tmp_path / f"fixture.{extension}"
+    asset.write_text("old content", encoding="utf-8")
+    mount = next(route for route in app.app.routes if route.name == "static")
+    monkeypatch.setattr(mount, "app", app.StaticFiles(directory=tmp_path))
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    url = f"/static/{asset.name}"
+    first = client.get(url)
+    assert first.status_code == 200
+    assert first.headers["cache-control"] == "no-cache"
+    assert client.head(url).headers["cache-control"] == "no-cache"
+    cached = client.get(url, headers={"If-None-Match": first.headers["etag"]})
+    assert cached.status_code == 304 and cached.content == b""
+    assert cached.headers["cache-control"] == "no-cache"
+    asset.write_text("new replacement content", encoding="utf-8")
+    changed = client.get(url, headers={"If-None-Match": first.headers["etag"]})
+    assert changed.status_code == 200 and changed.text == "new replacement content"
+    assert changed.headers["cache-control"] == "no-cache"
+    assert changed.headers["etag"] != first.headers["etag"]
+
+
 def test_malformed_channels_config_keeps_home_available(tmp_path, monkeypatch):
     config = tmp_path / "config.json"
     config.write_text("{broken", encoding="utf-8")
