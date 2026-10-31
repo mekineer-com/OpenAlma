@@ -110,16 +110,18 @@ function renderIrisInstallations(data) {
     row.querySelector('.iris-soul').textContent = 'Soul: ' + (installation.soul_id || 'Not chosen');
     var forgetBlocked = installation.active || installation.host_reporting ||
       (data.release_device_session_id === id && irisInstallerBusy(data));
-    var actions = ' <a class="btn" href="/iris?device_session_id=' + encodeURIComponent(id) +
-      (data.release_device_session_id === id && data.release_host_package === 'com.mentra.mentra' ? '#iris-install-qr' : '') + '">Setup</a>' + (known ?
+    var setupUrl = '/iris?device_session_id=' + encodeURIComponent(id);
+    var actions = known ?
       ' <button class="btn" type="button" data-forget title="Close the app and wait 15 seconds before forgetting it. Opening it again restores its row."' +
-      (forgetBlocked ? ' disabled' : '') + '>Forget</button>' : '');
+      (forgetBlocked ? ' disabled' : '') + '>Forget</button>' : '';
     if (installation.startable && installation.action_kind === 'start' && installation.action_label !== 'Repair') {
-      actions = '<form class="inline" method="post" action="/iris/install">' +
+      if (data.release_device_session_id === id && data.release_host_package === 'com.mentra.mentra') {
+        actions = '<a class="btn" href="' + setupUrl + '#iris-install-qr">' + esc(installation.action_label || 'Install') + '</a>' + actions;
+      } else actions = '<form class="inline" method="post" action="/iris/install">' +
         '<input type="hidden" name="device_session_id" value="' + esc(id) + '">' +
         '<input type="hidden" name="host_package" value="' + esc(installation.host_package) + '">' +
         '<button class="btn" type="submit"' + (irisInstallDisabled(data) ? ' disabled' : '') + '>' + esc(installation.action_label || 'Install') + '</button></form>' + actions;
-    }
+    } else actions = '<a class="btn" href="' + setupUrl + '">Setup</a>' + actions;
     var cell = row.querySelector('.iris-actions');
     if (cell.irisActionsHtml !== actions && !row.dataset.forgetting) {
       cell.innerHTML = actions;

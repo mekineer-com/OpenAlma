@@ -367,7 +367,7 @@ vm.runInThisContext(fs.readFileSync(process.argv[1], 'utf8'));
 renderIrisInstallations({installations});
 for (let i = 0; i < rows.length; i++) {
   const html = rows[i].querySelector('.iris-actions').innerHTML;
-  assert.ok(html.includes('href="/iris?device_session_id=' + encodeURIComponent(installations[i].device_session_id) + '">Setup</a>'));
+  assert.equal(html.includes('href="/iris?device_session_id=' + encodeURIComponent(installations[i].device_session_id) + '">Setup</a>'), i === 0);
   assert.ok(!html.includes('href="/iris">Setup</a>'));
   assert.ok(!html.includes('Stock Install'));
 }
@@ -378,6 +378,7 @@ renderIrisInstallations({installations, ready: false});
 assert.match(rows[1].querySelector('.iris-actions').innerHTML, /disabled>Update<\/button>/);
 renderIrisInstallations({installations, ready: true});
 assert.match(rows[1].querySelector('.iris-actions').innerHTML, /type="submit">Update<\/button>/);
+assert.doesNotMatch(rows[1].querySelector('.iris-actions').innerHTML, />Setup</);
 installations[1].action_label = 'Repair';
 for (const ready of [false, true]) {
   renderIrisInstallations({installations, ready});
