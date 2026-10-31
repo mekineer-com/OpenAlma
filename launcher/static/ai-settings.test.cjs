@@ -40,11 +40,16 @@ function setup(contextValue = '') {
     window: { location: { reload: () => { reloads += 1; } } },
     fetch: (url, options) => {
       requests.push({ url, options });
-      return new Promise(done => { resolve = result => done({ ok: true, json: async () => result }); });
+      return new Promise(done => {
+        resolve = (result, { ok = true, unreadable = false } = {}) => done({ ok, json: async () => {
+          if (unreadable) throw new SyntaxError('fictional private response text');
+          return result;
+        } });
+      });
     },
   });
   return { listeners, status, fields, keyless, requests, button, submit,
-    resolve: result => resolve(result), reloads: () => reloads };
+    resolve: (result, options) => resolve(result, options), reloads: () => reloads };
 }
 
 test('auto-fill changes only the unsaved input, not a populated value', async () => {
@@ -62,18 +67,18 @@ test('auto-fill changes only the unsaved input, not a populated value', async ()
   assert.equal(view.requests.length, 1);
 });
 
-test('any edit, including edit-away-and-back or keyless, invalidates a lookup', async () => {
-  for (const name of ['chat_model', 'base_url', 'chat_api_key', 'context_window_tokens', 'keyless']) {
-    const view = setup();
-    const pending = view.listeners.lookup();
-    view.listeners.input();
-    view.listeners.input();
-    view.resolve({ context_window_tokens: 64000 });
-    await pending;
-    assert.equal(view.fields.context_window_tokens.value, '', name);
-    assert.match(view.status.textContent, /Settings changed/);
-    assert.equal(view.button.disabled, false);
-  }
+test('editing a model away and back still invalidates a pending lookup', async () => {
+  const view = setup();
+  const pending = view.listeners.lookup();
+  view.fields.chat_model.value = 'fictional/changed';
+  view.listeners.input();
+  view.fields.chat_model.value = 'fictional/model';
+  view.listeners.input();
+  view.resolve({ context_window_tokens: 64000 });
+  await pending;
+  assert.equal(view.fields.context_window_tokens.value, '');
+  assert.match(view.status.textContent, /Settings changed/);
+  assert.equal(view.button.disabled, false);
 });
 
 test('save is the only persistence action and reloads after success', async () => {
@@ -87,4 +92,25 @@ test('save is the only persistence action and reloads after success', async () =
   await pending;
   assert.equal(view.reloads(), 1);
   assert.equal(view.submit.disabled, false);
+});
+
+test('unreadable responses show a useful message, not response contents', async () => {
+  const view = setup();
+  const pending = view.listeners.lookup();
+  view.resolve(null, { unreadable: true });
+  await pending;
+  assert.match(view.status.textContent, /unreadable response/);
+  assert.doesNotMatch(view.status.textContent, /fictional private/);
+  assert.equal(view.button.disabled, false);
+});
+
+test('unexpected JSON shapes use the same unreadable-response message', async () => {
+  for (const result of [null, [], 'fictional private response text']) {
+    const view = setup();
+    const pending = view.listeners.lookup();
+    view.resolve(result);
+    await pending;
+    assert.match(view.status.textContent, /unreadable response/);
+    assert.doesNotMatch(view.status.textContent, /fictional private/);
+  }
 });

@@ -6,7 +6,12 @@ document.querySelectorAll('form[data-ai-settings]').forEach(form => {
   const showError = error => { status.textContent = error.message; };
   async function post(url, body) {
     const response = await fetch(url, { method: 'POST', body });
-    const result = await response.json();
+    let result;
+    try {
+      result = await response.json();
+      if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error();
+    }
+    catch { throw new Error('The launcher returned an unreadable response. Try again.'); }
     if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Could not save or look up AI settings.');
     return result;
   }

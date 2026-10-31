@@ -758,10 +758,15 @@ def _save_memu_config(changes: dict) -> None:
             else:
                 config[key] = value
         backup = Path(str(path) + ".orig")
-        number = 2
-        while backup.exists():
+        numbered = []
+        for candidate in path.parent.glob(path.name + "_*.orig"):
+            number = candidate.name.removeprefix(path.name + "_").removesuffix(".orig")
+            if number.isdecimal() and int(number) >= 2:
+                numbered.append((int(number), candidate))
+        if backup.exists():
+            number = max((number for number, _ in numbered), default=1) + 1
             backup = Path(str(path) + f"_{number}.orig")
-            number += 1
+            numbered.append((number, backup))
         shutil.copy2(path, backup)
         backup.chmod(0o600)
         memu_spec = next((spec for spec in services.all_services() if spec.name == "memu-server"), None)
@@ -780,6 +785,12 @@ def _save_memu_config(changes: dict) -> None:
             finally:
                 if temporary:
                     temporary.unlink(missing_ok=True)
+        # Prune only after Save succeeds; a refused update must not evict history.
+        for _number, old_backup in sorted(numbered)[:-3]:
+            try:
+                old_backup.unlink()
+            except OSError:
+                logging.getLogger(__name__).warning("Could not prune config backup %s", old_backup, exc_info=True)
 
 
 @app.post("/settings/ai")
@@ -797,13 +808,17 @@ async def ai_settings_save(request: Request) -> JSONResponse:
 
     try:
         await run_in_threadpool(save)
+    except urllib.error.HTTPError as exc:
+        detail = services._http_error_detail(exc)
+        message = detail if isinstance(detail, str) else f"memU Server refused AI settings (HTTP {exc.code})."
+        raise HTTPException(status_code=400, detail=message) from exc
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return JSONResponse({"ok": True})
 
 
 @app.post("/settings/ai/context")
-def ai_context_suggestion(base_url: str = Form(), chat_model: str = Form(),
+def ai_context_suggestion(base_url: str = Form(), chat_model: str = Form(default=""),
                           chat_api_key: str = Form(default=""), keyless: bool = Form(default=False)) -> JSONResponse:
     try:
         _path, config = _memu_config()

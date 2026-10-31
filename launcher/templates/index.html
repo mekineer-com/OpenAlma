@@ -37,6 +37,7 @@
     <p>Update your settings {{ ai_setup.message }}</p>
     {% with ai_missing_only = true %}{% include "_ai_settings.html" %}{% endwith %}
     <form class="inline" method="post" action="/edit/memu-server-config"><button class="config-link" type="submit" title="Open config.json on the launcher machine">Open config.json for advanced settings</button></form>
+    <p class="hint">After editing config.json by hand, restart memU Server to apply the changes.</p>
   </div>
   {% endif %}
 

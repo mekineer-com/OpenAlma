@@ -48,6 +48,7 @@ def describe(config: dict) -> dict:
     missing = [row["label"] for row in fields if row["missing"]]
     labels = ", ".join(missing[:-1]) + ", and " + missing[-1] if len(missing) > 2 else " and ".join(missing)
     return {"fields": fields, "message": f"to enter {labels}." if missing else "",
+            "connection_missing": any(row["missing"] for row in fields if row["name"] in {"chat_api_key", "chat_model"}),
             "cli": cli, "keyless": llm.get("api_key") == "", "error": ""}
 
 
@@ -102,6 +103,9 @@ def changes_from_form(form: dict, config: dict) -> dict:
                 raise ValueError("Enter a chat model.")
             llm[name] = value
     previous = config.get("llm", {})
+    if ("chat_api_key" in form and not str(form["chat_api_key"]).strip()
+            and _missing(previous.get("api_key")) and form.get("keyless") != "true"):
+        raise ValueError("Enter a chat API key or choose keyless access.")
     if ("base_url" in llm and llm["base_url"] != str(previous.get("base_url") or "https://api.openai.com/v1").rstrip("/")
             and "api_key" not in llm and not _missing(previous.get("api_key"))):
         raise ValueError("Changing the API address requires an explicit API key or keyless choice.")
@@ -161,7 +165,7 @@ def suggest_context(base_url: str, model: str, api_key: str) -> int:
     elif base_url == MISTRAL_URL:
         url = f"{base_url}/models/{encoded_model}"
     elif base_url == XAI_URL:
-        url = f"{base_url}/language-models/{encoded_model}"
+        url = f"{base_url}/models/{encoded_model}"
     else:
         raise ValueError("Auto-fill is unavailable for this API address. Enter the context size manually.")
     data = _model_metadata(urllib.request.Request(url, headers=headers))
@@ -197,8 +201,9 @@ def suggest_context(base_url: str, model: str, api_key: str) -> int:
     for endpoint in endpoints:
         if not isinstance(endpoint, dict):
             raise ValueError("Incomplete endpoint limits; enter the context size manually.")
-        values = [endpoint.get("context_length"), endpoint.get("max_prompt_tokens")]
-        if any(type(value) is not int or value <= 0 for value in values):
-            raise ValueError("Incomplete endpoint limits; enter the context size manually.")
-        limits.append(min(values))
+        limit = _positive_limit(endpoint.get("context_length"))
+        prompt_limit = endpoint.get("max_prompt_tokens")
+        if prompt_limit is not None:
+            limit = min(limit, _positive_limit(prompt_limit))
+        limits.append(limit)
     return min(limits)

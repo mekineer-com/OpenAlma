@@ -3,7 +3,7 @@
 {% elif ai_setup.fields %}
   <form method="post" action="/settings/ai" data-ai-settings>
     {% for field in ai_setup.fields %}
-    {% if not ai_missing_only or field.missing %}
+    {% if not ai_missing_only or field.missing or (field.name in ['base_url', 'chat_api_key', 'chat_model'] and ai_setup.connection_missing) %}
     <div class="field-row">
       <label for="ai-{{ field.name }}">{% if field.type == 'number' %}Context-window size{% else %}{{ field.label[0]|upper }}{{ field.label[1:] }}{% endif %}</label>
       <input id="ai-{{ field.name }}" data-ai-field="{{ field.name }}" name="{{ field.name }}" type="{{ field.type }}" value="{{ field.value }}" {% if field.type == 'password' %}autocomplete="new-password" placeholder="{% if field.saved %}Saved; leave blank to keep{% else %}Enter API key{% endif %}"{% elif field.type == 'number' %}min="1" step="1" required{% else %}required{% endif %}>
@@ -12,9 +12,9 @@
       {% endif %}
       {% if field.name == 'context_window_tokens' %}
       <button class="btn" type="button" data-ai-autofill>Auto-fill</button>
-      <p class="hint field-help">Auto-fill supports direct NanoGPT, OpenRouter, Gemini, Mistral and xAI connections. It suggests a conservative allowance. Clear this value to request a suggestion; other connections need manual entry.</p>
+      <p class="hint field-help">Auto-fill supports direct NanoGPT, OpenRouter, Gemini, Mistral and xAI connections. Clear the size to request a suggestion. Atomic chat needs more than 20,000 tokens.</p>
       {% elif field.name == 'claude_code_context_window_tokens' %}
-      <p class="hint field-help">Enter the context allowance for your Claude Code model and account.</p>
+      <p class="hint field-help">Enter the context allowance for your Claude Code model and account. Atomic chat needs more than 20,000 tokens.</p>
       {% endif %}
     </div>
     {% elif field.name in ['base_url', 'chat_model'] %}

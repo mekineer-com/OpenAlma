@@ -189,7 +189,7 @@ def test_metadata_rejects_other_addresses_without_network(configured, url):
 
 @pytest.mark.parametrize("payload", [[], {}, {"data": {"id": "wrong", "endpoints": []}},
     {"data": {"id": "fictional/model", "endpoints": []}},
-    {"data": {"id": "fictional/model", "endpoints": [{"context_length": 64000, "max_prompt_tokens": None}]}},
+    {"data": {"id": "fictional/model", "endpoints": [{"context_length": None, "max_prompt_tokens": 64000}]}},
     {"data": {"id": "fictional/model", "endpoints": [{"context_length": 64000, "max_prompt_tokens": True}]}}])
 def test_metadata_does_not_guess_from_incomplete_limits(configured, monkeypatch, payload):
     _path, _config, client = configured
@@ -226,7 +226,7 @@ def test_metadata_errors_are_sanitized_and_redirects_not_followed(configured, mo
     (ai_settings.MISTRAL_URL, "fictional-model", {"id": "fictional-model", "max_context_length": 64000},
         "https://api.mistral.ai/v1/models/fictional-model", "Authorization"),
     (ai_settings.XAI_URL, "fictional-model", {"id": "fictional-model", "context_length": 64000},
-        "https://api.x.ai/v1/language-models/fictional-model", "Authorization"),
+        "https://api.x.ai/v1/models/fictional-model", "Authorization"),
 ])
 def test_other_providers_use_their_own_metadata_without_writing(
         configured, monkeypatch, base_url, model, payload, metadata_url, auth_header):
@@ -299,3 +299,87 @@ def test_provider_aliases_must_be_explicit_and_well_formed(configured, monkeypat
     assert result.status_code == (200 if expected else 400)
     if expected:
         assert result.json() == {"context_window_tokens": expected}
+
+
+def test_first_setup_shows_provider_address_and_saves_selected_provider(configured):
+    path, config, client = configured
+    config["llm"].update(base_url="https://api.openai.com/v1", chat_model="YOUR_MODEL", api_key="YOUR_KEY")
+    path.write_text(json.dumps(config))
+    html = client.get("/").text
+    assert 'name="base_url" type="text"' in html
+    assert 'name="chat_model"' in html
+    result = client.post("/settings/ai", data={"base_url": "https://nano-gpt.com/api/v1",
+        "chat_model": "fictional/model", "chat_api_key": "fictional-nano-key", "context_window_tokens": "64000"})
+    assert result.status_code == 200
+    assert json.loads(path.read_text())["llm"]["base_url"] == "https://nano-gpt.com/api/v1"
+    assert "AI setup needed." not in client.get("/").text
+
+    saved = json.loads(path.read_text())
+    saved["llm"]["chat_model"] = "YOUR_MODEL"
+    path.write_text(json.dumps(saved))
+    html = client.get("/").text
+    assert 'name="chat_api_key" type="password" value=""' in html
+    assert 'name="keyless"' in html
+    assert "fictional-nano-key" not in html
+
+
+def test_openrouter_null_prompt_cap_uses_required_context_bound(configured, monkeypatch):
+    _path, _config, client = configured
+    payload = {"data": {"id": "fictional/model", "endpoints": [
+        {"context_length": 128000, "max_prompt_tokens": None},
+        {"context_length": 64000, "max_prompt_tokens": 48000}]}}
+    monkeypatch.setattr(ai_settings.urllib.request, "build_opener", lambda *_args: SimpleNamespace(
+        open=lambda *_args, **_kwargs: io.BytesIO(json.dumps(payload).encode())))
+    result = client.post("/settings/ai/context", data={"base_url": ai_settings.OPENROUTER_URL, "chat_model": "fictional/model"})
+    assert result.json() == {"context_window_tokens": 48000}
+
+
+def test_unchecked_keyless_requires_a_key_without_erasing_config(configured):
+    path, config, client = configured
+    config["llm"]["api_key"] = ""
+    path.write_text(json.dumps(config))
+    before = path.read_bytes()
+    result = client.post("/settings/ai", data={"chat_api_key": ""})
+    assert result.status_code == 400
+    assert "choose keyless" in result.json()["detail"]
+    assert path.read_bytes() == before
+
+
+def test_backups_keep_original_and_latest_three_numbered_copies(configured):
+    path, _config, client = configured
+    original = path.read_bytes()
+    for size in range(32000, 32007):
+        assert client.post("/settings/ai", data={"context_window_tokens": str(size)}).status_code == 200
+    assert path.with_name("config.json.orig").read_bytes() == original
+    numbered = sorted(path.parent.glob("config.json_*.orig"))
+    assert [p.name for p in numbered] == ["config.json_5.orig", "config.json_6.orig", "config.json_7.orig"]
+    assert [json.loads(p.read_text())["llm"]["context_window_tokens"] for p in numbered] == [32003, 32004, 32005]
+
+
+def test_save_shows_live_server_refusal_and_blank_lookup_model(configured, monkeypatch):
+    _path, _config, client = configured
+    def refused(_changes):
+        raise urllib.error.HTTPError("http://fictional.invalid/config", 400, "Bad Request", {},
+                                     io.BytesIO(b'{"detail":"Fictional configuration refusal"}'))
+    monkeypatch.setattr(app, "_save_memu_config", refused)
+    result = client.post("/settings/ai", data={"context_window_tokens": "64000"})
+    assert result.json()["detail"] == "Fictional configuration refusal"
+    result = client.post("/settings/ai/context", data={"base_url": ai_settings.OPENROUTER_URL, "chat_model": ""})
+    assert result.status_code == 400
+    assert result.json()["detail"] == "Enter the exact provider model ID."
+
+
+def test_refused_save_keeps_existing_backup_history(configured, monkeypatch):
+    path, _config, client = configured
+    for number in range(2, 6):
+        path.with_name(f"config.json_{number}.orig").write_text("fictional snapshot")
+    path.with_name("config.json.orig").write_text("fictional original")
+    spec = services.ServiceSpec("memu-server", "memU Server", [], path.parent, path.parent / "log", path.parent / "pid")
+    monkeypatch.setattr(app.services, "all_services", lambda: [spec])
+    monkeypatch.setattr(app.services, "_runtime_state", lambda _: services.RuntimeState(running=True))
+    def refused(*_args):
+        raise urllib.error.HTTPError("http://fictional.invalid/config", 400, "Bad Request", {}, io.BytesIO(b'{}'))
+    monkeypatch.setattr(app.services, "_mcp_request", refused)
+    assert client.post("/settings/ai", data={"context_window_tokens": "64000"}).status_code == 400
+    for number in range(2, 6):
+        assert path.with_name(f"config.json_{number}.orig").read_text() == "fictional snapshot"
