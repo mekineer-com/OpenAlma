@@ -110,7 +110,8 @@ function renderIrisInstallations(data) {
     row.querySelector('.iris-soul').textContent = 'Soul: ' + (installation.soul_id || 'Not chosen');
     var forgetBlocked = installation.active || installation.host_reporting ||
       (data.release_device_session_id === id && irisInstallerBusy(data));
-    var actions = ' <a class="btn" href="/iris?device_session_id=' + encodeURIComponent(id) + '">Setup</a>' + (known ?
+    var actions = ' <a class="btn" href="/iris?device_session_id=' + encodeURIComponent(id) +
+      (data.release_device_session_id === id && data.release_host_package === 'com.mentra.mentra' ? '#iris-install-qr' : '') + '">Setup</a>' + (known ?
       ' <button class="btn" type="button" data-forget title="Close the app and wait 15 seconds before forgetting it. Opening it again restores its row."' +
       (forgetBlocked ? ' disabled' : '') + '>Forget</button>' : '');
     if (installation.startable && installation.action_kind === 'start' && installation.action_label !== 'Repair') {

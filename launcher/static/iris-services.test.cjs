@@ -96,6 +96,12 @@ test('Services preserves rows and Rename drafts through outages, then restores c
   detail.querySelector = () => null;
   context.renderIrisInstallations({...ready, blocked: true});
   assert.equal(install.disabled, true);
+  context.renderIrisInstallations({...ready, running: true,
+    release_device_session_id: installation.device_session_id, release_host_package: 'com.mentra.mentra',
+    installations: [{...installation, host_package: 'com.mentra.mentra', action_label: 'Update'}]});
+  assert.equal(install.disabled, true);
+  assert.match(actions.innerHTML, />Update<\/button>/);
+  assert.match(actions.innerHTML, /#iris-install-qr">Setup<\/a>/);
   assert.equal(context.irisInstallDisabled({}), true);
   for (const patch of [{ready: false}, {starting: true}, {state: 'stopping'},
                        {setup: {ready: false}}]) {

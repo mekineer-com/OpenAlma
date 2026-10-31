@@ -652,7 +652,8 @@ def test_iris_status_tracks_target_not_lock_and_preserves_rows_on_outage(tmp_pat
         target_path.write_text(json.dumps({"installation_ticket": "update-ticket", "device_session_id": "stock-test"}))
         update = services.status(spec)
         assert update["release_device_session_id"] == "stock-test"
-        assert update["installations"][0]["state"] == "starting"
+        assert update["starting"] is True
+        assert update["installations"][0]["state"] == "ready"
         assert update["installations"][0]["display_name"] == "Keep my name"
 
         target_path.write_text(json.dumps({"installation_ticket": "stock-ticket", "device_session_id": ""}))
@@ -661,7 +662,8 @@ def test_iris_status_tracks_target_not_lock_and_preserves_rows_on_outage(tmp_pat
         correlated = services.status(spec)
         assert correlated["release_device_session_id"] == "new-app"
         assert len(correlated["installations"]) == 2
-        assert correlated["installations"][1]["state"] == "starting"
+        assert correlated["starting"] is True
+        assert correlated["installations"][1]["state"] == "update"
 
     assert services.status(spec)["starting"] is False
 

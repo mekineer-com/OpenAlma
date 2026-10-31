@@ -364,6 +364,20 @@ class MentraStatusTest(TestCase):
         ):
             read.side_effect = lambda _port, **scope: {**read.return_value, "state": "transcript_gap", "detail": "Only this app failed", "installed_soul": "Old Soul"} if scope else read.return_value
             result = services.status(spec)
+            stock = read.return_value["installations"][0]
+            stock.update(package_name=services.IRIS_PACKAGE, version="0.0.9")
+            for starting in (False, True):
+                with (
+                    patch.object(services, "_IRIS_INSTALL_LOCK") as lock,
+                    patch.object(services, "_runtime_state", return_value=services.RuntimeState(running=not starting)),
+                ):
+                    lock.locked.return_value = starting
+                    pending = services.status(spec)
+                    self.assertEqual(pending["installations"][0]["action_label"], "Update")
+                    self.assertEqual(pending["installations"][0]["state"], "update")
+                    self.assertTrue(pending["running"] or pending["starting"])
+            stock["version"] = "0.1.0"
+            self.assertIsNone(services.status(spec)["installations"][0]["action_kind"])
         self.assertEqual(read.call_args_list[0].args, (services.MEMU_SERVER_PORT,))
         self.assertEqual(read.call_args_list[1].kwargs, {"device_session_id": "fork"})
         self.assertEqual(result["action_kind"], "stop")

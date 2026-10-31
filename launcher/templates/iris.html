@@ -267,7 +267,8 @@
         }
         if (url.endsWith('/forget')) irisNavigate('/iris');
         else if (url.endsWith('/install/iris-server')) irisNavigate();
-        else if (response.redirected) irisNavigate(response.url);
+        else if (response.redirected) irisNavigate(response.url +
+          (url.endsWith('/iris/install') && button?.form?.elements.host_package?.value !== 'com.mentra.mentra.openalma' ? '#iris-install-qr' : ''));
         else irisNavigate();
       } catch (err) {
         showLauncherMessage(err.message);
@@ -300,8 +301,18 @@
     if (savedView) {
       const stockSection = document.getElementById('iris-stock-installation');
       if (stockSection && savedView.stockOpen !== undefined) stockSection.open = savedView.stockOpen;
-      requestAnimationFrame(() => window.scrollTo(0, savedView.scrollY));
     }
+    // Navigation can restore its own scroll position before the page finishes loading.
+    window.addEventListener('load', () => {
+      const installQr = document.getElementById('iris-install-qr');
+      if (location.hash === '#iris-install-qr' && installQr) {
+        document.getElementById('iris-stock-installation').open = true;
+        requestAnimationFrame(() => installQr.scrollIntoView({block: 'center'}));
+        history.replaceState(null, '', location.pathname + location.search);
+      } else if (savedView) {
+        requestAnimationFrame(() => window.scrollTo(0, savedView.scrollY));
+      }
+    }, {once: true});
 </script>
 <script src="/static/window-position.js"></script>
 {% include "_footer.html" %}

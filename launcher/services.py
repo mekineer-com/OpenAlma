@@ -1494,11 +1494,13 @@ def status(spec: ServiceSpec) -> dict:
             if session:
                 scoped.update(_read_mentra_status(MEMU_SERVER_PORT, device_session_id=device))
                 scoped["installed_soul"] = session["soul_id"]
-            row_runtime = runtime if release_device == device else RuntimeState()
+            # A manual QR offer is not a phone-install acknowledgment.
+            automatic_target = release_device == device and host.get("host_package") == "com.mentra.mentra.openalma"
+            row_runtime = runtime if automatic_target else RuntimeState()
             projection = _iris_product_status(row_runtime, scoped, package, version, readiness)
             if readiness.get("step") == "server" and projection["state"] == "stopped":
                 projection["detail"] = _seen_age(record.get("seen_at"))
-            if result["starting"] and release_device == device:
+            if result["starting"] and automatic_target:
                 projection.update(state="starting", status_label="◐ preparing installer", action_kind=None, startable=False)
             installations.append({
                 **projection, "device_session_id": device,

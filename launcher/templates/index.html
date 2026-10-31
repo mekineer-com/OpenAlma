@@ -254,7 +254,8 @@ document.addEventListener('submit', async function(event) {
       throw new Error(await irisErrorMessage(response, 'Installation failed'));
     }
     location.assign(action === '/iris/install'
-      ? '/iris?device_session_id=' + encodeURIComponent(form.elements.device_session_id.value)
+      ? '/iris?device_session_id=' + encodeURIComponent(form.elements.device_session_id.value) +
+        (form.elements.host_package?.value === 'com.mentra.mentra.openalma' ? '' : '#iris-install-qr')
       : '/');
   } catch (error) {
     showLauncherMessage(error.message);

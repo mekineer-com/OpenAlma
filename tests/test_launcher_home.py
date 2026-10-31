@@ -354,7 +354,6 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
                 for row in installations:
                     assert f'href="/iris?device_session_id={row["device_session_id"]}"' in visible
             assert ('id="iris-install-qr"' in visible) == (selected is not installations[1])
-            assert 'scrollIntoView' not in response.text
             assert (".after(document.getElementById('iris-cancel-controls'))" in response.text) == (selected is not installations[1])
             assert "dismiss Iris from the host app's app switcher" not in visible
             assert ("Stock installer active" in visible) == (selected is not installations[1])
@@ -781,24 +780,37 @@ const fs=require('fs'), path=require('path'), assert=require('assert');
 const source=fs.readFileSync(process.argv[1],'utf8');
 const root=path.resolve(path.dirname(process.argv[1]),'..');
 const message={hidden:true}, text={}, stockSection={open:true};
-const document={getElementById:id=>id==='launcher-message'?message:id==='iris-stock-installation'?stockSection:text};
+let qr=null, reveals=0;
+const document={getElementById:id=>id==='launcher-message'?message:id==='iris-stock-installation'?stockSection:id==='iris-install-qr'?qr:text};
 eval(fs.readFileSync(root+'/static/launcher.js','utf8').split('async function quitLauncher')[0]);
 eval(fs.readFileSync(root+'/static/iris-services.js','utf8'));
 let submitting=false, statusAvailable=true, destination='', reloads=0;
-const window={scrollY:420,scrollTo:(_x,y)=>window.scrollY=y};
+const window={scrollY:420,scrollTo:(_x,y)=>window.scrollY=y,addEventListener:(_event,callback)=>callback()};
 const requestAnimationFrame=callback=>callback();
 const saved=new Map(), sessionStorage={setItem:(key,value)=>saved.set(key,value),getItem:key=>saved.get(key),removeItem:key=>saved.delete(key)};
-const location={assign:url=>destination=url,reload:()=>reloads++};
+const location={hash:'',pathname:'/iris',search:'?device_session_id=test-phone',assign:url=>destination=url,reload:()=>reloads++};
+const history={replaceState:()=>location.hash=''};
 let fetch=async()=>({ok:true,redirected:true,url:'/iris?device_session_id=test-phone'});
 eval(source.slice(source.indexOf('function irisNavigate'),source.indexOf('function irisAction')));
 (async()=>{
   await irisRequest('/iris/install',{},null);
-  assert.equal(destination,'/iris?device_session_id=test-phone');
+  assert.equal(destination,'/iris?device_session_id=test-phone#iris-install-qr');
   assert.equal(JSON.parse(saved.get('iris-setup-view')).scrollY,420);
   stockSection.open=false;window.scrollY=0;
   eval(source.slice(source.indexOf('const savedView ='),source.indexOf('</script>',source.indexOf('const savedView ='))));
   assert.equal(stockSection.open,true);assert.equal(window.scrollY,420);
   assert.equal(saved.has('iris-setup-view'),false);
+  location.hash='#iris-install-qr';
+  eval(source.slice(source.indexOf('const savedView ='),source.indexOf('</script>',source.indexOf('const savedView ='))));
+  assert.equal(location.hash,'#iris-install-qr'); // Keep the target while QR preparation finishes.
+  qr={scrollIntoView:()=>reveals++};stockSection.open=false;
+  eval(source.slice(source.indexOf('const savedView ='),source.indexOf('</script>',source.indexOf('const savedView ='))));
+  assert.equal(reveals,1);assert.equal(stockSection.open,true);assert.equal(location.hash,'');
+  eval(source.slice(source.indexOf('const savedView ='),source.indexOf('</script>',source.indexOf('const savedView ='))));
+  assert.equal(reveals,1); // Later polling and Cancel must not force another QR jump.
+  submitting=false;
+  await irisRequest('/iris/install',{}, {form:{elements:{host_package:{value:'com.mentra.mentra.openalma'}}}});
+  assert.equal(destination,'/iris?device_session_id=test-phone');
   submitting=false;fetch=async()=>({ok:true,redirected:false});
   await irisRequest('/service/iris-server/stop',{},null);
   assert.equal(reloads,1);assert.equal(JSON.parse(saved.get('iris-setup-view')).stockOpen,true);
