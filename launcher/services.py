@@ -499,65 +499,67 @@ def is_running(spec: ServiceSpec) -> bool:
 
 
 def _runtime_state(spec: ServiceSpec) -> RuntimeState:
-    verified = _verified_pid_candidates(spec)
-    service_pids = tuple(pid for pid in verified if _matches_service_process(spec, pid))
-    child_pids = tuple(
-        pid for pid in verified if (
-            spec.name == "channels-daemon" and _matches_channels_child_process(pid)
+    # Keep snapshot-driven cleanup/adoption ordered with Start's PID publication.
+    with _PIDFILE_LOCK:
+        verified = _verified_pid_candidates(spec)
+        service_pids = tuple(pid for pid in verified if _matches_service_process(spec, pid))
+        child_pids = tuple(
+            pid for pid in verified if (
+                spec.name == "channels-daemon" and _matches_channels_child_process(pid)
+            )
         )
-    )
-    if (spec.name == "sillytavern" and spec.port is not None
-            and service_pids and _within_startup_grace(spec)):
-        # ST readiness uses this listener directly; memU HTTP checks already refresh it.
-        cached = _PORT_PID_CACHE.get(spec.port)
-        if cached is not None and cached[1] is None:
-            _clear_port_cache(spec)
-    port_pid = _port_listener_pid(spec.port) if spec.port is not None else None
-    port_blocked = (port_pid == UNKNOWN_PORT_PID and not verified) or (
-        port_pid not in {None, UNKNOWN_PORT_PID}
-        and _is_alive(port_pid)
-        and not _matches_managed_process(spec, port_pid)
-    )
-    if not verified:
-        _clear_pid(spec)
-        if spec.adopt_pid_path is not None:
-            _clear_dead_pidfile(spec.adopt_pid_path)
-        return RuntimeState(port_pid=port_pid, port_blocked=port_blocked)
+        if (spec.name == "sillytavern" and spec.port is not None
+                and service_pids and _within_startup_grace(spec)):
+            # ST readiness uses this listener directly; memU HTTP checks already refresh it.
+            cached = _PORT_PID_CACHE.get(spec.port)
+            if cached is not None and cached[1] is None:
+                _clear_port_cache(spec)
+        port_pid = _port_listener_pid(spec.port) if spec.port is not None else None
+        port_blocked = (port_pid == UNKNOWN_PORT_PID and not verified) or (
+            port_pid not in {None, UNKNOWN_PORT_PID}
+            and _is_alive(port_pid)
+            and not _matches_managed_process(spec, port_pid)
+        )
+        if not verified:
+            _clear_pid(spec)
+            if spec.adopt_pid_path is not None:
+                _clear_dead_pidfile(spec.adopt_pid_path)
+            return RuntimeState(port_pid=port_pid, port_blocked=port_blocked)
 
-    pid = service_pids[0] if service_pids else verified[0]
-    _remember_verified_pid(spec, pid)
-    if spec.name == "channels-daemon" and not service_pids and child_pids:
+        pid = service_pids[0] if service_pids else verified[0]
+        _remember_verified_pid(spec, pid)
+        if spec.name == "channels-daemon" and not service_pids and child_pids:
+            return RuntimeState(
+                verified_pids=tuple(verified),
+                service_pids=service_pids,
+                child_pids=child_pids,
+                pid=pid,
+                port_pid=port_pid,
+                orphaned=True,
+                port_blocked=port_blocked,
+            )
+        if spec.port is None or (port_pid is not None and not port_blocked):
+            return RuntimeState(
+                verified_pids=tuple(verified),
+                service_pids=service_pids,
+                child_pids=child_pids,
+                pid=pid,
+                port_pid=port_pid,
+                running=True,
+                port_blocked=port_blocked,
+            )
+        running = spec.name == "iris-server" or _within_startup_grace(spec)
         return RuntimeState(
             verified_pids=tuple(verified),
             service_pids=service_pids,
             child_pids=child_pids,
             pid=pid,
             port_pid=port_pid,
-            orphaned=True,
+            running=running,
+            stuck=not running,
+            orphaned=False,
             port_blocked=port_blocked,
         )
-    if spec.port is None or (port_pid is not None and not port_blocked):
-        return RuntimeState(
-            verified_pids=tuple(verified),
-            service_pids=service_pids,
-            child_pids=child_pids,
-            pid=pid,
-            port_pid=port_pid,
-            running=True,
-            port_blocked=port_blocked,
-        )
-    running = spec.name == "iris-server" or _within_startup_grace(spec)
-    return RuntimeState(
-        verified_pids=tuple(verified),
-        service_pids=service_pids,
-        child_pids=child_pids,
-        pid=pid,
-        port_pid=port_pid,
-        running=running,
-        stuck=not running,
-        orphaned=False,
-        port_blocked=port_blocked,
-    )
 
 
 def _read_channels_config() -> dict:
@@ -1719,7 +1721,7 @@ def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None, bu
                     raise ValueError("Published Iris bundle unavailable; use Repair for a local build")
                 bundle_path = _download_iris_release(url, package, version)
             env["MENTRA_RELEASE_BUNDLE"] = str(bundle_path)
-        with _STOP_LOCK:
+        with _STOP_LOCK, _PIDFILE_LOCK:
             _raise_if_stopping_locked(spec)
             if spec.name == "iris-server" and _IRIS_INSTALL_CANCELLED.is_set():
                 raise ServiceStoppingError("Iris installation cancelled")
@@ -1727,9 +1729,8 @@ def start(spec: ServiceSpec, *, install_target: dict[str, str] | None = None, bu
             if runtime.running or runtime.stuck or runtime.orphaned or runtime.port_blocked:
                 return
             proc = _spawn_background(spec, env)
-            with _PIDFILE_LOCK:
-                spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
-                spec.pid_path.write_text(str(proc.pid))
+            spec.pid_path.parent.mkdir(parents=True, exist_ok=True)
+            spec.pid_path.write_text(str(proc.pid))
     except Exception:
         if spec.name == "iris-server":
             temporary.unlink(missing_ok=True)

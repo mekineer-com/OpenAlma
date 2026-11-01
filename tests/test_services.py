@@ -77,6 +77,93 @@ def test_pid_cleanup_does_not_hide_permission_errors(tmp_path, monkeypatch):
         services._clear_pid(SimpleNamespace(pid_path=tmp_path / "pid"))
 
 
+@pytest.mark.parametrize("held,initial_pid", [
+    ("snapshot", None), ("snapshot", 111), ("spawn", None),
+    (None, None), (None, 111),
+])
+def test_runtime_snapshot_and_start_share_pid_ownership(tmp_path, monkeypatch, held, initial_pid):
+    spec = services.ServiceSpec("fixture", "Fixture", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    live = {initial_pid} if initial_pid is not None else set()
+    if initial_pid is not None:
+        spec.pid_path.write_text(str(initial_pid))
+    monkeypatch.setattr(services, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(services, "_PROCESS_SCAN_CACHE", {})
+    monkeypatch.setattr(services, "_STOP_THREADS", {})
+    monkeypatch.setattr(services, "_STOP_STARTED", {})
+    monkeypatch.setattr(services, "_STOP_ERRORS", {})
+    monkeypatch.setattr(services, "_scan_service_pids", lambda _spec: [])
+    monkeypatch.setattr(services, "_is_alive", lambda pid: pid in live)
+    monkeypatch.setattr(services, "_matches_managed_process", lambda _spec, pid: pid in live)
+    monkeypatch.setattr(services, "_matches_service_process", lambda _spec, pid: pid in live)
+    entered, release, attempted, finished = (threading.Event() for _ in range(4))
+    verified = services._verified_pid_candidates
+    spawned, errors = [], []
+
+    def candidates(target):
+        snapshot = verified(target)
+        if held == "snapshot" and threading.current_thread().name == "fixture-poll":
+            entered.set()
+            assert release.wait(2)
+        return snapshot
+
+    def spawn(_spec, _env):
+        pid = 222 + len(spawned)
+        spawned.append(pid)
+        live.add(pid)
+        if held == "spawn":
+            entered.set()
+            assert release.wait(2)
+        return SimpleNamespace(pid=pid)
+
+    monkeypatch.setattr(services, "_verified_pid_candidates", candidates)
+    monkeypatch.setattr(services, "_spawn_background", spawn)
+
+    def work(action, competing=False):
+        if competing:
+            attempted.set()
+        try:
+            action(spec)
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            if competing:
+                finished.set()
+
+    if held is None:
+        services._runtime_state(spec)
+        services.start(spec)
+    else:
+        poll = services._runtime_state
+        first_action, second_action = (poll, services.start) if held == "snapshot" else (services.start, poll)
+        first = threading.Thread(target=work, args=(first_action,),
+                                 name="fixture-poll" if held == "snapshot" else "fixture-start")
+        second = threading.Thread(target=work, args=(second_action, True))
+        first.start()
+        try:
+            assert entered.wait(2)
+            if held == "snapshot":
+                live.discard(initial_pid)  # A previously observed process can exit before Start.
+            second.start()
+            assert attempted.wait(2)
+            finished_early = finished.wait(0.05)
+        finally:
+            release.set()
+            first.join(2)
+            if second.ident is not None:
+                second.join(2)
+        assert not first.is_alive() and not second.is_alive()
+
+    assert errors == []
+    # Even a cached empty scan must not hide the published process on a later Start.
+    services.start(spec)
+    expected_pid = initial_pid if held is None and initial_pid is not None else 222
+    assert services._read_pid(spec.pid_path) == expected_pid
+    assert spawned == ([] if expected_pid == initial_pid else [222])
+    assert services._runtime_state(spec).service_pids == (expected_pid,)
+    if held is not None:
+        assert not finished_early
+
+
 @pytest.fixture
 def iris_preparation(tmp_path, monkeypatch):
     import app
