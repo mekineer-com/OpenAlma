@@ -41,7 +41,8 @@ class MentraStatusTest(TestCase):
     def test_iris_shared_address_validation_matches_install_and_saved_origin_rules(self) -> None:
         for address in ("http://0.0.0.0", "http://[::]", "http://127.1", "http://2130706433",
                         "http://0x7f000001", "http://127.0.0.1.", "http://[::ffff:0.0.0.0]",
-                        "http://server.example/prefix", "http://server.example/path?x=1"):
+                        "http://server.example/prefix", "http://server.example/path?x=1",
+                        "http://server.example?", "http://server.example#"):
             with self.subTest(address=address), self.assertRaises(ValueError):
                 services._iris_base_url(address)
         for address in ("https://127.example.com", "http://10.77.0.1", "http://[fd00::1]"):

@@ -862,7 +862,7 @@ def _iris_base_url(value: str) -> str:
         raise ValueError("Iris base URL has an invalid host or port") from exc
     if (parsed.scheme not in {"http", "https"} or not host or port == 0
             or any(char.isspace() for char in base_url)
-            or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment):
+            or parsed.username or parsed.password or parsed.path or "?" in base_url or "#" in base_url):
         raise ValueError("Iris base URL must be HTTP or HTTPS without a path, credentials, query, or fragment")
     try:
         address = ipaddress.ip_address(host)
