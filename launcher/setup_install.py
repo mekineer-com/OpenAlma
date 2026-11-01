@@ -1398,9 +1398,9 @@ def config_save_guard(root: Path | None) -> Iterator[None]:
         handle = operation.lock_handle if operation is not None else None
         owned_handle = None
         if handle is not None and not handle.closed:
-            if operation.service_name not in OPTIONAL_SERVICES:
+            if operation.service_name == "memu-server":
                 raise SetupConflict("Finish the core update or recovery before saving settings.")
-            # Holding _LOCK pins the optional install's ownership through Save.
+            # Holding _LOCK pins the non-core operation's ownership through Save.
         else:
             try:
                 owned_handle = _acquire_install_lock("memu-server", root)

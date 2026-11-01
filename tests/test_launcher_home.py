@@ -1245,7 +1245,8 @@ def test_update_admitted_before_save_refuses_before_reading_config(config_to_sav
 
 
 @pytest.mark.parametrize("state", ["ready", "error"])
-def test_save_pins_local_optional_handle_until_worker_release(config_to_save, monkeypatch, state):
+@pytest.mark.parametrize("service_name", ["iris-server", "launcher"])
+def test_save_pins_local_non_core_handle_until_worker_release(config_to_save, monkeypatch, state, service_name):
     from threading import Event
 
     root = config_to_save.parent.parent
@@ -1272,7 +1273,7 @@ def test_save_pins_local_optional_handle_until_worker_release(config_to_save, mo
 
     monkeypatch.setattr(app.setup_install, "core_issue", lambda *_args: "")
     monkeypatch.setattr(app.setup_install, "_release_install_lock", release)
-    operation = app.setup_install._begin_operation("iris-server", root, optional)
+    operation = app.setup_install._begin_operation(service_name, root, optional)
     try:
         assert entered.wait(2)
         monkeypatch.setattr(app, "_memu_config", save_read)
