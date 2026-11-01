@@ -7,6 +7,7 @@ import re
 import shutil
 from pathlib import Path
 
+import services
 import settings
 from setup_install import LAUNCHER_UPDATE_DIR, _clear_readonly_and_retry
 
@@ -37,6 +38,14 @@ def remove_everything(*, confirm: bool = False) -> None:
         settings.SETTINGS_PATH, settings.LEGACY_SETTINGS_PATH,
         settings.LAUNCHER_LOG_PATH, settings.SETTINGS_ROOT / "logs/launcher.log",
     }
+    state = services.STATE_DIR
+    files.update((state / "install.lock", state / "iris-repair/uploaded.zip"))
+    for spec in services.services_for_root(root):
+        files.update((spec.log_path, spec.pid_path, state / f"{spec.name}-install.log"))
+    for directory in (state, state / "iris-repair"):
+        files.update(path for path in directory.glob(f"{services.IRIS_PACKAGE}-*")
+                     if re.fullmatch(rf"{re.escape(services.IRIS_PACKAGE)}-v?\d+\.\d+\.\d+\.(?:zip|tmp)", path.name)
+                     and (path.is_file() or path.is_symlink()))
     for path in (settings.SETTINGS_PATH, settings.LEGACY_SETTINGS_PATH):
         files.update(backup for backup in path.parent.glob(f"{path.name}*.orig")
                      if re.fullmatch(rf"{re.escape(path.name)}(?:_(?:[2-9]|[1-9][0-9]+))?\.orig", backup.name)

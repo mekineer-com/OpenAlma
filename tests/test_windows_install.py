@@ -13,6 +13,7 @@ import settings  # noqa: E402
 import setup_install  # noqa: E402
 import windows_install  # noqa: E402
 import windows_remove  # noqa: E402
+import services  # noqa: E402
 
 
 @pytest.mark.parametrize("platform", ["win32", "linux", "darwin"])
@@ -60,6 +61,8 @@ def test_transient_bun_probe_failure_is_retried_then_success_cached(tmp_path, mo
 
 @pytest.fixture(autouse=True)
 def _packaged_manifest(tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / "home"))
+    monkeypatch.setattr(services, "STATE_DIR", tmp_path / "service-state")
     manifest = tmp_path / "release-components.json"
     manifest.write_bytes((Path(__file__).resolve().parents[1] / "release-components.json").read_bytes())
     monkeypatch.setattr(settings, "PACKAGED_MANIFEST_PATH", manifest)
@@ -560,6 +563,20 @@ def test_remove_everything_cleans_only_known_external_files(tmp_path, monkeypatc
     for path in malformed:
         path.write_text("not a generated installer name")
 
+    state = services.STATE_DIR
+    external = {state / "install.lock", state / "iris-repair/uploaded.zip"}
+    for spec in services.services_for_root(root):
+        external.update((spec.log_path, spec.pid_path, state / f"{spec.name}-install.log"))
+    for directory in (state, state / "iris-repair"):
+        external.update(directory / name for name in ("com.openalma.mentra-0.1.30.zip", "com.openalma.mentra-0.1.31.tmp"))
+    for path in external:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("fictional OpenAlma state")
+    retained = [state / "unrelated.log", state / "iris-repair/notes.txt",
+                state / "com.openalma.mentra-notes.zip", state / "com.other.app-0.1.30.zip"]
+    for path in retained:
+        path.write_text("keep unrelated state")
+
     windows_remove.remove_everything()
 
     assert not root.exists()
@@ -570,6 +587,8 @@ def test_remove_everything_cleans_only_known_external_files(tmp_path, monkeypatc
     assert other_download.read_text() == "keep unrelated download"
     assert all(path.exists() for path in malformed)
     assert (workspace / "fictional-work.txt").read_text() == "keep external workspace"
+    assert not any(path.exists() for path in external)
+    assert all(path.read_text() == "keep unrelated state" for path in retained)
 
 
 def test_remove_everything_keeps_external_profile_cleanup_best_effort(tmp_path, monkeypatch):

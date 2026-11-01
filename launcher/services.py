@@ -135,11 +135,19 @@ def _resolve_memu_server_pid_path(root: Path) -> Path:
     return (root / "mcp-memu-server" / path).resolve()
 
 
+def _channels_python() -> str:
+    names = ("python", "python3") if os.name == "nt" else ("python3", "python")
+    for name in names:
+        if executable := shutil.which(name):
+            return executable
+    return sys.executable
+
+
 def services_for_root(root: Path) -> list[ServiceSpec]:
     bun = settings.bun_binary(root)
     bun_dir = bun.parent
     node = shutil.which("node") or "node"
-    python = shutil.which("python3") or shutil.which("python") or sys.executable
+    python = _channels_python()
     venv_python = root / "mcp-memu-server" / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python3")
     return [
         ServiceSpec(
@@ -979,7 +987,7 @@ def host_prerequisites(root: Path | None, os_release_path: Path = Path("/etc/os-
     if root is not None and (root / optional_paths["Atomic"][0]).exists():
         commands.append(("node", "node"))
     if root is not None and (root / optional_paths["Hermes Channels"][0]).exists():
-        python = shutil.which("python3") or shutil.which("python") or sys.executable
+        python = _channels_python()
         commands.extend((("Hermes Channels Python", python), ("node", "node")))
     if root is not None and (root / optional_paths["SillyTavern"][0]).exists():
         commands.append(("node", "node"))

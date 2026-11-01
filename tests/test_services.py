@@ -284,7 +284,17 @@ def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch)
     }
 
 
-def test_services_can_be_built_for_pending_root(tmp_path):
+@pytest.mark.parametrize("platform", ["nt", "posix"])
+@pytest.mark.parametrize("available", [("python", "python3"), ("python",), ("python3",), ()])
+def test_services_can_be_built_for_pending_root(tmp_path, monkeypatch, platform, available):
+    monkeypatch.setattr(services, "os", SimpleNamespace(name=platform, pathsep=os.pathsep, environ=os.environ))
+    lookups = []
+    def which(name):
+        lookups.append(name)
+        return f"/fixture/{name}" if name in available else None
+    monkeypatch.setattr(services.shutil, "which", which)
+    expected = next((f"/fixture/{name}" for name in (("python", "python3") if platform == "nt" else ("python3", "python"))
+                     if name in available), services.sys.executable)
     specs = services.services_for_root(tmp_path)
 
     assert [spec.name for spec in specs] == [
@@ -292,6 +302,13 @@ def test_services_can_be_built_for_pending_root(tmp_path):
     ]
     assert specs[0].cwd == tmp_path / "mcp-memu-server"
     assert services.is_installed(specs[0]) is False
+    assert next(spec for spec in specs if spec.name == "channels-daemon").cmd[0] == expected
+    lookups.clear()
+    daemon = tmp_path / "hermes-channels/gateway/daemon.py"
+    daemon.parent.mkdir(parents=True)
+    daemon.touch()
+    services.host_prerequisites(tmp_path, tmp_path / "missing-os-release")
+    assert expected in lookups
 
 
 def test_iris_server_is_managed_by_launcher(tmp_path, monkeypatch):
