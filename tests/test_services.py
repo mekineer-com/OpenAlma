@@ -1718,28 +1718,115 @@ def test_force_stop_sillytavern_preserves_memu_and_its_children(tmp_path, monkey
     assert killed == [10, 30, 20, 21]
 
 
-def test_force_stop_kills_only_verified_matching_pids(tmp_path, monkeypatch):
+@pytest.mark.parametrize("held,reserved", [
+    ("survivors", False), ("cleanup", False), ("cleanup", True),
+    (None, False), (None, True), ("new_survivor", False),
+])
+def test_force_stop_kills_only_verified_matching_pids(tmp_path, monkeypatch, held, reserved):
     spec = services.ServiceSpec(
-        name="atomic",
-        label="Atomic",
+        name="fixture",
+        label="Fixture",
         cmd=[],
         cwd=tmp_path,
         log_path=tmp_path / "server.log",
         pid_path=tmp_path / "launcher.pid",
+        adopt_pid_path=tmp_path / "adopt.pid",
     )
-    calls = {"count": 0}
+    spec.pid_path.write_text("20")
+    spec.adopt_pid_path.write_text("99")
+    live, killed, spawned, errors = {20}, [], [], []
+    monkeypatch.setattr(services, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(services, "_PROCESS_SCAN_CACHE", {})
+    monkeypatch.setattr(services, "_STOP_THREADS", {})
+    monkeypatch.setattr(services, "_STOP_STARTED", {spec.name: time.monotonic()} if reserved else {})
+    monkeypatch.setattr(services, "_STOP_ERRORS", {})
+    monkeypatch.setattr(services, "_scan_service_pids", lambda _spec: [])
+    monkeypatch.setattr(services, "_is_alive", lambda pid: pid in live)
+    monkeypatch.setattr(services, "_matches_managed_process", lambda _spec, pid: pid in live)
+    monkeypatch.setattr(services, "_matches_service_process", lambda _spec, pid: pid in live)
+    entered, release, attempted, finished = (threading.Event() for _ in range(4))
+    candidates, clear_pid = services._verified_pid_candidates, services._clear_pid
+    checks = 0
 
-    def verified(_spec):
-        calls["count"] += 1
-        return [20] if calls["count"] == 1 else []
+    def spawn(_spec, _env):
+        pid = 222 + len(spawned)
+        spawned.append(pid)
+        live.add(pid)
+        return SimpleNamespace(pid=pid)
+
+    def verified(target):
+        nonlocal checks
+        checks += 1
+        if checks == 3 and held == "new_survivor":
+            spec.pid_path.write_text(str(spawn(spec, {}).pid))
+        snapshot = candidates(target)
+        if checks == 3 and held == "survivors":
+            entered.set()
+            assert release.wait(2)
+        return snapshot
+
+    def cleanup(target):
+        if held == "cleanup" and threading.current_thread().name == "fixture-force":
+            entered.set()
+            assert release.wait(2)
+        clear_pid(target)
+
+    def kill(pid):
+        killed.append(pid)
+        live.remove(pid)
 
     monkeypatch.setattr(services, "_verified_pid_candidates", verified)
-    killed = []
-    monkeypatch.setattr(services, "_kill_process_tree", killed.append)
+    monkeypatch.setattr(services, "_clear_pid", cleanup)
+    monkeypatch.setattr(services, "_kill_process_tree", kill)
+    monkeypatch.setattr(services, "_spawn_background", spawn)
 
-    services.force_stop(spec)
+    def work(action, competing=False):
+        if competing:
+            attempted.set()
+        try:
+            action(spec)
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            if competing:
+                finished.set()
 
+    if held == "new_survivor":
+        with pytest.raises(RuntimeError, match="Could not force stop PID.*222"):
+            services.force_stop(spec)
+        assert services._read_pid(spec.pid_path) == 222
+        assert "222" in services._STOP_ERRORS[spec.name]
+    elif held is None:
+        services.force_stop(spec)
+    else:
+        force = threading.Thread(target=work, args=(services.force_stop,), name="fixture-force")
+        starter = threading.Thread(target=work, args=(services.start, True))
+        force.start()
+        try:
+            assert entered.wait(2)
+            starter.start()
+            assert attempted.wait(2)
+            finished_early = finished.wait(0.05)
+        finally:
+            release.set()
+            force.join(2)
+            if starter.ident is not None:
+                starter.join(2)
+        assert not force.is_alive() and not starter.is_alive()
+
+    assert errors == []
+    services.start(spec)
+    services.start(spec)
     assert killed == [20]
+    assert spawned == [222]
+    assert services._read_pid(spec.pid_path) == 222
+    assert services._runtime_state(spec).service_pids == (222,)
+    if held != "new_survivor":
+        assert not spec.adopt_pid_path.exists()
+        assert spec.name not in services._STOP_STARTED
+        assert spec.name not in services._STOP_ERRORS
+    if held in {"survivors", "cleanup"}:
+        assert not finished_early
 
 
 def test_failed_force_stop_keeps_retry_evidence(tmp_path, monkeypatch):

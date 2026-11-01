@@ -1930,21 +1930,21 @@ def force_stop(spec: ServiceSpec, *, timeout: float = 10.0) -> None:
         deadline = time.monotonic() + timeout
         while _verified_pid_candidates(spec) and time.monotonic() < deadline:
             time.sleep(0.1)
-        survivors = _verified_pid_candidates(spec)
-        if survivors:
-            raise RuntimeError(f"Could not force stop PID(s): {', '.join(map(str, survivors))}")
+        with _STOP_LOCK, _PIDFILE_LOCK:
+            survivors = _verified_pid_candidates(spec)
+            if survivors:
+                raise RuntimeError(f"Could not force stop PID(s): {', '.join(map(str, survivors))}")
+            _clear_pid(spec)
+            if spec.adopt_pid_path is not None:
+                _clear_dead_pidfile(spec.adopt_pid_path)
+            _clear_port_cache(spec)
+            _STOP_ERRORS.pop(spec.name, None)
+            if spec.name not in _STOP_THREADS:
+                _STOP_STARTED.pop(spec.name, None)
     except Exception as exc:
         with _STOP_LOCK:
             _STOP_ERRORS[spec.name] = str(exc)
         raise
-    with _STOP_LOCK:
-        _STOP_ERRORS.pop(spec.name, None)
-        if spec.name not in _STOP_THREADS:
-            _STOP_STARTED.pop(spec.name, None)
-    _clear_pid(spec)
-    if spec.adopt_pid_path is not None:
-        _clear_dead_pidfile(spec.adopt_pid_path)
-    _clear_port_cache(spec)
 
 
 def _clear_pid(spec: ServiceSpec) -> None:
