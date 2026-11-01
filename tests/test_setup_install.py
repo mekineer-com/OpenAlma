@@ -1641,6 +1641,9 @@ finally:
     try:
         assert child.stdout.readline().strip() == "ready"
         assert setup_install.operation_status(tmp_path, service)["state"] == "running"
+        with pytest.raises(setup_install.SetupConflict, match="Another OpenAlma process"):
+            with setup_install.config_save_guard(tmp_path):
+                pytest.fail("External installation ownership must refuse Save")
         if service == "memu-server":
             (tmp_path / setup_install.RECOVERY_FILE).write_text("{}")
             assert setup_install.begin_core_install(tmp_path)["state"] == "running"
@@ -1655,6 +1658,25 @@ finally:
         deadline.cancel()
     assert child.returncode == 0
     assert setup_install.operation_status(tmp_path, service)["state"] == "idle"
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_config_save_guard_releases_ownership_even_with_a_closed_optional_handle(tmp_path, monkeypatch, fail):
+    handle = setup_install._acquire_install_lock("iris-server", tmp_path)
+    setup_install._release_install_lock(handle)
+    monkeypatch.setattr(setup_install, "_OPERATION", setup_install.InstallOperation(
+        "iris-server", tmp_path, state="ready", lock_handle=handle,
+    ))
+    try:
+        with setup_install.config_save_guard(tmp_path):
+            with pytest.raises(setup_install.SetupConflict):
+                setup_install._acquire_install_lock("memu-server", tmp_path)
+            if fail:
+                raise ValueError("Fictional save failure")
+    except ValueError:
+        assert fail
+    handle = setup_install._acquire_install_lock("memu-server", tmp_path)
+    setup_install._release_install_lock(handle)
 
 
 def test_local_install_details_survive_external_status_probe(tmp_path, monkeypatch):

@@ -1093,6 +1093,149 @@ def test_memu_config_backup_numbers_preserve_old_names(tmp_path, monkeypatch):
     assert not path.with_name("config.json3.orig").exists()
 
 
+@pytest.fixture
+def config_to_save(tmp_path, monkeypatch):
+    path = tmp_path / "mcp-memu-server/config.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps({"storage": {"sqlite_dir": "sqlite"}, "value": "old"}))
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "all_services", lambda: [])
+    return path
+
+
+@pytest.mark.parametrize("running", [False, True])
+def test_save_finishes_before_update_can_back_up_and_roll_back(config_to_save, monkeypatch, running):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    path = config_to_save
+    root = path.parent.parent
+    entered, release, attempting, admitted = (Event() for _ in range(4))
+    read = app._memu_config
+    backups = []
+
+    def pause():
+        entered.set()
+        assert release.wait(2)
+
+    def paused_read():
+        pause()
+        return read()
+
+    def live_save(route, changes):
+        assert route == "/config"
+        pause()
+        config = json.loads(path.read_text())
+        config.update(changes)
+        path.write_text(json.dumps(config))
+
+    def update(operation):
+        backup = app.setup_install._backup_databases(root, "v1.0.0", "v2.0.0")
+        backups.append(json.loads((backup / "config.json").read_text()))
+        path.write_text(json.dumps({"storage": {"sqlite_dir": "sqlite"}, "value": "migration"}))
+        app.setup_install._restore_previous_core(root, {
+            "from": "v1.0.0", "commits": {name: "old-head" for name in app.setup_install.CORE_DESTINATIONS},
+        }, backup, None, refresh_packages=False)
+        app.setup_install._set_operation(operation, state="ready")
+
+    def admit():
+        attempting.set()
+        operation = app.setup_install._begin_operation("memu-server", root, update)
+        admitted.set()
+        return operation
+
+    if running:
+        spec = services.ServiceSpec("memu-server", "memU", [], path.parent, root / "log", root / "pid")
+        monkeypatch.setattr(app.services, "all_services", lambda: [spec])
+        monkeypatch.setattr(app.services, "_runtime_state", lambda _spec: services.RuntimeState(running=True))
+        monkeypatch.setattr(app.services, "_mcp_request", live_save)
+    else:
+        monkeypatch.setattr(app, "_memu_config", paused_read)
+    monkeypatch.setattr(app.setup_install, "core_issue", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(app.setup_install, "_run", lambda *_args, **_kwargs: None)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        saved = pool.submit(app._save_memu_config, {"value": "saved"})
+        try:
+            assert entered.wait(2)
+            with pytest.raises(app.setup_install.SetupConflict):
+                app.setup_install._acquire_install_lock("memu-server", root)
+            installing = pool.submit(admit)
+            assert attempting.wait(2)
+            assert not admitted.wait(0.05)
+        finally:
+            release.set()
+        saved.result(2)
+        operation = installing.result(2)
+        operation.thread.join(2)
+    assert not operation.thread.is_alive() and operation.state == "ready", operation.detail
+    assert backups[0]["value"] == json.loads(path.read_text())["value"] == "saved"
+
+
+def test_update_admitted_before_save_refuses_before_reading_config(config_to_save, monkeypatch):
+    from threading import Event
+
+    path = config_to_save
+    entered, release = Event(), Event()
+
+    def update(operation):
+        entered.set()
+        assert release.wait(2)
+        app.setup_install._set_operation(operation, state="ready")
+
+    operation = app.setup_install._begin_operation("memu-server", path.parent.parent, update)
+    try:
+        assert entered.wait(2)
+        monkeypatch.setattr(app, "_memu_config", lambda: pytest.fail("Save must first obtain admission"))
+        with pytest.raises(ValueError, match="update or recovery"):
+            app._save_memu_config({"value": "saved"})
+        assert json.loads(path.read_text())["value"] == "old"
+        assert not path.with_name("config.json.orig").exists()
+    finally:
+        release.set()
+        operation.thread.join(2)
+    assert not operation.thread.is_alive() and operation.lock_handle.closed
+
+
+@pytest.mark.parametrize("state", ["ready", "error"])
+def test_save_pins_local_optional_handle_until_worker_release(config_to_save, monkeypatch, state):
+    from threading import Event
+
+    root = config_to_save.parent.parent
+    entered, finish, releasing = (Event() for _ in range(3))
+    unlock = app.setup_install._release_install_lock
+    read = app._memu_config
+
+    def optional(operation):
+        app.setup_install._set_operation(operation, state=state)
+        entered.set()
+        assert finish.wait(2)
+
+    def release(handle):
+        releasing.set()
+        unlock(handle)
+
+    def save_read():
+        finish.set()
+        assert releasing.wait(2)
+        assert not operation.lock_handle.closed
+        with pytest.raises(app.setup_install.SetupConflict):
+            app.setup_install._acquire_install_lock("memu-server", root)
+        return read()
+
+    monkeypatch.setattr(app.setup_install, "core_issue", lambda *_args: "")
+    monkeypatch.setattr(app.setup_install, "_release_install_lock", release)
+    operation = app.setup_install._begin_operation("iris-server", root, optional)
+    try:
+        assert entered.wait(2)
+        monkeypatch.setattr(app, "_memu_config", save_read)
+        app._save_memu_config({"value": "saved"})
+    finally:
+        finish.set()
+        operation.thread.join(2)
+    assert not operation.thread.is_alive() and operation.lock_handle.closed
+    assert json.loads(config_to_save.read_text())["value"] == "saved"
+
+
 def test_host_paths_layout_and_independent_settings_saves(tmp_path, monkeypatch):
     path = tmp_path / "mcp-memu-server/config.json"
     path.parent.mkdir()

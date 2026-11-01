@@ -1463,6 +1463,8 @@ def test_stop_signals_service_owners_and_waits_in_background(tmp_path, monkeypat
         ),
     )
     monkeypatch.setattr(services, "_verified_pid_candidates", verified)
+    monkeypatch.setattr(services, "_scan_service_pids", lambda _spec: [])
+    monkeypatch.setattr(services, "_matches_service_process", lambda _spec, _pid: True)
     monkeypatch.setattr(services.os, "kill", lambda pid, sig: signaled.append((pid, sig)))
     monkeypatch.setattr(services, "_is_alive", lambda _pid: False)
     monkeypatch.setattr(services.os, "name", "posix")
@@ -1703,6 +1705,7 @@ def test_windows_stop_dispatch_is_not_repeated_or_forced(tmp_path, monkeypatch, 
         verified_pids=(100,), service_pids=(100,), running=True,
     ))
     monkeypatch.setattr(services.os, "name", "nt")
+    monkeypatch.setattr(services, "_scan_service_pids", lambda _spec: pytest.fail("No extra Windows scan"))
     calls = []
 
     def request(_spec, pids):
@@ -1860,6 +1863,141 @@ def test_memu_shutdown_request_has_no_drain_deadline(monkeypatch):
         },
         "timeout": 10,
     }
+
+
+def test_memu_shutdown_busy_refusal_does_not_offer_force_stop(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("memu-server", "memU", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(services, "_STOP_THREADS", {})
+    monkeypatch.setattr(services, "_STOP_STARTED", {})
+    monkeypatch.setattr(services, "_STOP_ERRORS", {})
+    monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState(
+        verified_pids=(20,), service_pids=(20,), running=True,
+    ))
+    monkeypatch.setattr(services, "_read_mentra_status", lambda _port: {"busy": False})
+    monkeypatch.setattr(services, "_start_stop_waiter", lambda _spec: pytest.fail("Shutdown was refused"))
+    monkeypatch.setattr(services.os, "kill", lambda *_args: pytest.fail("Stop must not signal memU"))
+    detail = {"code": "mentra_session_active", "message": "Stop the Iris conversation on the phone first"}
+
+    def refused(*_args, **_kwargs):
+        raise services.urllib.error.HTTPError(
+            "http://fictional.invalid", 409, "Conflict", {}, BytesIO(json.dumps({"detail": detail}).encode()),
+        )
+
+    monkeypatch.setattr(services.urllib.request, "urlopen", refused)
+    with pytest.raises(PermissionError, match="Stop the Iris conversation on the phone first"):
+        services.stop(spec)
+    assert services._STOP_STARTED == services._STOP_ERRORS == services._STOP_THREADS == {}
+    assert not services._stop_status(spec, {"running": True})["force_stoppable"]
+
+
+@pytest.mark.parametrize("status,body", [
+    (409, b'{"detail":{"code":"other_conflict"}}'),
+    (409, b'{"detail":"busy"}'),
+    (409, b'not json'),
+    (409, b'[]'),
+    (409, b'null'),
+    (503, b'{"detail":{"code":"mentra_session_active"}}'),
+])
+def test_memu_shutdown_other_http_failures_remain_unconfirmed(monkeypatch, status, body):
+    def refused(*_args, **_kwargs):
+        raise services.urllib.error.HTTPError("http://fictional.invalid", status, "Refused", {}, BytesIO(body))
+
+    monkeypatch.setattr(services.urllib.request, "urlopen", refused)
+    assert services._request_memu_shutdown() is False
+
+
+@pytest.mark.parametrize("initial", ["vite", "empty", "wrapper", "stopped"])
+@pytest.mark.parametrize("stale_pid", [None, 10, 11])
+def test_posix_atomic_stop_scans_once_for_verified_api_before_early_return(tmp_path, monkeypatch, initial, stale_pid):
+    spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(services.os, "name", "posix")
+    monkeypatch.setattr(services, "_STOP_THREADS", {})
+    monkeypatch.setattr(services, "_STOP_STARTED", {})
+    monkeypatch.setattr(services, "_STOP_ERRORS", {})
+    pids = (12, 10) if initial == "wrapper" else (10,) if initial == "vite" else ()
+    monkeypatch.setattr(services, "_runtime_state", lambda _spec: services.RuntimeState(
+        verified_pids=pids, service_pids=pids, running=bool(pids),
+    ))
+    commands = {10: "node node_modules/vite/bin/vite.js", 11: "target/server/atomic-server",
+                13: "target/server/atomic-server", 14: "node unrelated.js"}
+    if initial == "wrapper":
+        commands[12] = "node scripts/dev-server.js"
+    scans, signals, waiters = [], [], []
+
+    def processes(_attrs):
+        scans.append(True)
+        return [SimpleNamespace(pid=pid) for pid in commands] if initial != "stopped" else []
+
+    scan = services._scan_service_pids
+
+    def scan_then_replace(target):
+        found = scan(target)
+        if stale_pid is not None:
+            commands[stale_pid] = "node unrelated.js"
+        return found
+
+    monkeypatch.setattr(services, "_scan_service_pids", scan_then_replace)
+    monkeypatch.setattr(services.psutil, "process_iter", processes)
+    monkeypatch.setattr(services, "_proc_cwd", lambda pid: tmp_path / "other" if pid == 13 else tmp_path)
+    monkeypatch.setattr(services, "_proc_cmdline", lambda pid: commands[pid])
+    monkeypatch.setattr(services, "_is_alive", lambda _pid: True)
+    monkeypatch.setattr(services.os, "kill", lambda pid, sig: signals.append((pid, sig)))
+    monkeypatch.setattr(services, "_start_stop_waiter", lambda _spec: waiters.append(True))
+    monkeypatch.setattr(services, "_kill_process_tree", lambda *_args: pytest.fail("Stop must remain graceful"))
+    services.stop(spec)
+    assert scans == [True]
+    expected = set() if initial == "stopped" else {10, 11, 12} if initial == "wrapper" else {10, 11}
+    expected.discard(stale_pid)
+    assert len(signals) == len(expected)
+    assert set(signals) == {(pid, services.signal.SIGTERM) for pid in expected}
+    assert waiters == ([True] if expected else [])
+
+
+def test_posix_atomic_stop_refreshes_empty_cache_until_orphan_api_finishes(tmp_path, monkeypatch):
+    spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid", port=1420)
+    monkeypatch.setattr(services.os, "name", "posix")
+    monkeypatch.setattr(services, "_STOP_THREADS", {})
+    monkeypatch.setattr(services, "_STOP_STARTED", {})
+    monkeypatch.setattr(services, "_STOP_ERRORS", {})
+    key = (spec.name, str(spec.cwd), str(spec.pid_path))
+    monkeypatch.setattr(services, "_PROCESS_SCAN_CACHE", {key: (services.time.monotonic(), [])})
+    alive, signals, scans = {10, 11}, [], []
+    monkeypatch.setattr(services, "_is_alive", lambda pid: pid in alive)
+    monkeypatch.setattr(services, "_proc_cwd", lambda _pid: tmp_path)
+    monkeypatch.setattr(services, "_proc_cmdline", lambda pid:
+                        "node vite.js" if pid == 10 else "target/server/atomic-server")
+    monkeypatch.setattr(services, "_port_listener_pid", lambda *_args, **_kwargs: 10 if 10 in alive else None)
+
+    def processes(_attrs):
+        scans.append(True)
+        return [SimpleNamespace(pid=pid) for pid in sorted(alive)]
+
+    def signal(pid, sig):
+        signals.append((pid, sig))
+        if pid == 10:
+            alive.remove(pid)
+
+    def wait(_spec):
+        assert signals == [(10, services.signal.SIGTERM), (11, services.signal.SIGTERM)]
+        assert services._verified_pid_candidates(spec) == [11]
+        sleeps = []
+
+        def drain(_delay):
+            assert 11 in alive and spec.pid_path.exists()
+            sleeps.append(True)
+            alive.remove(11)
+
+        monkeypatch.setattr(services.time, "sleep", drain)
+        services._finish_graceful_stop(spec)
+        assert sleeps == [True]
+
+    monkeypatch.setattr(services.psutil, "process_iter", processes)
+    monkeypatch.setattr(services.os, "kill", signal)
+    monkeypatch.setattr(services, "_start_stop_waiter", wait)
+    services.stop(spec)
+    assert scans == [True]
+    assert not alive and not spec.pid_path.exists()
+    assert spec.name not in services._STOP_STARTED
 
 
 @pytest.mark.parametrize("elapsed", [15.0, 20.7, 29.9, 30.0, 45.0])

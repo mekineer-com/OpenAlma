@@ -87,15 +87,38 @@ def test_save_refuses_core_update_or_recovery_without_writes(configured, monkeyp
     original = path.read_bytes()
     backup = path.with_name("config.json.orig")
     backup.write_text("keep previous backup")
-    monkeypatch.setattr(app.setup_install, "operation_status", lambda _root: {"state": "running" if phase == "running" else "idle"})
     if phase == "recovery":
         (path.parent.parent / app.setup_install.RECOVERY_FILE).write_text("{}")
-    response = client.post("/settings/ai", data={"embedding_api_key": "fictional-new-secret"})
+    handle = None
+    if phase == "running":
+        handle = app.setup_install._acquire_install_lock("memu-server", path.parent.parent)
+        monkeypatch.setattr(app.setup_install, "_OPERATION", app.setup_install.InstallOperation(
+            "memu-server", path.parent.parent, lock_handle=handle,
+        ))
+    try:
+        response = client.post("/settings/ai", data={"embedding_api_key": "fictional-new-secret"})
+    finally:
+        if handle is not None:
+            app.setup_install._release_install_lock(handle)
     assert response.status_code == 400
     assert "update or recovery" in response.json()["detail"]
     assert path.read_bytes() == original
     assert backup.read_text() == "keep previous backup"
     assert list(path.parent.glob("*.orig")) == [backup]
+
+
+@pytest.mark.parametrize("service", ["memu-server", "iris-server"])
+def test_save_refuses_external_install_with_400_without_writes(configured, service):
+    path, original, client = configured
+    handle = app.setup_install._acquire_install_lock(service, path.parent.parent)
+    try:
+        response = client.post("/settings/ai", data={"embedding_api_key": "fictional-new-secret"})
+    finally:
+        app.setup_install._release_install_lock(handle)
+    assert response.status_code == 400
+    assert "Another OpenAlma process" in response.json()["detail"]
+    assert json.loads(path.read_text()) == original
+    assert not list(path.parent.glob("*.orig"))
 
 
 @pytest.mark.parametrize("data", [

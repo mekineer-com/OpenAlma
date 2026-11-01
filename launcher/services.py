@@ -401,11 +401,11 @@ def _scan_service_pids(spec: ServiceSpec) -> list[int]:
     return pids
 
 
-def _scan_service_pids_cached(spec: ServiceSpec) -> list[int]:
+def _scan_service_pids_cached(spec: ServiceSpec, *, refresh: bool = False) -> list[int]:
     key = (spec.name, str(spec.cwd), str(spec.pid_path))
     now = time.monotonic()
     cached = _PROCESS_SCAN_CACHE.get(key)
-    if cached is not None and now - cached[0] < PROCESS_SCAN_CACHE_SECONDS:
+    if not refresh and cached is not None and now - cached[0] < PROCESS_SCAN_CACHE_SECONDS:
         return cached[1]
     pids = _scan_service_pids(spec)
     _PROCESS_SCAN_CACHE[key] = (now, pids)
@@ -757,7 +757,8 @@ def iris_installation_request(device_session_id: str = "", display_name: str | N
 
 def _http_error_detail(exc: urllib.error.HTTPError) -> object:
     try:
-        return json.load(exc).get("detail")
+        body = json.load(exc)
+        return body.get("detail") if isinstance(body, dict) else None
     except (OSError, ValueError):
         return None
 
@@ -1774,6 +1775,12 @@ def _request_memu_shutdown() -> bool:
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
             return response.status == 200
+    except urllib.error.HTTPError as exc:
+        if exc.code == 409:
+            detail = _http_error_detail(exc)
+            if isinstance(detail, dict) and detail.get("code") == "mentra_session_active":
+                raise PermissionError("Stop the Iris conversation on the phone first") from exc
+        return False
     except (OSError, urllib.error.URLError):
         return False
 
@@ -1851,7 +1858,10 @@ def stop(spec: ServiceSpec, *, confirm_unknown: bool = False) -> None:
     shutdown_requested = False
     try:
         runtime = _runtime_state(spec)
-        if not runtime.verified_pids:
+        service_pids = runtime.service_pids
+        if spec.name == "atomic" and os.name != "nt":
+            service_pids = tuple(dict.fromkeys((*service_pids, *_scan_service_pids_cached(spec, refresh=True))))
+        if not runtime.verified_pids and not service_pids:
             _clear_pid(spec)
             if spec.adopt_pid_path is not None:
                 _clear_dead_pidfile(spec.adopt_pid_path)
@@ -1862,7 +1872,7 @@ def stop(spec: ServiceSpec, *, confirm_unknown: bool = False) -> None:
                 raise PermissionError("Stop the Iris conversation on the phone first")
             if mentra.get("busy") is not False and not confirm_unknown:
                 raise StopConfirmationRequired("Iris activity cannot be checked. Stopping may interrupt a conversation or lose pending work. Stop anyway?")
-        elif not runtime.service_pids:
+        elif not service_pids:
             raise RuntimeError(f"{spec.label} supervisor is not running; use Force Stop")
         if spec.name == "memu-server":
             if not _request_memu_shutdown():
@@ -1872,7 +1882,9 @@ def stop(spec: ServiceSpec, *, confirm_unknown: bool = False) -> None:
             _request_windows_shutdown(spec, runtime.service_pids)
             shutdown_requested = True
         else:
-            for pid in runtime.service_pids:
+            for pid in service_pids:
+                if spec.name == "atomic" and not _matches_service_process(spec, pid):
+                    continue
                 try:
                     os.kill(pid, signal.SIGTERM)
                     shutdown_requested = True

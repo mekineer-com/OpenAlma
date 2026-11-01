@@ -20,7 +20,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from contextlib import closing
+from collections.abc import Iterator
+from contextlib import closing, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1381,10 +1382,39 @@ def _active_install_owner() -> tuple[str, str] | None:
 
 
 def _release_install_lock(handle: Any) -> None:
-    try:
-        _unlock_handle(handle)
-    finally:
-        handle.close()
+    with _LOCK:
+        try:
+            _unlock_handle(handle)
+        finally:
+            handle.close()
+
+
+@contextmanager
+def config_save_guard(root: Path | None) -> Iterator[None]:
+    if root is None:
+        raise SetupError("Install memU Server first")
+    with _LOCK:
+        if (root / RECOVERY_FILE).exists():
+            raise SetupConflict("Finish the core update or recovery before saving settings.")
+        operation = _OPERATION
+        handle = operation.lock_handle if operation is not None else None
+        owned_handle = None
+        if handle is not None and not handle.closed:
+            if operation.service_name not in OPTIONAL_SERVICES:
+                raise SetupConflict("Finish the core update or recovery before saving settings.")
+            # Holding _LOCK pins the optional install's ownership through Save.
+        else:
+            try:
+                owned_handle = _acquire_install_lock("memu-server", root)
+            except SetupConflict as exc:
+                raise SetupConflict(
+                    "Another OpenAlma process owns the installation lock; finish its operation before saving settings."
+                ) from exc
+        try:
+            yield
+        finally:
+            if owned_handle is not None:
+                _release_install_lock(owned_handle)
 
 
 def _operation_worker(operation: InstallOperation, target: Any) -> None:
