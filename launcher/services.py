@@ -152,7 +152,9 @@ def memu_server_port(root: Path | None = None) -> int:
     try:
         config = json.loads((root / "mcp-memu-server" / "config.json").read_text(encoding="utf-8"))
         listen = config.get("listen") if isinstance(config, dict) else None
-        return int(listen.get("port") or MEMU_SERVER_PORT) if isinstance(listen, dict) else MEMU_SERVER_PORT
+        if not isinstance(listen, dict):
+            return MEMU_SERVER_PORT
+        return int(listen.get("port") or MEMU_SERVER_PORT) or MEMU_SERVER_PORT
     except (OSError, ValueError, TypeError, OverflowError):
         return MEMU_SERVER_PORT
 

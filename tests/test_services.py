@@ -2046,8 +2046,8 @@ def test_stop_requests_unlimited_memu_drain_without_signaling(tmp_path, monkeypa
     assert ports == ([8100] if first_request_fails else []) + [8100, 8100]
 
 
-@pytest.mark.parametrize("port", [None, 8100])
-def test_memu_shutdown_request_has_no_drain_deadline(tmp_path, monkeypatch, port):
+@pytest.mark.parametrize("port,expected_port", [(None, 8099), (8100, 8100), ("0", 8099), ("00", 8099), (0.5, 8099)])
+def test_memu_shutdown_request_has_no_drain_deadline(tmp_path, monkeypatch, port, expected_port):
     seen = {}
     monkeypatch.setattr(services, "_resolve_apps_root", lambda: tmp_path)
     if port is not None:
@@ -2056,7 +2056,7 @@ def test_memu_shutdown_request_has_no_drain_deadline(tmp_path, monkeypatch, port
         config.write_text(json.dumps({"listen": {"port": port}}))
 
     def urlopen(request, timeout):
-        assert request.full_url == f"http://127.0.0.1:{port or 8099}/admin/shutdown"
+        assert request.full_url == f"http://127.0.0.1:{expected_port}/admin/shutdown"
         seen["body"] = json.loads(request.data)
         seen["timeout"] = timeout
         return _FakeResponse()
