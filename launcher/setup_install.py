@@ -669,7 +669,7 @@ def _restore_previous_core(
     _restore_databases(root, backup)
     for destination in sorted(CORE_DESTINATIONS):
         _run(
-            ["git", "checkout", "--detach", state["commits"][destination]],
+            ["git", "checkout", "--detach", "--force", state["commits"][destination]],
             cwd=root / destination, log=log,
         )
     try:
@@ -709,6 +709,8 @@ def _update_core(
     old_tag = read_recorded_release(operation.root)
     if old_tag is None:
         raise SetupError("Installed core release is not recorded")
+    if issue := core_issue(operation.root, verify_runtime=False):
+        raise SetupError(f"Cannot update core: {issue}")
     entries = manifest["memu-server"]
     _set_operation(operation, step="Backing up soul databases", total_steps=operation.step_number + len(entries) + 4)
     states = [_managed_checkout_state(entry, operation.root) for entry in entries]

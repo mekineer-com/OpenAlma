@@ -744,6 +744,9 @@ def _memu_config() -> tuple[Path, dict]:
 def _save_memu_config(changes: dict) -> None:
     with _CONFIG_WRITE_LOCK:
         path, config = _memu_config()
+        root = path.parent.parent
+        if (root / setup_install.RECOVERY_FILE).exists() or setup_install.operation_status(root)["state"] == "running":
+            raise ValueError("Finish the core update or recovery before saving settings.")
         for key, value in changes.items():
             if isinstance(value, dict):
                 section = config.setdefault(key, {})

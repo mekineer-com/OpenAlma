@@ -81,6 +81,23 @@ def test_save_preserves_nested_settings_and_blank_keys(configured, monkeypatch, 
         assert saved["keep"] is True
 
 
+@pytest.mark.parametrize("phase", ["running", "recovery"])
+def test_save_refuses_core_update_or_recovery_without_writes(configured, monkeypatch, phase):
+    path, _config, client = configured
+    original = path.read_bytes()
+    backup = path.with_name("config.json.orig")
+    backup.write_text("keep previous backup")
+    monkeypatch.setattr(app.setup_install, "operation_status", lambda _root: {"state": "running" if phase == "running" else "idle"})
+    if phase == "recovery":
+        (path.parent.parent / app.setup_install.RECOVERY_FILE).write_text("{}")
+    response = client.post("/settings/ai", data={"embedding_api_key": "fictional-new-secret"})
+    assert response.status_code == 400
+    assert "update or recovery" in response.json()["detail"]
+    assert path.read_bytes() == original
+    assert backup.read_text() == "keep previous backup"
+    assert list(path.parent.glob("*.orig")) == [backup]
+
+
 @pytest.mark.parametrize("data", [
     {"context_window_tokens": "0"}, {"context_window_tokens": "-1"},
     {"context_window_tokens": "true"}, {"context_window_tokens": "1.5"},

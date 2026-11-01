@@ -622,7 +622,8 @@ def test_core_update_rollback_restores_database_before_code(tmp_path, monkeypatc
             raise setup_install.SetupError("restore failed")
     monkeypatch.setattr(setup_install, "_restore_databases", restore_databases)
     issues = iter(["core verification failed", ""] if failure == "verification" else [""])
-    monkeypatch.setattr(setup_install, "core_issue", lambda *_args, **_kwargs: next(issues))
+    monkeypatch.setattr(setup_install, "core_issue", lambda *_args, **kwargs:
+                        "" if kwargs.get("verify_runtime") is False else next(issues))
 
     def run(command, **_kwargs):
         if "migrate_release.py" in command:
@@ -675,6 +676,63 @@ def test_core_update_keeps_settings_changed_while_it_runs(tmp_path, monkeypatch)
     assert settings.read_paths() == {
         "apps_root": str(tmp_path / "new-selection"), "release_channel": "prerelease", "echo_enabled": True,
     }
+
+
+@pytest.mark.parametrize("broken", ["blank", "missing", "invalid"])
+def test_core_update_refuses_incomplete_config_before_backup(tmp_path, monkeypatch, broken):
+    for path in (tmp_path / "mcp-memu-server/run.py", tmp_path / "memu/pyproject.toml",
+                 setup_install._venv_python(tmp_path), setup_install._sqlite_extension(tmp_path)):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+    config = {"memu": {"path": "../memu/src"}, "storage": {
+        "resources_dir": "../resources", "sqlite_dir": "../memu/sqlite",
+        "metadata_store": {"dsn": "sqlite:///../memu/sqlite/memu.db"},
+    }}
+    path = tmp_path / "mcp-memu-server/config.json"
+    path.write_text(json.dumps(config))
+    assert setup_install.core_issue(tmp_path, verify_runtime=False) == ""
+    if broken == "missing":
+        del config["storage"]["sqlite_dir"]
+    else:
+        config["storage"]["sqlite_dir"] = ""
+    path.write_text("not JSON" if broken == "invalid" else json.dumps(config))
+    original = path.read_bytes()
+    (tmp_path / setup_install.RELEASE_TAG_FILE).write_text("v1.0.0\n")
+    monkeypatch.setattr(setup_install, "_managed_checkout_state", lambda entry, root: (root / entry["destination"], "old"))
+    monkeypatch.setattr(setup_install, "_backup_databases", lambda *_args: pytest.fail("No backup for an incomplete config"))
+    manifest = setup_install.validate_manifest(_manifest(), tmp_path)
+    with pytest.raises(setup_install.SetupError, match="incomplete.*config.json"):
+        setup_install._update_core(setup_install.InstallOperation("memu-server", tmp_path), "v2.0.0", manifest, None)
+    assert not (tmp_path / setup_install.UPDATE_BACKUP_DIR).exists()
+    assert not (tmp_path / setup_install.RECOVERY_FILE).exists()
+    assert path.read_bytes() == original
+
+
+def test_core_recovery_restores_tracked_files_even_when_head_is_already_old(tmp_path, monkeypatch):
+    def git(repo, *args):
+        return subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+    commits = {}
+    for name in setup_install.CORE_DESTINATIONS:
+        repo = tmp_path / name
+        repo.mkdir()
+        git(repo, "init", "--quiet")
+        (repo / "tracked.txt").write_text("original release\n")
+        git(repo, "add", "tracked.txt")
+        git(repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "Original")
+        commits[name] = git(repo, "rev-parse", "HEAD")
+        (repo / "tracked.txt").write_text("half-switched release\n")
+    backup = tmp_path / setup_install.UPDATE_BACKUP_DIR / "fixture"
+    backup.mkdir(parents=True)
+    monkeypatch.setattr(setup_install, "_restore_databases", lambda *_args: None)
+    monkeypatch.setattr(setup_install, "core_issue", lambda _root: "")
+    with (tmp_path / "recovery.log").open("w") as log:
+        setup_install._restore_previous_core(tmp_path, {"from": "v1.0.0", "commits": commits}, backup, log,
+                                             refresh_packages=False)
+    for name, head in commits.items():
+        repo = tmp_path / name
+        assert (repo / "tracked.txt").read_text() == "original release\n"
+        assert git(repo, "rev-parse", "HEAD") == head
+        assert git(repo, "status", "--porcelain") == ""
 
 
 def test_recovery_marker_blocks_stale_update_request(tmp_path, monkeypatch):
