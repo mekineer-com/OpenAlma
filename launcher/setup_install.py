@@ -1394,8 +1394,6 @@ def config_save_guard(root: Path | None) -> Iterator[None]:
     if root is None:
         raise SetupError("Install memU Server first")
     with _LOCK:
-        if (root / RECOVERY_FILE).exists():
-            raise SetupConflict("Finish the core update or recovery before saving settings.")
         operation = _OPERATION
         handle = operation.lock_handle if operation is not None else None
         owned_handle = None
@@ -1411,6 +1409,8 @@ def config_save_guard(root: Path | None) -> Iterator[None]:
                     "Another OpenAlma process owns the installation lock; finish its operation before saving settings."
                 ) from exc
         try:
+            if (root / RECOVERY_FILE).exists():
+                raise SetupConflict("Finish the core update or recovery before saving settings.")
             yield
         finally:
             if owned_handle is not None:

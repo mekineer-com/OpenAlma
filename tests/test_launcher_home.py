@@ -1171,6 +1171,22 @@ def test_save_finishes_before_update_can_back_up_and_roll_back(config_to_save, m
     assert backups[0]["value"] == json.loads(path.read_text())["value"] == "saved"
 
 
+def test_save_rechecks_recovery_after_acquiring_ownership(config_to_save, monkeypatch):
+    path = config_to_save
+    root = path.parent.parent
+    acquire = app.setup_install._acquire_install_lock
+    def handover(service, target):
+        (root / app.setup_install.RECOVERY_FILE).write_text("{}")
+        return acquire(service, target)
+    monkeypatch.setattr(app.setup_install, "_acquire_install_lock", handover)
+    with pytest.raises(ValueError, match="update or recovery"):
+        app._save_memu_config({"value": "saved"})
+    assert json.loads(path.read_text())["value"] == "old"
+    assert not path.with_name("config.json.orig").exists()
+    handle = acquire("memu-server", root)
+    app.setup_install._release_install_lock(handle)
+
+
 def test_update_admitted_before_save_refuses_before_reading_config(config_to_save, monkeypatch):
     from threading import Event
 
