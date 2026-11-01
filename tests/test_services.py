@@ -373,7 +373,13 @@ def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch)
 
 @pytest.mark.parametrize("platform", ["nt", "posix"])
 @pytest.mark.parametrize("available", [("python", "python3"), ("python",), ("python3",), ()])
-def test_services_can_be_built_for_pending_root(tmp_path, monkeypatch, platform, available):
+@pytest.mark.parametrize("port", [None, 8100])
+def test_services_can_be_built_for_pending_root(tmp_path, monkeypatch, platform, available, port):
+    monkeypatch.delenv("MEMU_SERVER_URL", raising=False)
+    if port is not None:
+        config = tmp_path / "mcp-memu-server/config.json"
+        config.parent.mkdir()
+        config.write_text(json.dumps({"listen": {"port": port}}))
     monkeypatch.setattr(services, "os", SimpleNamespace(name=platform, pathsep=os.pathsep, environ=os.environ))
     lookups = []
     def which(name):
@@ -388,8 +394,13 @@ def test_services_can_be_built_for_pending_root(tmp_path, monkeypatch, platform,
         "memu-server", "iris-server", "atomic", "channels-daemon", "sillytavern",
     ]
     assert specs[0].cwd == tmp_path / "mcp-memu-server"
+    assert specs[0].port == (port or 8099)
+    assert next(spec for spec in specs if spec.name == "atomic").env["MEMU_SERVER_URL"] == f"http://127.0.0.1:{port or 8099}"
     assert services.is_installed(specs[0]) is False
     assert next(spec for spec in specs if spec.name == "channels-daemon").cmd[0] == expected
+    monkeypatch.setenv("MEMU_SERVER_URL", "http://fictional.invalid:9200")
+    explicit = next(spec for spec in services.services_for_root(tmp_path) if spec.name == "atomic")
+    assert explicit.env["MEMU_SERVER_URL"] == "http://fictional.invalid:9200"
     lookups.clear()
     daemon = tmp_path / "hermes-channels/gateway/daemon.py"
     daemon.parent.mkdir(parents=True)
@@ -1471,8 +1482,12 @@ def test_startup_rechecks_cached_absent_listener(tmp_path, monkeypatch, starting
 
 @pytest.mark.parametrize("listener", ["absent", "present", "unknown_pid", "query_failure"])
 @pytest.mark.parametrize("mentra", [False, True])
-def test_offline_http_is_skipped_only_after_fresh_listener_absence(monkeypatch, listener, mentra):
-    port = services.MEMU_SERVER_PORT
+@pytest.mark.parametrize("port", [8099, 8100])
+def test_offline_http_is_skipped_only_after_fresh_listener_absence(tmp_path, monkeypatch, listener, mentra, port):
+    config = tmp_path / "mcp-memu-server/config.json"
+    config.parent.mkdir()
+    config.write_text(json.dumps({"listen": {"port": port}}))
+    monkeypatch.setattr(services, "_resolve_apps_root", lambda: tmp_path)
     monkeypatch.setattr(services, "_PORT_PID_CACHE", {port: (time.monotonic(), 123 if listener == "absent" else None)})
 
     def connections(**_kwargs):
@@ -1485,7 +1500,11 @@ def test_offline_http_is_skipped_only_after_fresh_listener_absence(monkeypatch, 
 
     calls = []
     monkeypatch.setattr(services.psutil, "net_connections", connections)
-    monkeypatch.setattr(services.urllib.request, "urlopen", lambda *_args, **_kwargs: calls.append(True) or BytesIO(b'{"state":"ready"}'))
+    def urlopen(request, **_kwargs):
+        assert urlparse(request.full_url).port == port
+        calls.append(True)
+        return BytesIO(b'{"state":"ready"}')
+    monkeypatch.setattr(services.urllib.request, "urlopen", urlopen)
     if mentra:
         result = services._read_mentra_status(port)
         assert result["state"] == ("unavailable" if listener == "absent" else "ready")
@@ -1997,7 +2016,7 @@ def test_sent_stop_is_not_repeated_if_waiter_thread_cannot_start(tmp_path, monke
 @pytest.mark.parametrize("first_request_fails", [False, True])
 def test_stop_requests_unlimited_memu_drain_without_signaling(tmp_path, monkeypatch, first_request_fails):
     spec = services.ServiceSpec(
-        "memu-server", "memU Server", [], tmp_path, tmp_path / "log", tmp_path / "pid",
+        "memu-server", "memU Server", [], tmp_path, tmp_path / "log", tmp_path / "pid", port=8100,
     )
     monkeypatch.setattr(
         services,
@@ -2005,30 +2024,39 @@ def test_stop_requests_unlimited_memu_drain_without_signaling(tmp_path, monkeypa
         lambda _spec: services.RuntimeState(verified_pids=(20,), service_pids=(20,), running=True),
     )
     monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [])
-    monkeypatch.setattr(services, "_read_mentra_status", lambda *_args: {"busy": False})
-    monkeypatch.setattr(services, "_request_memu_shutdown", lambda: True)
+    ports = []
+    monkeypatch.setattr(services, "_read_mentra_status", lambda port: ports.append(port) or {"busy": False})
+    monkeypatch.setattr(services, "_request_memu_shutdown", lambda port: ports.append(port) or True)
     monkeypatch.setattr(services, "_kill_process_tree", lambda *_args: pytest.fail("unexpected force"))
 
     if first_request_fails:
-        monkeypatch.setattr(services, "_request_memu_shutdown", lambda: False)
+        monkeypatch.setattr(services, "_request_memu_shutdown", lambda port: False)
         with pytest.raises(RuntimeError, match="shutdown was not confirmed"):
             services.stop(spec)
         status = services._stop_status(spec, {"running": True, "stoppable": True})
         assert status["stoppable"] is True
         assert status["force_stoppable"] is True
         assert "retry Stop" in status["detail"]
-        monkeypatch.setattr(services, "_request_memu_shutdown", lambda: True)
+        monkeypatch.setattr(services, "_request_memu_shutdown", lambda port: ports.append(port) or True)
     services.stop(spec)
     with services._STOP_LOCK:
         thread = services._STOP_THREADS.get(spec.name)
     if thread is not None:
         thread.join(timeout=1)
+    assert ports == ([8100] if first_request_fails else []) + [8100, 8100]
 
 
-def test_memu_shutdown_request_has_no_drain_deadline(monkeypatch):
+@pytest.mark.parametrize("port", [None, 8100])
+def test_memu_shutdown_request_has_no_drain_deadline(tmp_path, monkeypatch, port):
     seen = {}
+    monkeypatch.setattr(services, "_resolve_apps_root", lambda: tmp_path)
+    if port is not None:
+        config = tmp_path / "mcp-memu-server/config.json"
+        config.parent.mkdir()
+        config.write_text(json.dumps({"listen": {"port": port}}))
 
     def urlopen(request, timeout):
+        assert request.full_url == f"http://127.0.0.1:{port or 8099}/admin/shutdown"
         seen["body"] = json.loads(request.data)
         seen["timeout"] = timeout
         return _FakeResponse()

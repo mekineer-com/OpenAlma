@@ -144,7 +144,21 @@ def _channels_python() -> str:
     return sys.executable
 
 
+def memu_server_port(root: Path | None = None) -> int:
+    """Match the runner's listen.port defaults without importing its startup code."""
+    root = root if root is not None else _resolve_apps_root()
+    if root is None:
+        return MEMU_SERVER_PORT
+    try:
+        config = json.loads((root / "mcp-memu-server" / "config.json").read_text(encoding="utf-8"))
+        listen = config.get("listen") if isinstance(config, dict) else None
+        return int(listen.get("port") or MEMU_SERVER_PORT) if isinstance(listen, dict) else MEMU_SERVER_PORT
+    except (OSError, ValueError, TypeError, OverflowError):
+        return MEMU_SERVER_PORT
+
+
 def services_for_root(root: Path) -> list[ServiceSpec]:
+    memu_port = memu_server_port(root)
     bun = settings.bun_binary(root)
     bun_dir = bun.parent
     node = shutil.which("node") or "node"
@@ -158,7 +172,7 @@ def services_for_root(root: Path) -> list[ServiceSpec]:
             cwd=root / "mcp-memu-server",
             log_path=STATE_DIR / "memu-server.log",
             pid_path=STATE_DIR / "memu-server.pid",
-            port=MEMU_SERVER_PORT,
+            port=memu_port,
             adopt_pid_path=_resolve_memu_server_pid_path(root),
             install_marker=root / "mcp-memu-server" / "run.py",
         ),
@@ -185,7 +199,7 @@ def services_for_root(root: Path) -> list[ServiceSpec]:
             install_marker=root / "atomic" / "package.json",
             env={
                 "ATOMIC_SERVER_BIN": str(_atomic_server_binary(root)),
-                "MEMU_SERVER_URL": f"http://127.0.0.1:{MEMU_SERVER_PORT}",
+                "MEMU_SERVER_URL": os.environ.get("MEMU_SERVER_URL") or f"http://127.0.0.1:{memu_port}",
             },
         ),
         ServiceSpec(
@@ -687,7 +701,7 @@ def whatsapp_pair_status() -> dict:
 def memorize_pending(soul_id: str, user_id: str = "") -> dict:
     """Read memU's pending-memorize snapshot; {} when unreachable or malformed."""
     memu_server = next((svc for svc in all_services() if svc.name == "memu-server"), None)
-    port = memu_server.port if memu_server and memu_server.port else MEMU_SERVER_PORT
+    port = memu_server.port if memu_server and memu_server.port else memu_server_port()
     params = {"soul_id": soul_id}
     if user_id:
         params["user_id"] = user_id
@@ -734,10 +748,11 @@ def retry_memorize(soul_id: str, user_id: str) -> dict:
 
 
 def _mcp_request(path: str, payload: dict | None = None, *, timeout: float = 2, method: str | None = None) -> dict:
-    if _port_listener_pid(MEMU_SERVER_PORT, refresh=True) is None:
+    port = memu_server_port()
+    if _port_listener_pid(port, refresh=True) is None:
         raise ConnectionRefusedError("memU Server is not listening")
     request = urllib.request.Request(
-        f"http://127.0.0.1:{MEMU_SERVER_PORT}{path}",
+        f"http://127.0.0.1:{port}{path}",
         data=json.dumps(payload).encode() if payload is not None else None,
         headers={"Content-Type": "application/json"},
         method=method,
@@ -1478,7 +1493,8 @@ def status(spec: ServiceSpec) -> dict:
         runtime = _runtime_state(spec)
         release = _read_iris_release_status(spec, runtime)
         release_device = str(release.get("device_session_id") or "")
-        mentra = _read_mentra_status(MEMU_SERVER_PORT)
+        memu_port = memu_server_port()
+        mentra = _read_mentra_status(memu_port)
         if release.get("installation_ticket"):
             receipt = next((r for r in mentra.get("installations", [])
                             if r.get("installation_ticket") == release["installation_ticket"] and r.get("package_name") and not r.get("host")), None)
@@ -1509,7 +1525,7 @@ def status(spec: ServiceSpec) -> dict:
                 "host": host,
             }
             if session:
-                scoped.update(_read_mentra_status(MEMU_SERVER_PORT, device_session_id=device))
+                scoped.update(_read_mentra_status(memu_port, device_session_id=device))
                 scoped["installed_soul"] = session["soul_id"]
             # A manual QR offer is not a phone-install acknowledgment.
             automatic_target = release_device == device and host.get("host_package") == "com.mentra.mentra.openalma"
@@ -1611,7 +1627,7 @@ def status(spec: ServiceSpec) -> dict:
             children = []
 
     if spec.name == "memu-server" and (running or stuck or orphaned):
-        mentra = _read_mentra_status(MEMU_SERVER_PORT)
+        mentra = _read_mentra_status(spec.port or memu_server_port())
         stop_blocked = mentra.get("busy") is True
         if stop_blocked:
             detail = "Iris conversation in progress"
@@ -1688,7 +1704,7 @@ def raise_if_iris_installer_busy(spec: ServiceSpec) -> None:
         release = _iris_release_record(spec)
         name = release.get("display_name")
         if not name and release.get("device_session_id"):
-            records = _read_mentra_status(MEMU_SERVER_PORT).get("installations", [])
+            records = _read_mentra_status(memu_server_port()).get("installations", [])
             name = next((r.get("display_name") for r in records if r["device_session_id"] == release["device_session_id"]), None)
         name = name or release.get("device_session_id") or "another app"
         raise ServiceStoppingError(f"Iris installer is busy for {name}; finish or stop it first")
@@ -1766,9 +1782,10 @@ def _kill_process_tree(pid: int, *, preserve_service: ServiceSpec | None = None)
         raise PermissionError(f"Could not force stop PID(s): {', '.join(map(str, denied))}")
 
 
-def _request_memu_shutdown() -> bool:
+def _request_memu_shutdown(port: int | None = None) -> bool:
+    port = port if port is not None else memu_server_port()
     request = urllib.request.Request(
-        f"http://127.0.0.1:{MEMU_SERVER_PORT}/admin/shutdown",
+        f"http://127.0.0.1:{port}/admin/shutdown",
         data=json.dumps({
             "requested_by": "openalma-launcher",
             "reason": "launcher stop",
@@ -1872,7 +1889,8 @@ def stop(spec: ServiceSpec, *, confirm_unknown: bool = False) -> None:
                 _clear_dead_pidfile(spec.adopt_pid_path)
             return
         if spec.name == "memu-server":
-            mentra = _read_mentra_status(MEMU_SERVER_PORT)
+            port = spec.port or memu_server_port()
+            mentra = _read_mentra_status(port)
             if mentra.get("busy") is True:
                 raise PermissionError("Stop the Iris conversation on the phone first")
             if mentra.get("busy") is not False and not confirm_unknown:
@@ -1880,7 +1898,7 @@ def stop(spec: ServiceSpec, *, confirm_unknown: bool = False) -> None:
         elif not service_pids:
             raise RuntimeError(f"{spec.label} supervisor is not running; use Force Stop")
         if spec.name == "memu-server":
-            if not _request_memu_shutdown():
+            if not _request_memu_shutdown(port):
                 raise RuntimeError("memU Server shutdown was not confirmed; retry Stop, or use Force Stop if necessary")
             shutdown_requested = True
         elif os.name == "nt":

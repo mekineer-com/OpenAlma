@@ -64,7 +64,7 @@ def _prepare_iris_if_needed(stop: Event) -> None:
         return
     if (root / setup_install.RECOVERY_FILE).exists() or setup_install.core_issue(root, verify_runtime=False):
         return
-    mentra = services._read_mentra_status(services.MEMU_SERVER_PORT)
+    mentra = services._read_mentra_status(services.memu_server_port(root))
     if mentra.get("state") == "unavailable":
         return
     fresh_phone = any(record.get("host_reporting") and
@@ -1187,7 +1187,7 @@ def _start_iris_install(spec: services.ServiceSpec, device_session_id: str, host
 def _iris_install_target(device_session_id: str, host_package: str) -> dict[str, str]:
     if not device_session_id or host_package not in {"com.mentra.mentra", "com.mentra.mentra.openalma"}:
         raise ValueError("Choose an Iris app installation")
-    status = services._read_mentra_status(services.MEMU_SERVER_PORT, device_session_id=device_session_id)
+    status = services._read_mentra_status(services.memu_server_port(), device_session_id=device_session_id)
     if status.get("state") == "unavailable":
         raise HTTPException(status_code=503, detail=status["detail"])
     record = next((r for r in status.get("installations", []) if r["device_session_id"] == device_session_id), None)
@@ -1219,7 +1219,7 @@ def iris_forget(device_session_id: str) -> dict:
                 targeted = release.get("device_session_id") == device_session_id
                 if not targeted and release.get("installation_ticket"):
                     targeted = any(r["device_session_id"] == device_session_id and r.get("installation_ticket") == release["installation_ticket"]
-                                   for r in services._read_mentra_status(services.MEMU_SERVER_PORT).get("installations", []))
+                                   for r in services._read_mentra_status(services.memu_server_port()).get("installations", []))
                 if targeted:
                     raise HTTPException(status_code=409, detail="Finish or stop this app's installer first")
         return _iris_metadata_action(device_session_id)
