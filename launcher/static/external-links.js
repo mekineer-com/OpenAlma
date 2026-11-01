@@ -5,13 +5,13 @@ async function openExternalLink(event) {
   var url = new URL(link.href);
   if (url.origin === location.origin || !['http:', 'https:'].includes(url.protocol)) return;
   event.preventDefault();
+  clearLauncherMessage();
   try {
     var response = await fetch('/open-url', {
       method: 'POST', body: new URLSearchParams({url: url.href})
     });
     if (!response.ok) {
-      var result = await response.json();
-      throw new Error(result.detail || 'The default browser could not be opened');
+      throw new Error(await launcherErrorMessage(response, 'The default browser could not be opened'));
     }
   } catch (error) {
     showLauncherMessage(error.message);

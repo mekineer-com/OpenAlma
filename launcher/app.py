@@ -696,7 +696,7 @@ def iris_page(request: Request, device_session_id: str = "", repair: bool = Fals
         selected_installation = next((row for row in iris.get("installations", [])
                                       if row["device_session_id"] == device_session_id), None)
         if selected_installation is None:
-            raise HTTPException(status_code=404, detail="App installation not found")
+            return RedirectResponse("/iris", status_code=303)
     repair_versions = {}
     repair = repair or bool(selected_installation and selected_installation.get("repair_available"))
     if repair:
@@ -956,7 +956,8 @@ def _install_service(service_name: str) -> RedirectResponse:
         elif service_name == "iris-server":
             _begin_iris_preparation(root)
         else:
-            setup_install.begin_optional_install(service_name, root)
+            if not setup_install.optional_setup_status(service_name, root).get("ready"):
+                setup_install.begin_optional_install(service_name, root)
     except (setup_install.SetupConflict, services.ServiceStoppingError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except setup_install.SetupError as exc:

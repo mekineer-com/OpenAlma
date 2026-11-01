@@ -14,15 +14,16 @@ HERMES_STATE_DB_PATH = _CHANNELS_HOME / "state.db"
 CHANNELS_CONFIG_PATH = _CHANNELS_HOME / "config.json"
 
 
-def _load_channels_config() -> dict:
+def _load_channels_config(path: Path | None = None) -> dict:
+    path = path if path is not None else CHANNELS_CONFIG_PATH
     try:
-        data = json.loads(CHANNELS_CONFIG_PATH.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {}
     except (OSError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"Failed to read {CHANNELS_CONFIG_PATH}: {exc}") from exc
+        raise RuntimeError(f"Failed to read {path}: {exc}") from exc
     if not isinstance(data, dict):
-        raise RuntimeError(f"Expected mapping at top level in {CHANNELS_CONFIG_PATH}")
+        raise RuntimeError(f"Expected mapping at top level in {path}")
     return data
 
 

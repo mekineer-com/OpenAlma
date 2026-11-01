@@ -163,17 +163,9 @@ function irisInstallDisabled(data, prepare = false) {
 }
 
 async function irisMetadataAction(id, action, body) {
+  clearLauncherMessage();
   var response = await fetch('/iris/installations/' + encodeURIComponent(id) + '/' + action, {method: 'POST', body: body});
   if (!response.ok) {
-    throw new Error(await irisErrorMessage(response, 'Installation action failed'));
+    throw new Error(await launcherErrorMessage(response, 'Installation action failed'));
   }
-}
-
-async function irisErrorMessage(response, fallback) {
-  var text = await response.text(), payload;
-  try { payload = JSON.parse(text); }
-  catch (_error) { return text.trim() || fallback; }
-  var detail = payload?.detail;
-  if (Array.isArray(detail)) return detail.map(function(error) { return error.msg; }).filter(Boolean).join('; ') || fallback;
-  return typeof detail === 'string' && detail ? detail : fallback;
 }

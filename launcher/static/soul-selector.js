@@ -1,11 +1,13 @@
 async function submitSoulForm(form, onSuccess) {
+  clearLauncherMessage();
   try {
     const response = await fetch(form.action, {method: "POST", body: new FormData(form)});
     if (!response.ok) {
-      const error = await response.json();
-      const message = typeof error.detail === "string" ? error.detail : error.detail?.message || "Soul selection failed";
-      if (response.status === 409 && error.detail?.reason === "existing_exact" && confirm(message)) {
-        form.querySelector('[name="use_existing"]').value = "true";
+      const error = response.status === 409 ? await response.clone().json().catch(() => null) : null;
+      const message = await launcherErrorMessage(response, "Soul selection failed");
+      const useExisting = form.querySelector('[name="use_existing"]');
+      if (useExisting && error?.detail?.reason === "existing_exact" && confirm(message)) {
+        useExisting.value = "true";
         return submitSoulForm(form, onSuccess);
       }
       showLauncherMessage(message);

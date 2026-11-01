@@ -387,7 +387,8 @@ def test_client_setup_pages_keep_qr_dependencies_and_shared_header(tmp_path, mon
     installations[1]["metadata_known"] = False
     visible = client.get("/iris?device_session_id=fork-test").text
     assert 'App details unavailable (version unknown), Iris not yet reported' in visible
-    assert client.get("/iris?device_session_id=unknown-app").status_code == 404
+    missing = client.get("/iris?device_session_id=unknown-app", follow_redirects=False)
+    assert missing.status_code == 303 and missing.headers["location"] == "/iris"
     for release_state, message in (
         ("unavailable", "GitHub releases unavailable."),
         ("none", "No GitHub release published."),
@@ -867,7 +868,7 @@ eval(source.slice(source.indexOf('function irisNavigate'),source.indexOf('functi
   }
   fetch=async()=>new Response('Internal Server Error',{status:500});
   await assert.rejects(irisMetadataAction('test-phone','rename'),{message:'Internal Server Error'});
-  assert.equal(await irisErrorMessage(new Response('null'),'Fallback'),'Fallback');
+  assert.equal(await launcherErrorMessage(new Response('null'),'Fallback'),'Fallback');
   fetch=async()=>{throw new Error('Offline');};
   statusAvailable=false;
   const button={disabled:false,closest:()=>({})};
@@ -911,6 +912,37 @@ def test_launcher_node_checks():
     paths = sorted((Path(__file__).resolve().parents[1] / "launcher/static").glob("*.test.cjs"))
     assert paths
     subprocess.run(["node", "--test", *map(str, paths)], check=True, timeout=10)
+
+
+def test_launcher_action_errors_are_readable_and_clear_on_retry():
+    import subprocess
+    root = Path(__file__).resolve().parents[1] / "launcher"
+    script = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+const message={hidden:false},text={},context={
+  document:{getElementById:id=>id==='launcher-message'?message:text},
+  fetch:async()=>new Response('Internal Server Error',{status:500})
+};
+vm.createContext(context);
+vm.runInContext(fs.readFileSync(process.argv[1]+'/static/launcher.js','utf8'),context);
+const source=fs.readFileSync(process.argv[1]+'/templates/index.html','utf8');
+vm.runInContext(source.slice(source.indexOf('async function openService('),source.indexOf('function setActionHtml(')),context);
+(async()=>{
+  await context.openService('test');assert.equal(text.textContent,'Internal Server Error');assert.equal(message.hidden,false);
+  context.fetch=async()=>({ok:true});
+  await context.openService('test');assert.equal(message.hidden,true);
+  context.fetch=async()=>{throw new Error('Network unavailable');};
+  await context.openService('test');assert.equal(text.textContent,'Network unavailable');assert.equal(message.hidden,false);
+  context.fetch=async()=>new Response('Internal Server Error',{status:500});
+  await assert.rejects(context.launcherUpdateRequest('/launcher/update'),{message:'Internal Server Error'});
+  const button={dataset:{soul:'Test Soul'}};let polls=0;context.pollMemorize=()=>polls++;
+  await context.retryConsolidation(button);assert.equal(text.textContent,'Internal Server Error');assert.equal(button.disabled,false);
+  context.fetch=async()=>({ok:true});
+  await context.retryConsolidation(button);assert.equal(message.hidden,true);assert.equal(polls,1);
+  assert.equal(await context.launcherErrorMessage(new Response('{"detail":[{"msg":"Invalid name"}]}'),'Fallback'),'Invalid name');
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+    subprocess.run(["node", "-e", script, str(root)], check=True, timeout=10)
 
 
 def test_uninstalled_iris_opens_phone_client_section_for_openalma_host(tmp_path, monkeypatch):
@@ -1287,6 +1319,20 @@ def test_install_route_rejects_live_service(tmp_path, monkeypatch):
 
     assert response.status_code == 409
     assert begun == []
+
+
+@pytest.mark.parametrize("service_name", ["atomic", "channels-daemon", "sillytavern"])
+def test_stale_optional_install_does_not_reinstall_ready_service(tmp_path, monkeypatch, service_name):
+    spec = services.ServiceSpec(service_name, service_name, [], tmp_path, tmp_path / "log", tmp_path / "pid")
+    monkeypatch.setattr(app.settings, "apps_root", lambda: tmp_path)
+    monkeypatch.setattr(app.services, "services_for_root", lambda _root: [spec])
+    monkeypatch.setattr(app.services, "status", lambda _spec: {"running": False})
+    monkeypatch.setattr(app.setup_install, "optional_setup_status", lambda *_args: {"ready": True})
+    monkeypatch.setattr(app.setup_install, "begin_optional_install",
+                        lambda *_args: pytest.fail("A stale Install must not reinstall a ready service"))
+    response = TestClient(app.app, base_url="http://127.0.0.1").post(
+        f"/install/{service_name}", follow_redirects=False)
+    assert response.status_code == 303 and response.headers["location"] == "/"
 
 
 def test_install_conflict_returns_http_409(tmp_path, monkeypatch):

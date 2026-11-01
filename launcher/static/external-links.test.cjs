@@ -8,10 +8,11 @@ test('miniapp links navigate on the viewing device; web links use the desktop op
   const context = vm.createContext({
     URL, URLSearchParams,
     location: {origin: 'http://launcher.example'},
-    document: {addEventListener() {}},
+    document: {addEventListener() {}, getElementById: () => ({hidden: true})},
     fetch: async (_path, options) => { opened.push(options.body.get('url')); return {ok: true}; },
     alert: () => assert.fail('link opening should succeed'),
   });
+  vm.runInContext(fs.readFileSync(__dirname + '/launcher.js', 'utf8'), context);
   vm.runInContext(fs.readFileSync(__dirname + '/external-links.js', 'utf8'), context);
   for (const type of ['click', 'auxclick']) {
     for (const href of ['miniapp://release?url=https%3A%2F%2Fprivate.example', 'http://launcher.example/iris', 'https://example.org/guide']) {

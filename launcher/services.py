@@ -41,6 +41,7 @@ from settings import apps_root as _resolve_apps_root
 from settings import atomic_server_binary as _atomic_server_binary
 from settings import channels_home as _resolve_channels_home
 from process_flags import hidden_process_kwargs
+from soul import _load_channels_config
 
 STATE_DIR = Path.home() / ".cache" / "openalma-launcher"
 MEMU_SERVER_PORT = 8099
@@ -561,10 +562,9 @@ def _runtime_state(spec: ServiceSpec) -> RuntimeState:
 
 def _read_channels_config() -> dict:
     try:
-        data = json.loads((_CHANNELS_HOME / "config.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        return _load_channels_config(_CHANNELS_HOME / "config.json")
+    except RuntimeError:
         return {}
-    return data if isinstance(data, dict) else {}
 
 
 def _coerce_bool(value: object, default: bool = False) -> bool:
@@ -581,7 +581,11 @@ def _coerce_bool(value: object, default: bool = False) -> bool:
 
 
 def channels_setup_issue() -> str:
-    return "" if str(_read_channels_config().get("soul_id") or "").strip() else "Choose a Soul in Setup"
+    try:
+        config = _load_channels_config(_CHANNELS_HOME / "config.json")
+    except RuntimeError as exc:
+        return f"Channels configuration needs repair: {exc}"
+    return "" if str(config.get("soul_id") or "").strip() else "Choose a Soul in Setup"
 
 
 def _channels_bridge_port(config: dict | None = None) -> int:

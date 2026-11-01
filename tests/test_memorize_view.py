@@ -73,11 +73,11 @@ def test_launcher_update_poll_opens_once_and_has_explicit_retry():
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 vm.runInThisContext(fs.readFileSync(process.argv[1],'utf8'));
 const button={},showButton={},form={dataset:{},querySelector:()=>button},progress={removeAttribute:()=>{delete progress.value;}},status={};
-global.document={getElementById:id=>({'launcher-update-form':form,'launcher-show-installer':showButton,'launcher-update-progress':progress,'launcher-update-status':status}[id])};
+global.document={getElementById:id=>({'launcher-message':{},'launcher-update-form':form,'launcher-show-installer':showButton,'launcher-update-progress':progress,'launcher-update-status':status}[id])};
 let calls=[], state='running', fail=false;
 global.fetch=async(url,options)=>{
   calls.push([url,options.method]);
-  return {ok:!fail,json:async()=>fail?{detail:'Connection lost'}:url.endsWith('/open')?{state:'opened',step:'Installer opened'}:{state,progress:{downloaded_bytes:25,total_bytes:100}}};
+  return new Response(JSON.stringify(fail?{detail:'Connection lost'}:url.endsWith('/open')?{state:'opened',step:'Installer opened'}:{state,progress:{downloaded_bytes:25,total_bytes:100}}), {status:fail?500:200});
 };
 (async()=>{
   await Promise.all([startLauncherUpdate(),startLauncherUpdate()]);assert.equal(calls.length,1);
@@ -108,7 +108,7 @@ def test_exit_button_requests_owned_window_close():
     script = r"""
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 vm.runInThisContext(fs.readFileSync(process.argv[1],'utf8'));
-global.document={body:{}};
+global.document={body:{},getElementById:()=>({})};
 global.fetch=async(url,options)=>{
   assert.equal(url,'/launcher/quit?close_window=true');assert.equal(options.method,'POST');return {ok:true};
 };
@@ -262,7 +262,7 @@ async function poll(){pollStatus('atomic');await new Promise(setImmediate);}
   global.fetch=()=>{blockedFetches++;return Promise.reject(new Error('Polled while navigation was pending'));};await poll();
   let ownerPoll;
   global.setInterval=callback=>{ownerPoll=callback;};
-  const ownerStart=text.indexOf('{% if owner_error or soul_error %}');
+  const ownerStart=text.lastIndexOf('{% if owner_error or soul_error %}');
   vm.runInThisContext(text.slice(text.indexOf('setInterval',ownerStart),text.indexOf('\n{% endif %}',ownerStart)));
   ownerPoll();
   assert.equal(blockedFetches,0);
@@ -581,7 +581,7 @@ assert.equal(polls, 1);
 
 def test_memorize_gauge_empty_state():
     html = _render({})
-    assert "No pending-memorize data" in html
+    assert "No Souls available" in html
     assert '<div class="meter">' not in html
 
 

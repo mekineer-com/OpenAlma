@@ -992,22 +992,27 @@ const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const text = fs.readFileSync(process.argv[1], 'utf8');
 const script = text.slice(text.indexOf('var pendingStarts = {}'), text.indexOf('function actionHtml('));
 (async () => {
-  for (const scenario of ['start', 'start-failed', 'decline', 'confirm', 'force', 'force-failed']) {
+  for (const scenario of ['start', 'start-failed', 'decline', 'confirm', 'force', 'force-failed', 'plain-error']) {
     const urls = [], alerts = []; let polls = 0;
+    const message = {hidden: false};
     const context = {
-      document: {addEventListener: () => {}},
+      document: {addEventListener: () => {}, getElementById: () => message},
       Date, confirm: () => { assert(!scenario.startsWith('force')); return scenario === 'confirm'; },
       alert: () => assert.fail('Service messages must not open a browser popup'),
-      showLauncherMessage: x => alerts.push(x), pollStatus: () => polls++,
+      pollStatus: () => polls++,
       fetch: async url => {
         urls.push(url);
         const status = ['start', 'force'].includes(scenario) ? 200
           : ['start-failed', 'force-failed'].includes(scenario) || urls.length === 2 ? 409 : 428;
-        return {status, ok: status === 200, json: async () => ({detail: 'Service message'})};
+        return new Response(scenario === 'plain-error' ? 'Internal Server Error' : '{"detail":"Service message"}',
+          {status: scenario === 'plain-error' ? 500 : status});
       },
     };
-    vm.createContext(context); vm.runInContext(script, context);
-    const action = scenario.startsWith('start') ? 'start' : scenario.startsWith('force') ? 'force-stop' : 'stop';
+    vm.createContext(context);
+    vm.runInContext(fs.readFileSync(require('path').join(require('path').dirname(process.argv[1]), '../static/launcher.js'), 'utf8'), context);
+    context.showLauncherMessage = x => alerts.push(x);
+    vm.runInContext(script, context);
+    const action = scenario.startsWith('start') || scenario === 'plain-error' ? 'start' : scenario.startsWith('force') ? 'force-stop' : 'stop';
     const actionsCell = {innerHTML: '<button>Original action</button>'};
     const statusCell = {innerHTML: ''};
     const pending = context.svcAction('test', action, {
@@ -1019,7 +1024,9 @@ const script = text.slice(text.indexOf('var pendingStarts = {}'), text.indexOf('
     assert.equal(polls, 1);
     assert.equal(Boolean(context.pendingStarts.test), scenario === 'start');
     assert.equal(urls.length, scenario === 'confirm' ? 2 : 1);
-    assert.equal(alerts.length, ['confirm', 'start-failed', 'force-failed'].includes(scenario) ? 1 : 0);
+    assert.equal(alerts.length, ['confirm', 'start-failed', 'force-failed', 'plain-error'].includes(scenario) ? 1 : 0);
+    assert.equal(message.hidden, true);
+    if (scenario === 'plain-error') assert.equal(alerts[0], 'Internal Server Error');
     if (scenario === 'confirm') assert(urls[1].endsWith('?confirm_unknown=true'));
     if (scenario.startsWith('force')) assert(urls[0].endsWith('?confirmed=true'));
   }
@@ -2121,6 +2128,14 @@ def test_channels_needs_soul_selection_before_start(tmp_path, monkeypatch):
     assert status["action_kind"] == "settings" and not status["startable"]
     with pytest.raises(ValueError, match="Choose a Soul in Setup"):
         services.start(spec)
+    for malformed in ("{", "[]"):
+        (tmp_path / "config.json").write_text(malformed)
+        status = services.status(spec)
+        assert "configuration needs repair" in status["detail"]
+        assert not status["startable"]
+        with pytest.raises(ValueError, match="configuration needs repair"):
+            services.start(spec)
+        assert services._read_channels_config() == {}  # Runtime health stays forgiving.
     (tmp_path / "config.json").write_text(json.dumps({"soul_id": "Fictional Soul"}))
     status = services.status(spec)
     assert status["action_kind"] == "settings" and not status["startable"]

@@ -6,7 +6,7 @@
   {% set install_disabled = not iris_setup.ready or iris.ready is sameas false or installer_busy or iris.blocked or iris.install_running or iris.state == 'stopping' or iris.installations is not defined %}
   {% set stock_install_disabled = (not iris_setup.ready and iris_setup.step != 'release') or (iris.ready is sameas false and iris.action_kind != 'install') or installer_busy or iris.blocked or iris.install_running or iris.state == 'stopping' or iris.installations is not defined %}
   {% set show_installer = not selected_installation or iris.release_device_session_id == selected_installation.device_session_id %}
-  <p id="iris-installer-status" class="banner" role="alert" {% if not (iris.blocked or iris.ready is sameas false or iris.installations is not defined) %}hidden{% endif %}>{% if iris.blocked %}{{ iris.detail or 'Iris installer port 6789 is occupied. Free the port before installing.' }}{% elif iris.ready is sameas false %}{{ iris.status_label }}: {{ iris.detail }}{% elif iris.installations is not defined %}Iris app status is unavailable.{% endif %}</p>
+  <p id="iris-installer-status" class="banner" role="alert" {% if not (iris.blocked or iris.ready is sameas false or iris.installations is not defined) %}hidden{% endif %}>{% if iris.blocked %}{{ iris.detail or 'Iris installer port 6789 is occupied. Free the port before installing.' }}{% elif iris.ready is sameas false %}{{ iris.detail or iris.status_label }}{% elif iris.installations is not defined %}Iris app status is unavailable.{% endif %}</p>
   <p id="iris-foreground-notice" class="banner" role="status" {% if not (show_installer and iris.running and not iris.blocked and iris.release_host_package == 'com.mentra.mentra.openalma') %}hidden{% endif %}>Open OpenAlma Mentra on your phone to finish installing Iris. Installation continues automatically.</p>
   <h2>{{ selected_installation.display_name ~ ' setup' if selected_installation else 'Iris & Phone Setup' }}</h2>
     <h3 class="iris-section">memU Server readiness</h3>
@@ -26,7 +26,7 @@
     <p id="iris-address-busy" class="hint" {% if not installer_busy %}hidden{% endif %}>Finish or cancel the Iris installer before saving a new address; it uses the address captured when it starts.</p>
     <ol class="tight">
       <li>First connect your phone and server through WireGuard or another trusted private connection.</li>
-      <li>If the default IP doesn't work, save the server address assigned by your private network above.</li>
+      <li>Save the server address assigned by your private network in the field above, even if it matches the example.</li>
       <li>Install OpenAlma Mentra: <button class="btn qr-inline" type="button" popovertarget="mentra-apk-popup" onclick="mentraApkQr()" aria-label="OpenAlma Mentra APK download QR">QR</button></li>
       <li>Enter the server address into Mentra.</li>
       <li>Click Install beside your phone on the <a href="/">main page</a> to install Iris.</li>
@@ -82,7 +82,7 @@
           <input type="hidden" name="host_package" value="{{ row.host_package }}">
           <button class="btn" type="submit" {% if install_disabled or not row.startable %}disabled{% endif %}>{{ row.action_label }}</button>
         </form>
-        {% elif row.action_kind == 'settings' %}<span class="muted">Setup needed: see host readiness above.</span>{% endif %}
+        {% elif row.action_kind == 'settings' %}<span class="muted">Setup needed: see memU Server readiness above.</span>{% endif %}
         {% if row.metadata_known is not sameas false %}
         <form class="inline" method="post" action="/iris/installations/{{ row.device_session_id|urlencode }}/forget" data-forget>
           <button class="btn" type="submit" title="Close the app and wait 15 seconds before forgetting it. Opening it again restores its row." {% if target_busy or row.active or row.host_reporting %}disabled{% endif %}>Forget</button>
@@ -113,7 +113,7 @@
     </form>
         {% endif %}
       </li>
-      {% else %}<li class="muted">No app installations reported. Connect OpenAlma Mentra in its Settings, or use Stock Mentra or Glassly installation below.</li>{% endfor %}
+      {% endfor %}
     </ul>
     <p class="hint">Forget removes only this launcher record, not phone storage, chats or memories. Close the app and wait 15 seconds first; opening it again restores its row. Update updates Iris, not the host app (Mentra or Glassly). Repair preserves the installation identity and is available only for idle OpenAlma Mentra.</p>
     <p><a href="/iris">General Iris setup</a></p>
@@ -122,7 +122,7 @@
     <ul class="tight">
       {% for row in iris.installations %}
       <li><a href="/iris?device_session_id={{ row.device_session_id|urlencode }}">{{ row.display_name }}</a></li>
-      {% else %}<li class="muted">No app installations reported.</li>{% endfor %}
+      {% else %}<li class="muted">No app installations reported. Connect OpenAlma Mentra in its Settings, or use Stock Mentra or Glassly installation below.</li>{% endfor %}
     </ul>
     {% endif %}
 
@@ -143,7 +143,8 @@
       </form>
       <p class="hint">Click to generate the QR. Scan it from your phone app, following the instructions below.</p>
       {% elif selected_installation.host_package == 'com.mentra.mentra' %}
-      <p class="hint">Use Install or Update in App status to generate the QR.</p>
+      {% if selected_installation.startable %}<p class="hint">Use Install or Update in App status to generate the QR.</p>
+      {% else %}<p class="hint">For a new installation QR, use <a href="/iris">General Iris setup</a>.</p>{% endif %}
       {% endif %}
       {% if show_installer and iris.running and iris.release_uri and iris.release_host_package == 'com.mentra.mentra' %}
       <p>Scan this QR in Mentra or Glassly (one app installation only):</p>
@@ -259,12 +260,13 @@
     }
     async function irisRequest(url, options, button) {
       if (submitting) return;
+      clearLauncherMessage();
       submitting = true;
       if (button) button.disabled = true;
       try {
         const response = await fetch(url, options);
         if (!response.ok) {
-          throw new Error(await irisErrorMessage(response, 'Iris action failed.'));
+          throw new Error(await launcherErrorMessage(response, 'Iris action failed.'));
         }
         if (url.endsWith('/forget')) irisNavigate('/iris');
         else if (url.endsWith('/install/iris-server')) irisNavigate();

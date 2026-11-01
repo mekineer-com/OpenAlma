@@ -228,13 +228,14 @@
       <p class="muted">No pending-memorize data — is mcp-memu-server running?</p>
     {% endif %}
     </div>
-    {% else %}<p class="muted">No pending-memorize data - is mcp-memu-server running?</p>
+    {% else %}<p class="muted">{% if owner_error or soul_error %}No pending-memorize data - is mcp-memu-server running?{% else %}No Souls available{% endif %}</p>
     {% endfor %}
   </div>
 
   {% include "_mentra_apk_popup.html" %}
   <script src="/static/vendor/qrcode.min.js"></script>
   <script src="/static/iris-services.js?v=single-action"></script>
+  <script src="/static/soul-selector.js"></script>
   <script>
 var pendingStarts = {};
 var pendingStops = {};
@@ -243,16 +244,21 @@ var reloading = false;
 document.addEventListener('submit', async function(event) {
   var form = event.target;
   var action = form.getAttribute('action') || '';
+  if (action === '/owner' || action === '/first-soul') {
+    event.preventDefault();
+    return submitSoulForm(form);
+  }
   if (action !== '/iris/install' && !action.startsWith('/install/')) return;
   event.preventDefault();
   if (form.dataset.submitting) return;
+  clearLauncherMessage();
   form.dataset.submitting = 'true';
   var button = event.submitter || form.querySelector('button[type="submit"]');
   if (button) button.disabled = true;
   try {
     var response = await fetch(form.action, {method: 'POST', body: new FormData(form)});
     if (!response.ok) {
-      throw new Error(await irisErrorMessage(response, 'Installation failed'));
+      throw new Error(await launcherErrorMessage(response, 'Installation failed'));
     }
     location.assign(action === '/iris/install'
       ? '/iris?device_session_id=' + encodeURIComponent(form.elements.device_session_id.value) +
@@ -266,6 +272,7 @@ document.addEventListener('submit', async function(event) {
 });
 
 async function svcAction(name, action, btn) {
+  clearLauncherMessage();
   var row = btn.closest('tr');
   var statusCell = row.querySelector('.svc-status');
   var actionsCell = row.querySelector('.svc-actions');
@@ -278,14 +285,12 @@ async function svcAction(name, action, btn) {
   try {
     var url = '/service/' + name + '/' + action + (action === 'force-stop' ? '?confirmed=true' : '');
     var response = await fetch(url, {method: 'POST'});
-    var result = await response.json();
-    if (response.status === 428 && action === 'stop' && confirm(result.detail)) {
+    if (response.status === 428 && action === 'stop' && confirm(await launcherErrorMessage(response, 'Confirm Stop'))) {
       response = await fetch(url + '?confirm_unknown=true', {method: 'POST'});
-      result = await response.json();
     }
     if (!response.ok) {
       delete pendingStarts[name];
-      if (response.status !== 428) showLauncherMessage(result.detail || 'Service action failed');
+      if (response.status !== 428) showLauncherMessage(await launcherErrorMessage(response, 'Service action failed'));
     }
   } catch (error) {
     delete pendingStarts[name];
@@ -297,8 +302,7 @@ async function svcAction(name, action, btn) {
 }
 
 function actionHtml(name, data) {
-  if (name === 'iris-server') return irisParentActions(data);
-  if (data.install_enabled === false) return '<button class="btn" disabled>Install</button>';
+  if (name === 'iris-server') return irisParentActions();
   var setup = name === 'channels-daemon' ? ' <a class="btn" href="/hermes' + (data.pairing_required ? '?pair=1' : '') + '">Setup</a>' : '';
   var open = data.running && data.open_url && data.state !== 'starting' ? ' <button class="btn" onclick="openService(\'' + esc(name) + '\')">Open</button>' : '';
   if (data.install_running) return setup;
@@ -343,10 +347,12 @@ function actionHtml(name, data) {
 }
 
 async function openService(name) {
-  var response = await fetch('/service/' + name + '/open', {method: 'POST'});
-  if (!response.ok) {
-    var result = await response.json();
-    showLauncherMessage(result.detail || 'Browser could not be opened');
+  clearLauncherMessage();
+  try {
+    var response = await fetch('/service/' + name + '/open', {method: 'POST'});
+    if (!response.ok) throw new Error(await launcherErrorMessage(response, 'Browser could not be opened'));
+  } catch (error) {
+    showLauncherMessage(error.message);
   }
 }
 
@@ -416,7 +422,7 @@ function pollStatus(name) {
 
 {% for s in services + not_installed_services if s.name == 'iris-server' %}
 renderIrisInstallations({{ s|tojson }});
-document.querySelector('tr[data-service="iris-server"] .svc-actions').innerHTML = irisParentActions({{ s|tojson }});
+document.querySelector('tr[data-service="iris-server"] .svc-actions').innerHTML = irisParentActions();
 {% endfor %}
 initServiceVisibility();
 

@@ -3,7 +3,21 @@ function showLauncherMessage(message) {
   document.getElementById('launcher-message').hidden = false;
 }
 
+function clearLauncherMessage() {
+  document.getElementById('launcher-message').hidden = true;
+}
+
+async function launcherErrorMessage(response, fallback) {
+  var text = await response.text(), payload;
+  try { payload = JSON.parse(text); }
+  catch (_error) { return text.trim() || fallback; }
+  var detail = payload?.detail;
+  if (Array.isArray(detail)) return detail.map(function(error) { return error.msg; }).filter(Boolean).join('; ') || fallback;
+  return typeof detail === 'string' && detail ? detail : detail?.message || fallback;
+}
+
 async function quitLauncher(button) {
+  clearLauncherMessage();
   button.disabled = true;
   try {
     var response = await fetch('/launcher/quit?close_window=true', {method: 'POST'});
@@ -48,9 +62,8 @@ function updateDownloadNotice() {
 
 async function launcherUpdateRequest(path, method) {
   var response = await fetch(path, {method: method || 'GET', cache: 'no-store'});
-  var data = await response.json();
-  if (!response.ok) throw new Error(data.detail || 'Launcher update failed');
-  return data;
+  if (!response.ok) throw new Error(await launcherErrorMessage(response, 'Launcher update failed'));
+  return response.json();
 }
 
 function renderLauncherUpdate(data) {
@@ -95,10 +108,12 @@ async function pollLauncherUpdate(start) {
 }
 
 function startLauncherUpdate() {
+  clearLauncherMessage();
   return pollLauncherUpdate(true);
 }
 
 async function showLauncherInstaller(button) {
+  clearLauncherMessage();
   button.disabled = true;
   try {
     await launcherUpdateRequest('/launcher/update/show', 'POST');
@@ -220,14 +235,12 @@ function renderMemorize(data) {
 }
 
 function retryConsolidation(button) {
+  clearLauncherMessage();
   button.disabled = true;
   button.textContent = 'Retrying...';
-  fetch('/memorize/retry?soul_id=' + encodeURIComponent(button.dataset.soul), { method: 'POST' })
-    .then(function(response) {
-      if (response.ok) return response.json();
-      return response.json().then(function(data) {
-        throw new Error(data.detail || 'Retry failed');
-      });
+  return fetch('/memorize/retry?soul_id=' + encodeURIComponent(button.dataset.soul), { method: 'POST' })
+    .then(async function(response) {
+      if (!response.ok) throw new Error(await launcherErrorMessage(response, 'Retry failed'));
     })
     .then(pollMemorize)
     .catch(function(error) {

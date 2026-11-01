@@ -53,10 +53,11 @@ def test_install_forms_keep_launcher_on_error_and_ignore_duplicate_submit():
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 const text=fs.readFileSync(process.argv[1]+'/templates/index.html','utf8');
 let submit,destination,calls,alerts=[];
-global.document={addEventListener:(_name,handler)=>{submit=handler;}};
+global.document={addEventListener:(_name,handler)=>{submit=handler;},getElementById:()=>({hidden:false})};
 global.location={assign:value=>{destination=value;}};
 global.FormData=class {};
 global.alert=()=>assert.fail('Installation errors must not open a browser popup');
+vm.runInThisContext(fs.readFileSync(process.argv[1]+'/static/launcher.js','utf8'));
 global.showLauncherMessage=value=>alerts.push(value);
 vm.runInThisContext(fs.readFileSync(process.argv[1]+'/static/iris-services.js','utf8'));
 vm.runInThisContext(text.slice(text.indexOf("document.addEventListener('submit'"),text.indexOf('async function svcAction')));
@@ -103,7 +104,7 @@ vm.runInThisContext(source.slice(source.indexOf('function pollStatus'), source.i
     await new Promise(resolve => setImmediate(resolve));
     results.push([status.innerHTML, actions.innerHTML]);
   }
-  const polling = source.slice(source.indexOf('setInterval(function() {'), source.indexOf('{% if owner_error or soul_error %}'));
+  const polling = source.slice(source.indexOf('setInterval(function() {'), source.lastIndexOf('{% if owner_error or soul_error %}'));
   let tick, selector;
   global.setInterval = callback => { tick = callback; };
   document.querySelectorAll = value => { selector = value; return [{dataset:{service:'iris-server',runtime:'false'}}]; };
