@@ -91,7 +91,8 @@ while True:time.sleep(.1)
         (directory / "package.json").write_text('{"type":"module"}')
         spec = services.ServiceSpec("sillytavern", "Slow fixture", [node, "server.js"], directory,
                                     directory / "log", directory / "pid")
-        child = services._spawn_background(spec, {**os.environ, "FIXTURE_HOME": str(directory), "FIXTURE_DELAY": "17000"})
+        delay_ms = int((services.FORCE_STOP_RECOVERY_SECONDS + 2) * 1000)
+        child = services._spawn_background(spec, {**os.environ, "FIXTURE_HOME": str(directory), "FIXTURE_DELAY": str(delay_ms)})
         spec.pid_path.write_text(str(child.pid))
         try:
             wait_for(lambda: (directory / "ready").exists())
@@ -126,13 +127,13 @@ while True:time.sleep(.1)
             print("Stale identity and shared console refused without signalling", flush=True)
             services.stop(spec)
             wait_for(lambda: (directory / "signals").exists())
-            time.sleep(15.1)
+            time.sleep(services.FORCE_STOP_RECOVERY_SECONDS + 0.1)
             status = services._stop_status(spec, {"running": True})
             assert child.poll() is None and status["force_stoppable"]
             assert status["status_label"] == "Still finishing…"
             wait_for(lambda: child.poll() is not None)
             assert child.returncode == 0 and (directory / "finished").exists()
-            print("15-second threshold did not interrupt delayed cleanup", flush=True)
+            print(f"{services.FORCE_STOP_RECOVERY_SECONDS}-second threshold did not interrupt delayed cleanup", flush=True)
         finally:
             if child.poll() is None:
                 services.force_stop(spec)
