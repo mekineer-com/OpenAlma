@@ -245,6 +245,8 @@
         if (submitting) return;
         if (!statusAvailable) return;
         // Preserve unsaved edits and undismissed messages.
+        const addressInput = document.querySelector('.iris-address input');
+        if (addressInput.value !== addressInput.defaultValue) return;
         if ((!wasAvailable || statusSignature(status) !== initialSignature) &&
             !document.querySelector('#iris-installations details[open], .iris-address:focus-within, .iris-repair:focus-within, .iris-repair[data-dirty], #launcher-message:not([hidden])')) irisNavigate();
       } catch (_err) { applyActionStatus({}); }

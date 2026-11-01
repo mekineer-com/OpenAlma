@@ -134,6 +134,7 @@ test('Services preserves rows and Rename drafts through outages, then restores c
 test('Setup poll applies blocks and outages even with Rename open, without disabling installer cancellation', async () => {
   const stock = {form: {id: 'iris-install-form', classList: {contains: () => false}}}, install = {}, rename = {}, forget = {}, cancel = {disabled: false};
   const address = {disabled: false}, busyHint = {hidden: true}, installerStatus = {};
+  const addressInput = {value: 'http://test.example:8099', defaultValue: 'http://test.example:8099'};
   const progress = {hidden: false}, cancelControls = {hidden: false}, foregroundNotice = {hidden: true};
   const retryButton = {}, retry = {hidden: true, querySelector: () => retryButton};
   let retrySubmit;
@@ -165,7 +166,7 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
         assert.equal(s, '[data-device-session-id]');
         return [item];
       },
-      querySelector: s => s === '.iris-address button' ? address : s === '.iris-repair' ? null :
+      querySelector: s => s === '.iris-address button' ? address : s === '.iris-address input' ? addressInput : s === '.iris-repair' ? null :
         open || (s.includes('#launcher-message:not([hidden])') && !message.hidden),
     },
     setInterval: callback => { poll = callback; },
@@ -305,6 +306,13 @@ test('Setup poll applies blocks and outages even with Rename open, without disab
   assert.equal(reloads, 0, 'Polling must not erase an undismissed message');
   assert.equal(install.disabled, true, 'Status and controls must still refresh');
   message.hidden = true;
+  addressInput.value = 'http://draft.example:8099';
+  next = {...ready, starting: true};
+  await poll();
+  assert.equal(reloads, 0, 'Polling must preserve a blurred, unsaved address');
+  assert.equal(addressInput.value, 'http://draft.example:8099');
+  assert.equal(address.disabled, true, 'A dirty address must not suppress changed status controls');
+  addressInput.value = addressInput.defaultValue;
   await poll();
   assert.equal(reloads, 1);
   assert.equal(messageText.textContent, 'Invalid address');
