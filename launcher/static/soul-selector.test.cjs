@@ -28,23 +28,36 @@ test('server refusal preserves the page and typed soul', async () => {
 });
 
 test('late existing-soul conflict can be confirmed and retried', async () => {
-  let calls = 0;
-  const consent = {value: 'false'};
-  const context = sharedContext({
-    FormData: class {},
-    fetch: async () => ++calls === 1
-      ? new Response('{"detail":{"reason":"existing_exact","message":"Use it?"}}', {status: 409})
-      : {ok: true, url: '/done'},
-    confirm: () => true,
-    showLauncherMessage: () => assert.fail('confirmation should retry instead of showing an error'),
-    alert: () => assert.fail('No browser alerts'),
-    location: {href: '/original'},
-  });
-  vm.runInContext(fs.readFileSync(__dirname + '/soul-selector.js', 'utf8'), context);
-  await context.submitSoulForm({action: '/soul', querySelector: () => consent});
-  assert.equal(calls, 2);
-  assert.equal(consent.value, 'true');
-  assert.equal(context.location.href, '/done');
+  for (const edited of [false, true]) {
+    const calls = [];
+    const consent = {value: 'false'};
+    const form = {action: '/soul', soul: 'Original Soul', querySelector: () => consent};
+    const context = sharedContext({
+      FormData: class extends Map {
+        constructor(form) { super([['soul_id', form.soul], ['use_existing', consent.value]]); }
+      },
+      fetch: async (_url, options) => {
+        calls.push(Object.fromEntries(options.body));
+        if (calls.length === 1) {
+          if (edited) form.soul = 'Different Soul';
+          return new Response('{"detail":{"reason":"existing_exact","message":"Use it?"}}', {status: 409});
+        }
+        return {ok: true, url: '/done'};
+      },
+      confirm: () => true,
+      showLauncherMessage: () => assert.fail('confirmation should retry instead of showing an error'),
+      alert: () => assert.fail('No browser alerts'),
+      location: {href: '/original'},
+    });
+    vm.runInContext(fs.readFileSync(__dirname + '/soul-selector.js', 'utf8'), context);
+    await context.submitSoulForm(form);
+    assert.deepEqual(calls, [
+      {soul_id: 'Original Soul', use_existing: 'false'},
+      {soul_id: 'Original Soul', use_existing: 'true'},
+    ]);
+    assert.equal(consent.value, 'true');
+    assert.equal(context.location.href, '/done');
+  }
 });
 
 test('success callback avoids a page redirect', async () => {
