@@ -208,8 +208,7 @@ function syncMemorize(chatId, policy) {
       pairStatus.textContent = "Starting Hermes Channels...";
       try {
         const response = await fetch("/service/channels-daemon/start", { method: "POST" });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || "Could not start Hermes Channels.");
+        if (!response.ok) throw new Error(await launcherErrorMessage(response, "Could not start Hermes Channels."));
         pairTimer = setInterval(refreshPairing, 3000);
         await refreshPairing();
       } catch (error) {

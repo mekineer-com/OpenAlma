@@ -81,12 +81,13 @@ def test_settings_template_contains_inline_whatsapp_pairing():
 def test_pair_button_starts_channels_before_polling():
     template = (Path(__file__).resolve().parents[1] / "launcher" / "templates" / "hermes.html").read_text(encoding="utf-8")
     script = template.split('    const pairButton =', 1)[1].split('{% if soul_error %}', 1)[0]
-    script = 'const pairButton =' + script
+    helper = (Path(__file__).resolve().parents[1] / "launcher/static/launcher.js").read_text().split('async function quitLauncher', 1)[0]
+    script = helper + 'const pairButton =' + script
     subprocess.run(["node", "-e", r'''
 const assert = require('node:assert/strict'), vm = require('node:vm');
 const script = require('node:fs').readFileSync(0, 'utf8');
 (async () => {
-  for (const mode of ['waiting', 'progression', 'paired', 'error']) {
+  for (const mode of ['waiting', 'progression', 'paired', 'error', 'text_error', 'empty_error']) {
     const nodes = {}, calls = [];
     const rendered = [];
     let click, poll, phase = 0, polling = false;
@@ -102,7 +103,11 @@ const script = require('node:fs').readFileSync(0, 'utf8');
         if (url === '/service/channels-daemon/start') {
           assert.equal(options.method, 'POST');
           assert.equal(nodes['pair-whatsapp'].disabled, true);
-          return {ok: mode !== 'error', json: async () => ({detail: 'Choose a Soul in Setup'})};
+          if (mode.endsWith('error')) return new Response({
+            error: '{"detail":"Choose a Soul in Setup"}',
+            text_error: 'Internal Server Error', empty_error: '',
+          }[mode], {status: 500});
+          return {ok: true, json: async () => assert.fail('Start body is unused')};
         }
         assert.equal(url, '/whatsapp/pair-status');
         const entry = {paired: mode === 'paired' || phase === 2, qr: phase === 1 ? 'web-qr' : null};
@@ -113,9 +118,12 @@ const script = require('node:fs').readFileSync(0, 'utf8');
     assert.deepEqual(calls, [], 'Opening Setup must not start Hermes');
     await click();
     assert.equal(nodes['pair-whatsapp'].disabled, false);
-    if (mode === 'error') {
+    if (mode.endsWith('error')) {
       assert.deepEqual(calls, ['/service/channels-daemon/start']);
-      assert.equal(nodes['pair-status'].textContent, 'Choose a Soul in Setup');
+      assert.equal(nodes['pair-status'].textContent, {
+        error: 'Choose a Soul in Setup', text_error: 'Internal Server Error',
+        empty_error: 'Could not start Hermes Channels.',
+      }[mode]);
       assert.equal(polling, false);
     } else {
       assert.deepEqual(calls, ['/service/channels-daemon/start', '/whatsapp/pair-status']);
