@@ -1,5 +1,6 @@
 import json
 import os
+import shlex
 import subprocess
 import sys
 import threading
@@ -2258,8 +2259,9 @@ def test_channels_daemon_match_requires_cwd_and_gateway_module(tmp_path, monkeyp
 
 @pytest.mark.parametrize("pidfiles", [True, False])
 @pytest.mark.parametrize("supervisor_present", [True, False])
-def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monkeypatch, pidfiles, supervisor_present):
-    channels_home = tmp_path / "channels_data"
+@pytest.mark.parametrize("home_name", ["channels_data", "channels data's"])
+def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monkeypatch, pidfiles, supervisor_present, home_name):
+    channels_home = tmp_path / home_name
     whatsapp_home = channels_home / "whatsapp"
     session_path = whatsapp_home / "session"
     session_path.mkdir(parents=True)
@@ -2269,10 +2271,10 @@ def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monke
     monkeypatch.setattr(services, "_CHANNELS_HOME", channels_home)
     monkeypatch.setattr(services, "_PROCESS_SCAN_CACHE", {})
     monkeypatch.setattr(services.psutil, "process_iter", lambda _attrs: [
-        type("Process", (), {"pid": pid})() for pid in (41, 42, 43, 44, 45)
+        type("Process", (), {"pid": pid})() for pid in (41, 42, 43, 44, 45, 46, 47)
     ])
     def alive(pid):
-        assert pid != 43, "Unrelated processes must not need liveness inspection"
+        assert pid not in {43, 46, 47}, "Unrelated processes must not need liveness inspection"
         return pid in {41, 42} or pid == 45 and supervisor_present
     monkeypatch.setattr(services, "_is_alive", alive)
     reads = []
@@ -2281,15 +2283,15 @@ def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monke
         reads.append(pid)
         if pid == 45:
             return "python3 -m gateway.daemon"
-        if pid in {41, 44}:
-            return f"node bridge.js --port 3000 --session {session_path} --mode self-chat"
-        if pid == 42:
-            return (
-                "node source-daemon.js "
-                f"--db {whatsapp_home / 'web_source.db'} "
-                f"--status {whatsapp_home / 'web_source_status.json'}"
-            )
-        return f"node bridge.js --db {whatsapp_home / 'web_source.db'} --status {whatsapp_home / 'web_source_status.json'}"
+        if pid in {41, 44, 46}:
+            session = str(session_path) + ("-other" if pid == 46 else "")
+            return shlex.join(["node", "bridge.js", "--port", "3000", "--session", session, "--mode", "self-chat"])
+        suffix = ".other" if pid == 47 else ""
+        return shlex.join([
+            "node", "source-daemon.js" if pid in {42, 47} else "bridge.js",
+            "--db", str(whatsapp_home / "web_source.db") + suffix,
+            "--status", str(whatsapp_home / "web_source_status.json") + suffix,
+        ])
 
     monkeypatch.setattr(services, "_proc_cmdline", cmdline)
     monkeypatch.setattr(services, "_proc_cwd", lambda pid: tmp_path / "hermes-channels" if pid == 45 else None)
