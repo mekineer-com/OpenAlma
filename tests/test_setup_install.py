@@ -106,6 +106,32 @@ def test_discover_release_rejects_prerelease(tmp_path, monkeypatch):
         setup_install.discover_release(tmp_path)
 
 
+@pytest.mark.parametrize("failure", [
+    OSError("Fictional connection failure"),
+    setup_install.http.client.IncompleteRead(b"partial response"),
+])
+def test_interrupted_github_metadata_uses_existing_failure_handling(monkeypatch, failure):
+    requests = []
+
+    class Response(BytesIO):
+        def read(self, *_args):
+            raise failure
+
+    def urlopen(request, **_kwargs):
+        requests.append(request.full_url)
+        return Response()
+
+    monkeypatch.setattr(setup_install.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(setup_install, "read_packaged_release", lambda: "v1.0.0")
+    monkeypatch.setattr(setup_install.settings, "read_paths", lambda: {})
+    monkeypatch.setattr(setup_install, "_LAUNCHER_UPDATE_CACHE", None)
+    assert setup_install.launcher_update() is None
+    assert setup_install.launcher_update() is None
+    assert requests == [setup_install.OPENALMA_RELEASES_URL]
+    with pytest.raises(setup_install.SetupError, match="GitHub release data is unavailable or invalid"):
+        setup_install._request_json(setup_install.OPENALMA_RELEASE_URL)
+
+
 def test_windows_subprocesses_hide_console(monkeypatch):
     monkeypatch.setattr(process_flags.os, "name", "nt")
     monkeypatch.setattr(process_flags.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)

@@ -100,7 +100,7 @@ def _request_json(url: str) -> dict[str, Any]:
         if exc.code == 404:
             raise SetupError("No supported stable OpenAlma release is available") from exc
         raise SetupError(f"GitHub release request failed (HTTP {exc.code})") from exc
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, http.client.HTTPException) as exc:
         raise SetupError("GitHub release data is unavailable or invalid") from exc
     if not isinstance(value, dict):
         raise SetupError("GitHub release data is invalid")
@@ -252,7 +252,7 @@ def launcher_update() -> dict[str, str] | None:
         if candidates:
             _version, tag, url = max(candidates)
             update = {"tag": tag, "url": url}
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, http.client.HTTPException):
         update = None
     _LAUNCHER_UPDATE_CACHE = (time.monotonic(), channel, update)
     return update
