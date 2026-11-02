@@ -406,6 +406,58 @@ class MentraStatusTest(TestCase):
         self.assertIsNone(idle["host_version"])
         self.assertTrue(idle["host_reporting"])
 
+    def test_idle_app_retains_reported_soul_warnings(self) -> None:
+        spec = services.ServiceSpec("iris-server", "Iris", [], Path("."), Path("log"), Path("pid"))
+        records = [
+            {"device_session_id": "idle-phone", "display_name": "Idle phone",
+             "package_name": services.IRIS_PACKAGE, "version": "0.1.0",
+             "user_id": "Fictional Owner", "soul_id": "Fictional Soul"},
+            {"device_session_id": "other-phone", "display_name": "Other phone",
+             "package_name": services.IRIS_PACKAGE, "version": "0.1.0",
+             "user_id": "Fictional Owner", "soul_id": "Other Soul"},
+            {"device_session_id": "host-only", "display_name": "Host only",
+             "host": {"host_package": "com.mentra.mentra.openalma"}},
+        ]
+        discovery = {"state": "ready", "active": False, "busy": False,
+                     "sessions": [], "installations": records}
+
+        def read_status(_port, **scope):
+            if not scope:
+                return discovery
+            self.assertEqual(scope["user_id"], "Fictional Owner")
+            if scope["device_session_id"] == "idle-phone":
+                self.assertEqual(scope["soul_id"], "Fictional Soul")
+                return {"state": state, "detail": detail, "active": False}
+            self.assertEqual(scope["device_session_id"], "other-phone")
+            self.assertEqual(scope["soul_id"], "Other Soul")
+            return {"state": "ready", "detail": "Ready", "active": False}
+
+        with (
+            patch.object(services, "mentra_readiness", return_value={"ready": True}),
+            patch.object(services, "_runtime_state", return_value=services.RuntimeState()),
+            patch.object(services, "_read_iris_release_status", return_value={}),
+            patch.object(services, "_read_mentra_status", side_effect=read_status) as read,
+            patch.object(services, "_iris_release_candidate", return_value=(services.IRIS_PACKAGE, "0.1.0", None, "available")),
+        ):
+            for state, detail in (("transcript_gap", "Transcript durability gap"),
+                                  ("degraded", "Photo memory processing failed"),
+                                  ("unavailable", "Mentra status unreachable or invalid"),
+                                  ("ready", "Ready")):
+                with self.subTest(state=state):
+                    read.reset_mock()
+                    result = services.status(spec)
+                    idle, other, host_only = result["installations"]
+                    self.assertEqual(read.call_count, 3)
+                    self.assertEqual(idle["state"], state)
+                    self.assertFalse(idle["active"])
+                    self.assertEqual(idle["soul_id"], "Fictional Soul")
+                    if state != "ready":
+                        self.assertEqual(idle["detail"], detail)
+                    self.assertEqual(other["state"], "ready")
+                    self.assertNotIn(detail, other["detail"])
+                    self.assertEqual(host_only["state"], "unverified")
+                    self.assertEqual(result["state"], "ready")
+
     def test_installer_refuses_other_targets_before_download(self) -> None:
         import app
         with TemporaryDirectory() as directory:

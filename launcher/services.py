@@ -1540,6 +1540,11 @@ def status(spec: ServiceSpec) -> dict:
             if session:
                 scoped.update(_read_mentra_status(memu_port, device_session_id=device))
                 scoped["installed_soul"] = session["soul_id"]
+            elif record.get("user_id") and record.get("soul_id"):
+                scoped.update(_read_mentra_status(
+                    memu_port, user_id=record["user_id"], soul_id=record["soul_id"],
+                    device_session_id=device,
+                ))
             # A manual QR offer is not a phone-install acknowledgment.
             automatic_target = release_device == device and host.get("host_package") == "com.mentra.mentra.openalma"
             row_runtime = runtime if automatic_target else RuntimeState()
