@@ -293,13 +293,17 @@ document.getElementById('echo-process').addEventListener('click', () => startWor
 document.getElementById('echo-retry').addEventListener('click', () => startWork('retry'));
 continuous.addEventListener('change', async () => {
   if (!selection || !lastStatus?.running || continuationUpdate.pending) return;
+  const selected = selection, previous = lastStatus.continuous;
   const update = continuationUpdate = {pending: true};
   continuous.disabled = true;
   const form = new FormData();
   form.append('soul_id', selection.soul_id); form.append('label', selection.label);
   form.append('continuous', continuous.checked);
   try {await echoRequest('/echo/continuation', {method: 'POST', body: form});}
-  catch (error) {showError(error);}
+  catch (error) {
+    if (selection === selected) continuous.checked = previous;
+    showError(error);
+  }
   finally {update.pending = false;}
   await refreshStatus();
 });

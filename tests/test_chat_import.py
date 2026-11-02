@@ -196,6 +196,24 @@ async function run(mode, continuous) {
     const turnOff=field('echo-continuous').events.change();finishUpdate();await turnOff;
     finishOldChoice();await oldChoice;
     assert.deepEqual(choices,[true,false]);assert.equal(field('echo-continuous').checked,false);
+    let stillRunning=true;
+    ctx.readStatus=async()=>({...active(),running:stillRunning});
+    ctx.echoRequest=async (url,options)=> {
+      if(url==='/echo/progress') return {files:[]};
+      if(url==='/echo/continuation') {
+        stillRunning=false;
+        throw Error('No import is running');
+      }
+      return request(url,options);
+    };
+    await ctx.refreshStatus();
+    field('echo-continuous').checked=true;
+    await field('echo-continuous').events.change();
+    assert.match(field('echo-error').textContent,/No import is running/);
+    assert.equal(field('echo-continuous').checked,false);
+    assert.equal(vm.runInContext('lastStatus.running',ctx),false);
+    await ctx.startWork('process');
+    assert.equal(starts,2);
   }
 }
 (async()=>{for(const mode of ['lost','wrong','unchanged','advance'])await run(mode,true);await run('advance',false);})()
