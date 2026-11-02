@@ -1650,7 +1650,7 @@ def status(spec: ServiceSpec) -> dict:
         "orphaned": orphaned,
         "blocked": blocked,
         "startable": not running and not stuck and not orphaned and not blocked,
-        "stoppable": (running or stuck or orphaned) and not stop_blocked,
+        "stoppable": (running or stuck) and not stop_blocked,
         "stop_blocked": stop_blocked,
         "state": state,
         "status_label": label,

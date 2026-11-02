@@ -2324,6 +2324,8 @@ def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monke
         services.stop(spec)
         assert signals == [45]
     else:
+        status = services.status(spec)
+        assert status["force_stoppable"] and not status["stoppable"]
         with pytest.raises(RuntimeError, match="supervisor is not running"):
             services.stop(spec)
         assert not signals
