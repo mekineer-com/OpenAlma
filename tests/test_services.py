@@ -2325,7 +2325,19 @@ def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monke
     if supervisor_present:
         services.stop(spec)
         assert signals == [45]
+        def finish_supervisor(_delay):
+            nonlocal supervisor_present
+            assert supervisor_present, "Must finish waiting once the supervisor exits"
+            supervisor_present = False
+        monkeypatch.setattr(services.time, "sleep", finish_supervisor)
+        services._finish_graceful_stop(spec)
+        assert not supervisor_present and not services._STOP_ERRORS
     else:
+        monkeypatch.setattr(services.time, "sleep", lambda _delay: pytest.fail("Must not wait for borrowed transports"))
+        services._finish_graceful_stop(spec)
+        if pidfiles:
+            assert (session_path / "bridge.pid").exists()
+            assert (whatsapp_home / "web_source.pid").exists()
         status = services.status(spec)
         assert status["force_stoppable"] and not status["stoppable"]
         with pytest.raises(RuntimeError, match="supervisor is not running"):

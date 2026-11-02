@@ -1820,7 +1820,9 @@ def _request_memu_shutdown(port: int | None = None) -> bool:
 
 def _finish_graceful_stop(spec: ServiceSpec) -> None:
     try:
-        while _verified_pid_candidates(spec):
+        # Channels drains owned children itself; borrowed transports may stay alive.
+        while any(spec.name != "channels-daemon" or _matches_service_process(spec, pid)
+                  for pid in _verified_pid_candidates(spec)):
             time.sleep(0.1)
         _clear_pid(spec)
         if spec.adopt_pid_path is not None:
