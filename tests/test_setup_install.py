@@ -1488,7 +1488,10 @@ def test_optional_status_allows_clone_before_missing_runtime(tmp_path, monkeypat
     assert status["action_label"] == "Install"
 
 
-def test_sillytavern_can_start_before_integration_setup_finishes(tmp_path):
+@pytest.mark.parametrize("npm_available", [False, True])
+def test_sillytavern_can_start_before_integration_setup_finishes(tmp_path, monkeypatch, npm_available):
+    monkeypatch.setattr(setup_install.shutil, "which", lambda name:
+                        None if name in {"npm", "npm.cmd"} and not npm_available else "/fictional/runtime")
     stock = tmp_path / "sillytavern/SillyTavern"
     (stock / "node_modules").mkdir(parents=True)
     (stock / "package.json").write_text(json.dumps({"dependencies": {}}), encoding="utf-8")
@@ -1502,6 +1505,9 @@ def test_sillytavern_can_start_before_integration_setup_finishes(tmp_path):
         path.write_text("")
     plugin = stock / "plugins/memu-plugin"
     (plugin / "package.json").write_text('{"dependencies": {}}')
+    status = setup_install.optional_setup_status("sillytavern", tmp_path)
+    assert not status["ready"] and status["startable"]
+    assert (status["action_kind"], status["action_label"]) == (("install", "Update") if npm_available else ("start", "Start"))
     (plugin / "node_modules").mkdir()
     assert setup_install.optional_setup_status("sillytavern", tmp_path) == {"ready": True}
 

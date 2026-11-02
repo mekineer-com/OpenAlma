@@ -1631,9 +1631,9 @@ def optional_setup_status(service_name: str, root: Path) -> dict[str, Any]:
         "status_label": "Installation incomplete" if checkout_present else "Not installed",
         "detail": detail,
         "startable": startable,
-        "action_kind": "install" if action else None,
+        "action_kind": "install" if action else "start" if startable else None,
         "action_label": (
-            "Retry" if operation["state"] == "error"
+            "Start" if startable and not action else "Retry" if operation["state"] == "error"
             else ("Update" if checkout_present else "Install")
         ),
     }
