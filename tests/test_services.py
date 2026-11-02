@@ -426,7 +426,7 @@ def test_iris_server_is_managed_by_launcher(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("stage,host_package", [
-    (stage, host) for stage in ("bundle", "download", "spawn", "stop", "force_stop")
+    (stage, host) for stage in ("bundle", "download", "interrupted_download", "spawn", "stop", "force_stop")
     for host in ("com.mentra.mentra", "com.mentra.mentra.openalma")
 ] + [("cleanup", "com.mentra.mentra")])
 def test_iris_install_target_cleanup(tmp_path, monkeypatch, stage, host_package):
@@ -459,11 +459,21 @@ def test_iris_install_target_cleanup(tmp_path, monkeypatch, stage, host_package)
         services.IRIS_PACKAGE, "0.1.0", None if stage == "bundle" else "https://example.invalid/iris.zip", "available",
     ))
 
+    real_download = services._download_iris_release
+
+    def interrupted_read(*_args):
+        raise services.http.client.IncompleteRead(b"partial response")
+
     def download(*_args):
         assert services._IRIS_INSTALL_LOCK.locked()
         assert json.loads(target_path.read_text()) == prepared
         if stage == "download":
             raise OSError("Fictional download failure")
+        if stage == "interrupted_download":
+            response = BytesIO(b"partial response")
+            monkeypatch.setattr(response, "read", interrupted_read)
+            monkeypatch.setattr(services.urllib.request, "urlopen", lambda *_args, **_kwargs: response)
+            return real_download(*_args)
         if stage in {"stop", "force_stop"}:
             getattr(services, stage)(spec)
         return tmp_path / "iris.zip"
@@ -478,13 +488,14 @@ def test_iris_install_target_cleanup(tmp_path, monkeypatch, stage, host_package)
     monkeypatch.setattr(services, "_download_iris_release", download)
     monkeypatch.setattr(services, "_spawn_background", spawn)
 
-    message = "Published Iris bundle unavailable" if stage == "bundle" else "Iris installation cancelled" if stage in {"stop", "force_stop"} else f"Fictional {'spawn' if stage == 'cleanup' else stage} failure"
+    message = "Published Iris bundle unavailable" if stage == "bundle" else "GitHub Iris download was interrupted" if stage == "interrupted_download" else "Iris installation cancelled" if stage in {"stop", "force_stop"} else f"Fictional {'spawn' if stage == 'cleanup' else stage} failure"
     with pytest.raises(launcher_app.HTTPException, match=message) as error:
         launcher_app.iris_install("stock-test", host_package)
     assert error.value.status_code == (409 if stage in {"stop", "force_stop"} else 400)
     assert not target_path.exists()
     assert not spec.pid_path.exists()
     assert not target_path.with_suffix(".tmp").exists()
+    assert not (tmp_path / f"{services.IRIS_PACKAGE}-0.1.0.tmp").exists()
     assert not services._IRIS_INSTALL_LOCK.locked()
     assert requests == ([("stock-test", True), ("stock-ticket", False)] if host_package == "com.mentra.mentra" else [])
     assert target["device_session_id"] == "stock-test"

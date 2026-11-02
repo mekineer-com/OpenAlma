@@ -1,4 +1,5 @@
 import json
+from http.client import IncompleteRead
 import subprocess
 import sys
 import urllib.error
@@ -41,6 +42,14 @@ def test_mentra_qr_url_uses_releases_page_when_release_missing(monkeypatch):
 
     monkeypatch.setattr(services.urllib.request, "urlopen", missing)
     client = TestClient(app.app, base_url="http://127.0.0.1")
+    assert client.get("/mentra/apk").json() == {"url": "https://github.com/mekineer-com/MentraOS/releases"}
+
+    def interrupted(*_args):
+        raise IncompleteRead(b"partial response")
+
+    response = BytesIO(b"partial response")
+    monkeypatch.setattr(response, "read", interrupted)
+    monkeypatch.setattr(services.urllib.request, "urlopen", lambda *_args, **_kwargs: response)
     assert client.get("/mentra/apk").json() == {"url": "https://github.com/mekineer-com/MentraOS/releases"}
     url = "https://github.com/mekineer-com/MentraOS/releases/download/v3.2.1/OpenAlma-Mentra-3.2.1-302010001.apk"
     monkeypatch.setattr(services, "mentra_apk_download", lambda: (url, ""))

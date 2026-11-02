@@ -48,6 +48,12 @@ class MentraStatusTest(TestCase):
             self.assertEqual(services._github_iris_release(), expected)
             lookup.assert_called_once()
 
+        response = BytesIO()
+        with patch.object(response, "read", side_effect=IncompleteRead(b"partial response")), \
+                patch.object(services.urllib.request, "urlopen", return_value=response):
+            with self.assertRaisesRegex(ValueError, "GitHub Iris releases response was interrupted"):
+                services.iris_repair_releases()
+
     def test_iris_shared_address_validation_matches_install_and_saved_origin_rules(self) -> None:
         for address in ("http://0.0.0.0", "http://[::]", "http://127.1", "http://2130706433",
                         "http://0x7f000001", "http://127.0.0.1.", "http://[::ffff:0.0.0.0]",

@@ -1177,7 +1177,7 @@ def mentra_apk_download() -> tuple[str | None, str]:
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             return None, "No OpenAlma Mentra APK published yet."
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, http.client.HTTPException):
         pass
     return None, "Could not check GitHub releases. Try again or open the download page."
 
@@ -1232,8 +1232,11 @@ def iris_repair_releases() -> dict[str, str]:
     request = urllib.request.Request(IRIS_RELEASES_URL, headers={
         "Accept": "application/vnd.github+json", "User-Agent": "OpenAlma-launcher",
     })
-    with urllib.request.urlopen(request, timeout=2) as response:
-        releases = json.load(response)
+    try:
+        with urllib.request.urlopen(request, timeout=2) as response:
+            releases = json.load(response)
+    except http.client.HTTPException as exc:
+        raise ValueError("GitHub Iris releases response was interrupted") from exc
     if not isinstance(releases, list):
         raise ValueError("Invalid GitHub releases response")
     result = {}
@@ -1335,6 +1338,8 @@ def _download_iris_release(url: str, package: str, version: str) -> Path:
         if manifest.get("packageName") != package or manifest.get("version") != version:
             raise ValueError("GitHub Iris bundle manifest does not match its release")
         temporary.replace(destination)
+    except http.client.HTTPException as exc:
+        raise ValueError("GitHub Iris download was interrupted") from exc
     finally:
         temporary.unlink(missing_ok=True)
     return destination
