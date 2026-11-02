@@ -1848,17 +1848,23 @@ def test_force_stop_kills_only_verified_matching_pids(tmp_path, monkeypatch, hel
         assert not finished_early
 
 
-def test_failed_force_stop_keeps_retry_evidence(tmp_path, monkeypatch):
+@pytest.mark.parametrize("denied_pid", [20, 21])
+def test_failed_force_stop_keeps_retry_evidence(tmp_path, monkeypatch, denied_pid):
     spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
-    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [20])
-    monkeypatch.setattr(
-        services, "_kill_process_tree",
-        lambda _pid: (_ for _ in ()).throw(PermissionError("Fictional permission failure")),
-    )
+    monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [20, 21])
+    attempted = []
+
+    def kill(pid):
+        attempted.append(pid)
+        if pid == denied_pid:
+            raise PermissionError("Fictional permission failure")
+
+    monkeypatch.setattr(services, "_kill_process_tree", kill)
 
     with pytest.raises(PermissionError, match="Fictional permission failure"):
         services.force_stop(spec)
 
+    assert attempted == [20, 21]
     status = services._stop_status(spec, {"running": True, "stuck": False})
     assert status["force_stoppable"] is True
     assert "Fictional permission failure" in status["detail"]

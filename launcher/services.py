@@ -1942,11 +1942,17 @@ def force_stop(spec: ServiceSpec, *, timeout: float = 10.0) -> None:
     _clear_port_cache(spec)
     try:
         preserve = next((service for service in all_services() if service.name == "memu-server"), None) if spec.name == "sillytavern" else None
+        errors: list[str] = []
         for pid in _verified_pid_candidates(spec):
-            if preserve is None:
-                _kill_process_tree(pid)
-            else:
-                _kill_process_tree(pid, preserve_service=preserve)
+            try:
+                if preserve is None:
+                    _kill_process_tree(pid)
+                else:
+                    _kill_process_tree(pid, preserve_service=preserve)
+            except PermissionError as exc:
+                errors.append(str(exc))
+        if errors:
+            raise PermissionError("; ".join(errors))
         deadline = time.monotonic() + timeout
         while _verified_pid_candidates(spec) and time.monotonic() < deadline:
             time.sleep(0.1)
