@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ipaddress
 import ctypes
+import http.client
 import json
 import logging
 import ntpath
@@ -1214,7 +1215,7 @@ def _github_iris_release() -> tuple[tuple[str, str, str] | None, str]:
             result = None, "invalid" if releases else "none"
     except urllib.error.HTTPError as exc:
         result = None, "none" if exc.code == 404 else "unavailable"
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, http.client.HTTPException):
         result = None, "unavailable"
     _IRIS_RELEASE_CACHE = (now, *result)
     return result

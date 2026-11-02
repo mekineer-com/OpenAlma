@@ -1,4 +1,5 @@
 from io import BytesIO
+from http.client import IncompleteRead
 import json
 import venv
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -37,6 +38,15 @@ class MentraStatusTest(TestCase):
             self.assertEqual(services._github_iris_release(), expected)
             lookup.assert_called_once()
             self.assertNotIn("/latest", lookup.call_args.args[0].full_url)
+
+        services._IRIS_RELEASE_CACHE = None
+        response = BytesIO()
+        with patch.object(response, "read", side_effect=IncompleteRead(b"partial response")), \
+                patch.object(services.urllib.request, "urlopen", return_value=response) as lookup:
+            expected = (None, "unavailable")
+            self.assertEqual(services._github_iris_release(), expected)
+            self.assertEqual(services._github_iris_release(), expected)
+            lookup.assert_called_once()
 
     def test_iris_shared_address_validation_matches_install_and_saved_origin_rules(self) -> None:
         for address in ("http://0.0.0.0", "http://[::]", "http://127.1", "http://2130706433",
