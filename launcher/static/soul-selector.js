@@ -7,6 +7,8 @@ async function submitSoulForm(form, onSuccess, body) {
       const error = response.status === 409 ? await response.clone().json().catch(() => null) : null;
       const message = await launcherErrorMessage(response, "Soul selection failed");
       const useExisting = form.querySelector('[name="use_existing"]');
+      if (useExisting && error?.detail?.reason === "existing_exact" &&
+          new FormData(form).get("soul_id") !== body.get("soul_id")) return;
       if (useExisting && error?.detail?.reason === "existing_exact" && confirm(message)) {
         useExisting.value = "true";
         body.set("use_existing", "true");

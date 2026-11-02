@@ -51,12 +51,14 @@ test('late existing-soul conflict can be confirmed and retried', async () => {
     });
     vm.runInContext(fs.readFileSync(__dirname + '/soul-selector.js', 'utf8'), context);
     await context.submitSoulForm(form);
-    assert.deepEqual(calls, [
+    assert.deepEqual(calls, edited ? [
+      {soul_id: 'Original Soul', use_existing: 'false'},
+    ] : [
       {soul_id: 'Original Soul', use_existing: 'false'},
       {soul_id: 'Original Soul', use_existing: 'true'},
     ]);
-    assert.equal(consent.value, 'true');
-    assert.equal(context.location.href, '/done');
+    assert.equal(consent.value, edited ? 'false' : 'true');
+    assert.equal(context.location.href, edited ? '/original' : '/done');
   }
 });
 
