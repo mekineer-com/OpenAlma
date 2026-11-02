@@ -202,7 +202,7 @@ def services_for_root(root: Path) -> list[ServiceSpec]:
             install_marker=root / "atomic" / "package.json",
             env={
                 "ATOMIC_SERVER_BIN": str(_atomic_server_binary(root)),
-                "MEMU_SERVER_URL": os.environ.get("MEMU_SERVER_URL") or f"http://127.0.0.1:{memu_port}",
+                "MEMU_SERVER_URL": f"http://127.0.0.1:{memu_port}",
             },
         ),
         ServiceSpec(

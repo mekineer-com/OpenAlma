@@ -376,7 +376,6 @@ def test_hermes_gateway_is_retired_from_launcher_services(tmp_path, monkeypatch)
 @pytest.mark.parametrize("available", [("python", "python3"), ("python",), ("python3",), ()])
 @pytest.mark.parametrize("port", [None, 8100])
 def test_services_can_be_built_for_pending_root(tmp_path, monkeypatch, platform, available, port):
-    monkeypatch.delenv("MEMU_SERVER_URL", raising=False)
     if port is not None:
         config = tmp_path / "mcp-memu-server/config.json"
         config.parent.mkdir()
@@ -399,9 +398,6 @@ def test_services_can_be_built_for_pending_root(tmp_path, monkeypatch, platform,
     assert next(spec for spec in specs if spec.name == "atomic").env["MEMU_SERVER_URL"] == f"http://127.0.0.1:{port or 8099}"
     assert services.is_installed(specs[0]) is False
     assert next(spec for spec in specs if spec.name == "channels-daemon").cmd[0] == expected
-    monkeypatch.setenv("MEMU_SERVER_URL", "http://fictional.invalid:9200")
-    explicit = next(spec for spec in services.services_for_root(tmp_path) if spec.name == "atomic")
-    assert explicit.env["MEMU_SERVER_URL"] == "http://fictional.invalid:9200"
     lookups.clear()
     daemon = tmp_path / "hermes-channels/gateway/daemon.py"
     daemon.parent.mkdir(parents=True)
