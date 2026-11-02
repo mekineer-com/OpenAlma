@@ -409,10 +409,12 @@ def _matches_channels_child_process(pid: int) -> bool:
         return False
     if len(args) < 2 or ntpath.basename(args[0]).lower().removesuffix(".exe") != "node":
         return False
-    options = {(flag, os.path.normcase(value)) for flag, value in zip(args[2:], args[3:])}
+    pairs = list(zip(args[2:], [*args[3:], ""]))
+    # The bridge reads the first occurrence; web-source's parser keeps the last.
+    options = dict(reversed(pairs) if ntpath.basename(args[1]) == "bridge.js" else pairs)
     return any(
         ntpath.basename(args[1]) == markers[0]
-        and all(args.count(flag) == 1 and (flag, os.path.normcase(value)) in options
+        and all(os.path.normcase(options.get(flag, "")) == os.path.normcase(value)
                 for flag, value in zip(markers[1::2], markers[2::2]))
         for _pidfile, markers in _channels_whatsapp_child_markers()
     )

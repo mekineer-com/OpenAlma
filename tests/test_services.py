@@ -2286,7 +2286,8 @@ def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monke
         if pid in {41, 44, 46, 48}:
             session = str(session_path) + ("-other" if pid == 46 else "")
             duplicate = ["--session", session + "-other"] if pid == 48 else []
-            return shlex.join(["node", "bridge.js", "--port", "3000", *duplicate, "--session", session, "--mode", "self-chat"])
+            return shlex.join(["node", "bridge.js", "--port", "3000", *duplicate, "--session", session,
+                               "--mode", "self-chat", "--soul-id", "--session"])
         suffix = ".other" if pid == 47 else ""
         return shlex.join([
             "node", "source-daemon.js" if pid in {42, 47, 49} else "bridge.js",
