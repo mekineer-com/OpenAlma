@@ -412,7 +412,7 @@ def _matches_channels_child_process(pid: int) -> bool:
     options = {(flag, os.path.normcase(value)) for flag, value in zip(args[2:], args[3:])}
     return any(
         ntpath.basename(args[1]) == markers[0]
-        and all((flag, os.path.normcase(value)) in options
+        and all(args.count(flag) == 1 and (flag, os.path.normcase(value)) in options
                 for flag, value in zip(markers[1::2], markers[2::2]))
         for _pidfile, markers in _channels_whatsapp_child_markers()
     )

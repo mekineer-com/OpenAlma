@@ -2271,10 +2271,10 @@ def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monke
     monkeypatch.setattr(services, "_CHANNELS_HOME", channels_home)
     monkeypatch.setattr(services, "_PROCESS_SCAN_CACHE", {})
     monkeypatch.setattr(services.psutil, "process_iter", lambda _attrs: [
-        type("Process", (), {"pid": pid})() for pid in (41, 42, 43, 44, 45, 46, 47)
+        type("Process", (), {"pid": pid})() for pid in (41, 42, 43, 44, 45, 46, 47, 48, 49)
     ])
     def alive(pid):
-        assert pid not in {43, 46, 47}, "Unrelated processes must not need liveness inspection"
+        assert pid not in {43, 46, 47, 48, 49}, "Unrelated processes must not need liveness inspection"
         return pid in {41, 42} or pid == 45 and supervisor_present
     monkeypatch.setattr(services, "_is_alive", alive)
     reads = []
@@ -2283,14 +2283,16 @@ def test_channels_daemon_verified_pids_include_whatsapp_children(tmp_path, monke
         reads.append(pid)
         if pid == 45:
             return "python3 -m gateway.daemon"
-        if pid in {41, 44, 46}:
+        if pid in {41, 44, 46, 48}:
             session = str(session_path) + ("-other" if pid == 46 else "")
-            return shlex.join(["node", "bridge.js", "--port", "3000", "--session", session, "--mode", "self-chat"])
+            duplicate = ["--session", session + "-other"] if pid == 48 else []
+            return shlex.join(["node", "bridge.js", "--port", "3000", *duplicate, "--session", session, "--mode", "self-chat"])
         suffix = ".other" if pid == 47 else ""
         return shlex.join([
-            "node", "source-daemon.js" if pid in {42, 47} else "bridge.js",
+            "node", "source-daemon.js" if pid in {42, 47, 49} else "bridge.js",
             "--db", str(whatsapp_home / "web_source.db") + suffix,
             "--status", str(whatsapp_home / "web_source_status.json") + suffix,
+            *(["--db", str(whatsapp_home / "web_source.db") + ".other"] if pid == 49 else []),
         ])
 
     monkeypatch.setattr(services, "_proc_cmdline", cmdline)
