@@ -1,7 +1,7 @@
-async function submitSoulForm(form, onSuccess, body) {
+async function submitSoulForm(form, onSuccess) {
   clearLauncherMessage();
   try {
-    body = body || new FormData(form);
+    const body = new FormData(form);
     const response = await fetch(form.action, {method: "POST", body});
     if (!response.ok) {
       const error = response.status === 409 ? await response.clone().json().catch(() => null) : null;
@@ -11,8 +11,7 @@ async function submitSoulForm(form, onSuccess, body) {
           new FormData(form).get("soul_id") !== body.get("soul_id")) return;
       if (useExisting && error?.detail?.reason === "existing_exact" && confirm(message)) {
         useExisting.value = "true";
-        body.set("use_existing", "true");
-        return submitSoulForm(form, onSuccess, body);
+        return submitSoulForm(form, onSuccess);
       }
       showLauncherMessage(message);
       return;

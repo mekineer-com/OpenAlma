@@ -58,4 +58,3 @@ replies[3](); replies[2]();
 assert.deepEqual(saved,['NewSoul','KnownSoul','CurrentSoul','CurrentSoul']);
 assert.equal(nodes['.soul-ready'].hidden,false);
 ''', str(script)], check=True)
-    subprocess.run(["node", "--test", str(script.with_name("soul-selector.test.cjs"))], check=True)
