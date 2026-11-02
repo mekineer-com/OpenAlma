@@ -1087,7 +1087,7 @@ const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const text = fs.readFileSync(process.argv[1], 'utf8');
 const script = text.slice(text.indexOf('var pendingStarts = {}'), text.indexOf('function actionHtml('));
 (async () => {
-  for (const scenario of ['start', 'start-failed', 'decline', 'confirm', 'force', 'force-failed', 'plain-error']) {
+  for (const scenario of ['start', 'start-failed', 'stop', 'decline', 'confirm', 'force', 'force-failed', 'plain-error']) {
     const urls = [], alerts = []; let polls = 0;
     const message = {hidden: false};
     const context = {
@@ -1097,7 +1097,7 @@ const script = text.slice(text.indexOf('var pendingStarts = {}'), text.indexOf('
       pollStatus: () => polls++,
       fetch: async url => {
         urls.push(url);
-        const status = ['start', 'force'].includes(scenario) ? 200
+        const status = ['start', 'stop', 'force'].includes(scenario) ? 200
           : ['start-failed', 'force-failed'].includes(scenario) || urls.length === 2 ? 409 : 428;
         return new Response(scenario === 'plain-error' ? 'Internal Server Error' : '{"detail":"Service message"}',
           {status: scenario === 'plain-error' ? 500 : status});
@@ -1110,6 +1110,7 @@ const script = text.slice(text.indexOf('var pendingStarts = {}'), text.indexOf('
     const action = scenario.startsWith('start') || scenario === 'plain-error' ? 'start' : scenario.startsWith('force') ? 'force-stop' : 'stop';
     const actionsCell = {innerHTML: '<button>Original action</button>'};
     const statusCell = {innerHTML: ''};
+    context.pendingStarts.test = Date.now() + 10000;
     const pending = context.svcAction('test', action, {
       closest: () => ({querySelector: selector => selector === '.svc-actions' ? actionsCell : statusCell}),
     });
@@ -1124,6 +1125,43 @@ const script = text.slice(text.indexOf('var pendingStarts = {}'), text.indexOf('
     if (scenario === 'plain-error') assert.equal(alerts[0], 'Internal Server Error');
     if (scenario === 'confirm') assert(urls[1].endsWith('?confirm_unknown=true'));
     if (scenario.startsWith('force')) assert(urls[0].endsWith('?confirmed=true'));
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });
+''', str(template)], check=True, capture_output=True, text=True)
+    subprocess.run(["node", "-e", r'''
+const fs = require('fs'), vm = require('vm'), assert = require('assert');
+const text = fs.readFileSync(process.argv[1], 'utf8');
+const statusCell = {innerHTML: '', querySelector: () => null}, actionsCell = {innerHTML: ''};
+const row = {dataset: {}, cells: [{textContent: 'Fictional app'}],
+  querySelector: selector => selector === '.svc-status' ? statusCell : actionsCell};
+const notices = [], context = {reloading: false, pendingStarts: {}, pendingStops: {},
+  document: {querySelector: () => row}, Date: {now: () => 1000}, esc: String,
+  setActionHtml: (_cell, html) => { actionsCell.innerHTML = html; }, actionHtml: () => 'actions',
+  showLauncherMessage: message => notices.push(message)};
+vm.createContext(context);
+vm.runInContext(text.slice(text.indexOf('function pollStatus('),
+  text.indexOf('\n{% for s in services + not_installed_services')), context);
+(async () => {
+  for (const [expiry, data, expected] of [
+    [2000, {state: 'stopped', startable: true}, 0],
+    [1000, {state: 'stopped', startable: true}, 1],
+    [1000, {state: 'running', running: true, stoppable: true}, 0],
+    [1000, {state: 'blocked', startable: false}, 0],
+  ]) {
+    notices.length = 0;
+    context.pendingStarts.test = expiry;
+    context.fetch = async () => ({ok: true, json: async () => data});
+    context.pollStatus('test');
+    await new Promise(setImmediate);
+    assert.equal(notices.length, expected);
+    if (expected) assert.equal(notices[0], 'Fictional app did not stay running. Open its log for details.');
+    if (expiry > 1000) assert(actionsCell.innerHTML.includes('spinner'));
+    else {
+      assert.equal(context.pendingStarts.test, undefined);
+      context.pollStatus('test');
+      await new Promise(setImmediate);
+      assert.equal(notices.length, expected);
+    }
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });
 ''', str(template)], check=True, capture_output=True, text=True)

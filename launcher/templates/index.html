@@ -277,6 +277,7 @@ async function svcAction(name, action, btn) {
   var statusCell = row.querySelector('.svc-status');
   var actionsCell = row.querySelector('.svc-actions');
   if (action === 'start') pendingStarts[name] = Date.now() + 10000;
+  else delete pendingStarts[name];
   if (action === 'stop') pendingStops[name] = true;
   if (action === 'force-stop') delete pendingStops[name];
   actionsCell.innerHTML = '<span class="spinner" role="status" aria-label="Working"></span>';
@@ -413,6 +414,9 @@ function pollStatus(name) {
       } else if (starting) {
         setActionHtml(actionsCell, '<span class="spinner" role="status" aria-label="Starting"></span>');
       } else {
+        if (pendingStarts[name] && state === 'stopped') {
+          showLauncherMessage(row.cells[0].textContent.trim() + ' did not stay running. Open its log for details.');
+        }
         delete pendingStarts[name];
         setActionHtml(actionsCell, actionHtml(name, data));
       }
