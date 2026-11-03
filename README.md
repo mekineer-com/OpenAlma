@@ -68,7 +68,7 @@ Back up your data before upgrades. Launcher-managed core updates back up the Sou
 
 Back up anything you want to retain before **Remove Everything**; it permanently removes application data and settings.
 
-Use the launcher to install matching components and follow any component Update buttons after upgrading the launcher. The [component manifest](release-components.json) pins compatible versions; unchanged components keep their earlier versions. The Mentra phone app keeps its separate version line.
+Use the launcher to install matching components and follow any component Update buttons after upgrading the launcher. The [component manifest](release-components.json) pins component checkouts; unchanged components keep their earlier versions. Iris phone installs use its newest published GitHub bundle, while Repair also accepts a selected ZIP or source build. The Mentra phone app keeps its separate version line.
 
 Windows users can download the [latest Beta installer](https://github.com/mekineer-com/OpenAlma/releases/latest). The launcher shows installation steps and elapsed time, missing basic AI settings, and Hermes Setup before a Soul is selected. Windows launcher installation and upgrades have been tested; installing every component on Windows has not been fully tested. Atomic's compatible Windows server is downloaded during Install, without Rust or Visual Studio. Other platforms still need a manually built Rust server binary.
 

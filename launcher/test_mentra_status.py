@@ -48,6 +48,11 @@ class MentraStatusTest(TestCase):
             self.assertEqual(services._github_iris_release(), expected)
             lookup.assert_called_once()
 
+        with patch.object(services.time, "monotonic", return_value=services._IRIS_RELEASE_CACHE[0] + 11), \
+                patch.object(services.urllib.request, "urlopen", return_value=BytesIO(json.dumps(releases).encode())) as lookup:
+            self.assertEqual(services._github_iris_release()[0][1], "0.1.13")
+            lookup.assert_called_once()
+
         response = BytesIO()
         with patch.object(response, "read", side_effect=IncompleteRead(b"partial response")), \
                 patch.object(services.urllib.request, "urlopen", return_value=response):
@@ -299,6 +304,16 @@ class MentraStatusTest(TestCase):
                 services.IRIS_PACKAGE, "0.1.0",
             )
             self.assertEqual(row["action_label"], "Repair")
+            for host in ({}, {"host_package": "com.mentra.mentra.openalma"}):
+                row = services._iris_product_status(
+                    services.RuntimeState(), {**installed, "state": state, "detail": "Fictional filing failure", "host": host},
+                    services.IRIS_PACKAGE, "0.1.1",
+                )
+                self.assertEqual(row["state"], state)
+                self.assertIn("Fictional filing failure", row["detail"])
+                self.assertIn("update 0.1.1 available", row["detail"])
+                self.assertTrue(row["update_available"])
+                self.assertEqual(row["action_label"], "Update")
         for release in ("", "0.1.0"):
             row = services._iris_product_status(
                 services.RuntimeState(), {"state": "ready"},

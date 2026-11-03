@@ -1181,7 +1181,7 @@ def mentra_apk_download() -> tuple[str | None, str]:
 def _github_iris_release() -> tuple[tuple[str, str, str] | None, str]:
     global _IRIS_RELEASE_CACHE
     now = time.monotonic()
-    if _IRIS_RELEASE_CACHE and now - _IRIS_RELEASE_CACHE[0] < 300:
+    if _IRIS_RELEASE_CACHE and now - _IRIS_RELEASE_CACHE[0] < (300 if _IRIS_RELEASE_CACHE[2] == "available" else 10):
         return _IRIS_RELEASE_CACHE[1:]
     try:
         request = urllib.request.Request(
@@ -1436,12 +1436,14 @@ def _iris_product_status(
         state, label, detail, action = "unavailable", "Iris bundle unavailable", "Check GitHub releases in Iris Setup", None
     elif not installed_package:
         state, label, detail, action = "stopped", "○ not installed", "Not yet verified", "start"
-    elif mismatch:
-        state, label, detail, action = "update", "▲ update available", age, "start"
     elif mentra.get("state") in {"degraded", "transcript_gap"}:
         state = str(mentra["state"])
         label = f"▲ {state.replace('_', ' ')}"
-        detail, action = str(mentra.get("detail") or ""), "start" if repair_available else None
+        detail, action = str(mentra.get("detail") or ""), "start" if repair_available or mismatch else None
+        if mismatch:
+            detail = "; ".join(part for part in (detail, f"update {available_version} available") if part)
+    elif mismatch:
+        state, label, detail, action = "update", "▲ update available", age, "start"
     else:
         state, label, detail = "ready", "● Host ready", ""
         action = "start" if repair_available else None
