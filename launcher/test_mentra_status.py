@@ -208,7 +208,7 @@ class MentraStatusTest(TestCase):
             patch.object(services, "_runtime_state", return_value=services.RuntimeState(verified_pids=(41,), running=True)),
             patch.object(services, "_read_channels_config", return_value={}),
             patch.object(services, "_read_mentra_status", return_value=payload),
-            patch.object(services, "_request_memu_shutdown", side_effect=AssertionError("must not request shutdown")),
+            patch.object(services, "_request_memu_shutdown", side_effect=PermissionError("Stop the Iris conversation on the phone first")),
         ):
             result = services.status(spec)
             with self.assertRaisesRegex(PermissionError, "Iris conversation"):
@@ -1140,13 +1140,11 @@ class MentraStatusTest(TestCase):
                 patch.object(services, "_request_memu_shutdown", return_value=True),
                 patch.object(services, "_kill_process_tree") as force_kill,
             ):
-                with patch.object(services, "_read_mentra_status", return_value={"busy": True}):
-                    self.assertEqual(client.post("/service/memu-server/stop?confirm_unknown=true").status_code, 409)
+                with patch.object(services, "_request_memu_shutdown", side_effect=PermissionError("Stop the Iris conversation on the phone first")):
+                    self.assertEqual(client.post("/service/memu-server/stop").status_code, 409)
                 with patch.object(services, "_read_mentra_status", return_value={"state": "unavailable"}):
                     self.assertTrue(services.status(spec)["stoppable"])
-                    self.assertEqual(client.post("/service/memu-server/stop").status_code, 428)
-                    force_kill.assert_not_called()
-                    self.assertEqual(client.post("/service/memu-server/stop?confirm_unknown=true").status_code, 200)
+                    self.assertEqual(client.post("/service/memu-server/stop").status_code, 200)
                     force_kill.assert_not_called()
                     with services._STOP_LOCK:
                         stop_thread = services._STOP_THREADS[spec.name]

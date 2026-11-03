@@ -70,10 +70,6 @@ IRIS_PACKAGE = "com.openalma.mentra"
 IRIS_RELEASES_URL = "https://api.github.com/repos/mekineer-com/iris/releases?per_page=100"
 
 
-class StopConfirmationRequired(Exception):
-    pass
-
-
 class ServiceStoppingError(Exception):
     pass
 
@@ -1893,7 +1889,7 @@ def _request_windows_shutdown(spec: ServiceSpec, pids: tuple[int, ...]) -> None:
             raise
 
 
-def stop(spec: ServiceSpec, *, confirm_unknown: bool = False) -> None:
+def stop(spec: ServiceSpec) -> None:
     if spec.name == "iris-server" and _IRIS_INSTALL_LOCK.locked():
         _IRIS_INSTALL_CANCELLED.set()
     _clear_port_cache(spec)
@@ -1913,17 +1909,10 @@ def stop(spec: ServiceSpec, *, confirm_unknown: bool = False) -> None:
             if spec.adopt_pid_path is not None:
                 _clear_dead_pidfile(spec.adopt_pid_path)
             return
-        if spec.name == "memu-server":
-            port = spec.port or memu_server_port()
-            mentra = _read_mentra_status(port)
-            if mentra.get("busy") is True:
-                raise PermissionError("Stop the Iris conversation on the phone first")
-            if mentra.get("busy") is not False and not confirm_unknown:
-                raise StopConfirmationRequired("Iris activity cannot be checked. Stopping may interrupt a conversation or lose pending work. Stop anyway?")
-        elif not service_pids:
+        if spec.name != "memu-server" and not service_pids:
             raise RuntimeError(f"{spec.label} supervisor is not running; use Force Stop")
         if spec.name == "memu-server":
-            if not _request_memu_shutdown(port):
+            if not _request_memu_shutdown(spec.port or memu_server_port()):
                 raise RuntimeError("memU Server shutdown was not confirmed; retry Stop, or use Force Stop if necessary")
             shutdown_requested = True
         elif os.name == "nt":
@@ -1939,8 +1928,6 @@ def stop(spec: ServiceSpec, *, confirm_unknown: bool = False) -> None:
                 except ProcessLookupError:
                     pass
         _start_stop_waiter(spec)
-    except StopConfirmationRequired:
-        raise
     except PermissionError as exc:
         if spec.name != "memu-server":
             with _STOP_LOCK:

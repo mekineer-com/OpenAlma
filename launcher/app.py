@@ -1255,14 +1255,12 @@ def owner() -> dict:
 
 
 @app.post("/service/{service_name}/stop")
-def service_stop(service_name: str, confirm_unknown: bool = False) -> dict:
+def service_stop(service_name: str) -> dict:
     spec = _find_service(service_name)
     try:
-        services.stop(spec, confirm_unknown=confirm_unknown)
+        services.stop(spec)
     except PermissionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except services.StopConfirmationRequired as exc:
-        raise HTTPException(status_code=428, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"ok": True, **services.status(spec)}

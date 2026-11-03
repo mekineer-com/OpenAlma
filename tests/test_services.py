@@ -1098,18 +1098,18 @@ const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const text = fs.readFileSync(process.argv[1], 'utf8');
 const script = text.slice(text.indexOf('var pendingStarts = {}'), text.indexOf('function actionHtml('));
 (async () => {
-  for (const scenario of ['start', 'start-failed', 'stop', 'decline', 'confirm', 'force', 'force-failed', 'plain-error']) {
+  for (const scenario of ['start', 'start-failed', 'stop', 'stop-failed', 'force', 'force-failed', 'plain-error']) {
     const urls = [], alerts = []; let polls = 0;
     const message = {hidden: false};
     const context = {
       document: {addEventListener: () => {}, getElementById: () => message},
-      Date, confirm: () => { assert(!scenario.startsWith('force')); return scenario === 'confirm'; },
+      Date, confirm: () => assert.fail('Service actions must not ask twice'),
       alert: () => assert.fail('Service messages must not open a browser popup'),
       pollStatus: () => polls++,
       fetch: async url => {
         urls.push(url);
         const status = ['start', 'stop', 'force'].includes(scenario) ? 200
-          : ['start-failed', 'force-failed'].includes(scenario) || urls.length === 2 ? 409 : 428;
+          : 409;
         return new Response(scenario === 'plain-error' ? 'Internal Server Error' : '{"detail":"Service message"}',
           {status: scenario === 'plain-error' ? 500 : status});
       },
@@ -1130,11 +1130,10 @@ const script = text.slice(text.indexOf('var pendingStarts = {}'), text.indexOf('
     await pending;
     assert.equal(polls, 1);
     assert.equal(Boolean(context.pendingStarts.test), scenario === 'start');
-    assert.equal(urls.length, scenario === 'confirm' ? 2 : 1);
-    assert.equal(alerts.length, ['confirm', 'start-failed', 'force-failed', 'plain-error'].includes(scenario) ? 1 : 0);
+    assert.equal(urls.length, 1);
+    assert.equal(alerts.length, ['stop-failed', 'start-failed', 'force-failed', 'plain-error'].includes(scenario) ? 1 : 0);
     assert.equal(message.hidden, true);
     if (scenario === 'plain-error') assert.equal(alerts[0], 'Internal Server Error');
-    if (scenario === 'confirm') assert(urls[1].endsWith('?confirm_unknown=true'));
     if (scenario.startsWith('force')) assert(urls[0].endsWith('?confirmed=true'));
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });
@@ -2077,7 +2076,7 @@ def test_stop_requests_unlimited_memu_drain_without_signaling(tmp_path, monkeypa
     )
     monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [])
     ports = []
-    monkeypatch.setattr(services, "_read_mentra_status", lambda port: ports.append(port) or {"busy": False})
+    monkeypatch.setattr(services, "_read_mentra_status", lambda _port: pytest.fail("Stop must rely on server admission"))
     monkeypatch.setattr(services, "_request_memu_shutdown", lambda port: ports.append(port) or True)
     monkeypatch.setattr(services, "_kill_process_tree", lambda *_args: pytest.fail("unexpected force"))
 
@@ -2095,7 +2094,7 @@ def test_stop_requests_unlimited_memu_drain_without_signaling(tmp_path, monkeypa
         thread = services._STOP_THREADS.get(spec.name)
     if thread is not None:
         thread.join(timeout=1)
-    assert ports == ([8100] if first_request_fails else []) + [8100, 8100]
+    assert ports == [8100]
 
 
 @pytest.mark.parametrize("port,expected_port", [(None, 8099), (8100, 8100), ("0", 8099), ("00", 8099), (0.5, 8099)])

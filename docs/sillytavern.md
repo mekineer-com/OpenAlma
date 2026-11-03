@@ -36,9 +36,9 @@ only when MCP is off, then requests graceful shutdown when ST stops. A server
 already running is left alone. Closing the browser tab does not stop ST.
 
 With Auto Start off, start MCP in this panel or OpenAlma before chatting.
-Background requests never start it. Stop refuses an active Iris conversation;
-if Iris activity is unknown, manual Stop asks for confirmation and automatic
-shutdown leaves MCP running.
+Background requests never start it. MCP itself refuses Stop while an Iris
+conversation is active or starting. If shutdown cannot be confirmed, Stop reports
+an error rather than force-killing the server.
 
 ## Memory section checkboxes
 
