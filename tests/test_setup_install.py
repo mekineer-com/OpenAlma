@@ -489,7 +489,8 @@ def test_pending_core_update_is_visible_and_blocks_start(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("mode", ["explicit", "dsn_only", "missing_dsn", "memory_dsn"])
-def test_database_backup_restore_roundtrip(tmp_path, monkeypatch, mode):
+@pytest.mark.parametrize("journal_mode", ["DELETE", "WAL"])
+def test_database_backup_restore_roundtrip(tmp_path, monkeypatch, mode, journal_mode):
     root = tmp_path / "apps"
     server = root / "mcp-memu-server"
     sqlite_dir = root / "memu/sqlite" if mode in {"explicit", "dsn_only"} else server / "sqlite"
@@ -513,11 +514,18 @@ def test_database_backup_restore_roundtrip(tmp_path, monkeypatch, mode):
     original_mode = config_path.stat().st_mode & 0o777
     database = sqlite_dir / "FictionalSoul.db"
     with closing(sqlite3.connect(database)) as connection:
+        assert connection.execute(f"PRAGMA journal_mode={journal_mode}").fetchone()[0] == journal_mode.lower()
         connection.execute("CREATE TABLE value (text TEXT)")
+        connection.commit()
+        if journal_mode == "WAL":
+            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         connection.execute("INSERT INTO value VALUES ('before')")
         connection.commit()
-
-    backup = setup_install._backup_databases(root, "v1.0.0", "v1.1.0")
+        if journal_mode == "WAL":
+            assert Path(str(database) + "-wal").stat().st_size > 0
+        backup = setup_install._backup_databases(root, "v1.0.0", "v1.1.0")
+        with closing(sqlite3.connect(backup / database.name)) as saved:
+            assert saved.execute("SELECT text FROM value").fetchone() == ("before",)
     assert (backup / "config.json").read_bytes() == original
     assert (backup / "config.json").stat().st_mode & 0o777 == original_mode
     assert config_path.read_bytes() == original
