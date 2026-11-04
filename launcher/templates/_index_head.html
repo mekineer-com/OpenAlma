@@ -104,12 +104,12 @@
     #memorize-meter p { margin: 0.35rem 0; }
     .memorize-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1rem; }
     .context-info { display: inline-block; }
-    .context-info button { display: inline-flex; align-items: center; gap: 0.25em;
+    .context-info button { display: inline-flex; align-items: center; gap: calc(0.25em + 0.5px);
                           padding: 0; border: 0; font: inherit;
                           background: transparent; color: inherit; cursor: default; }
     .info-icon { display: inline-flex; align-items: center; justify-content: center;
                  width: 1.375em; height: 1.375em; box-sizing: border-box; font-size: 0.8em;
-                 border: 1px solid currentColor; border-radius: 50%; }
+                 border: 1px solid currentColor; border-radius: 50%; transform: translateY(-0.5px); }
     .info-text { position: fixed; z-index: 10; inset: auto; bottom: 1rem; left: 50%; margin: 0;
                  transform: translateX(-50%); width: min(28rem, 90vw); box-sizing: border-box;
                  padding: 0.65rem; background: #222; color: #eee; border: 1px solid #777;

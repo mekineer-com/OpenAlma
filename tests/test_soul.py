@@ -84,9 +84,9 @@ def test_hermes_mental_health_row_has_exact_tooltip_and_starts_disabled(soul_err
         channels_configured=True, policies=[], chats=[], visible_chats=[], excluded_chats=[],
     )
     assert html.count('id="mental-health-addon"') == 1
-    assert 'id="mental-health-addon" type="checkbox" disabled' in html
-    row = html.split('<div class="mental-health-addon">', 1)[1].split('</div>', 1)[0]
-    assert row.index('</label>') < row.index('class="context-info"')
+    assert 'id="mental-health-addon" aria-label="Mental Health Addon" type="checkbox" disabled' in html
+    row = html.split('<p class="mental-health-addon">', 1)[1].split('</p>', 1)[0]
+    assert 'Mental Health Addon<span class="info-icon">i</span></button>' in row
     assert 'popovertarget="info:mental-health-addon"' in row
     assert 'class="info-icon">i</span>' in row
     assert 'class="info-text" popover id="info:mental-health-addon"' in row

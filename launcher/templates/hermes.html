@@ -7,15 +7,14 @@
     .pair-card { border: 1px solid #333; border-radius: 4px; padding: 0.8rem; background: #202020; }
     .pair-card h3 { margin: 0 0 0.4rem 0; color: #f0f0f0; }
     .pair-card canvas { width: 220px; height: 220px; background: #fff; border: 8px solid #fff; display: block; }
-    .mental-health-addon { display: block; margin: 0.8rem 0; }
     .mental-health-addon:has(input:disabled) { opacity: 0.5; }</style>
   <div id="channels-soul-selector">
   <h2>Hermes Channels soul selector</h2>
   <p class="muted">Choose an existing soul or enter a new name. Stored in hermes-channels/data/config.json</p>
-  <div class="mental-health-addon">
-    <label><input id="mental-health-addon" type="checkbox" disabled> Mental Health Addon</label>
-    {{ info("Per character. Enable the mental-health sidecar: when the soul's retrieval router detects an MH theme, it pulls from a curated procedural-memory store alongside regular memories.", "mental-health-addon") }}
-  </div>
+  <p class="mental-health-addon">
+    <input id="mental-health-addon" aria-label="Mental Health Addon" type="checkbox" disabled>
+    {{ info("Per character. Enable the mental-health sidecar: when the soul's retrieval router detects an MH theme, it pulls from a curated procedural-memory store alongside regular memories.", "mental-health-addon", "Mental Health Addon") }}
+  </p>
   {% if channels_error %}
   <p class="failure">Channels configuration needs repair: {{ channels_error }}</p>
   {% elif soul_error %}
