@@ -75,6 +75,7 @@ def test_soul_settings_proxy_preserves_server_errors(monkeypatch, method, status
 
 @pytest.mark.parametrize("soul_error,channels_error", [("", ""), ("Fictional outage", ""), ("", "Bad config")])
 def test_hermes_mental_health_row_has_exact_tooltip_and_starts_disabled(soul_error, channels_error):
+    from html import unescape
     from jinja2 import Environment, FileSystemLoader
 
     templates = Path(__file__).resolve().parents[1] / "launcher/templates"
@@ -85,8 +86,13 @@ def test_hermes_mental_health_row_has_exact_tooltip_and_starts_disabled(soul_err
     assert html.count('id="mental-health-addon"') == 1
     assert 'id="mental-health-addon" type="checkbox" disabled' in html
     row = html.split('<div class="mental-health-addon">', 1)[1].split('</div>', 1)[0]
-    assert 'Mental Health Addon</label>\n    <span class="info"' in row
-    assert 'title="Per character. Enable the mental-health sidecar: when the soul\'s retrieval router detects an MH theme, it pulls from a curated procedural-memory store alongside regular memories.">(i)</span>' in html
+    assert row.index('</label>') < row.index('class="context-info"')
+    assert 'popovertarget="info:mental-health-addon"' in row
+    assert 'class="info-icon">i</span>' in row
+    assert 'class="info-text" popover id="info:mental-health-addon"' in row
+    assert 'onpointerenter=' in row and 'onpointerleave=' in row
+    assert 'Per character. Enable the mental-health sidecar: when the soul\'s retrieval router detects an MH theme, it pulls from a curated procedural-memory store alongside regular memories.' in unescape(row)
+    assert 'title=' not in row and 'class="info"' not in row
     if not channels_error:
         assert html.index('id="mental-health-addon"') < html.index('Active soul:')
 

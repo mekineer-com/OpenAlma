@@ -1,8 +1,6 @@
 {% include "_index_head.html" %}
 {% include "_header.html" %}
-{% macro info(text, key, label='') -%}
-<span class="context-info" data-info="{{ key }}"><button type="button" popovertarget="info:{{ key }}" aria-label="{{ text }}" onpointerenter="if (event.pointerType === 'mouse') this.nextElementSibling.showPopover()" onpointerleave="if (event.pointerType === 'mouse') this.nextElementSibling.hidePopover()">{{ label }}<span class="info-icon">i</span></button><span class="info-text" popover id="info:{{ key }}">{{ text }}</span></span>
-{%- endmacro %}
+{% from "_info.html" import info %}
 {% macro install_meter(progress) -%}
 <progress class="install-progress" aria-label="Installation steps completed" {% if progress and progress.total_steps %}max="{{ progress.total_steps }}" value="{{ progress.step_number - 1 }}"{% endif %}></progress>
 {% if progress %}<div class="svc-detail">{% if progress.total_steps %}Step {{ progress.step_number }} of {{ progress.total_steps }} · {% endif %}{{ '%d:%02d'|format(progress.elapsed_seconds // 60, progress.elapsed_seconds % 60) }} elapsed</div>{% endif %}

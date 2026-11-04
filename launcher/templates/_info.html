@@ -1,0 +1,3 @@
+{% macro info(text, key, label='') -%}
+<span class="context-info" data-info="{{ key }}"><button type="button" popovertarget="info:{{ key }}" aria-label="{{ text }}" onpointerenter="if (event.pointerType === 'mouse') this.nextElementSibling.showPopover()" onpointerleave="if (event.pointerType === 'mouse') this.nextElementSibling.hidePopover()">{{ label }}<span class="info-icon">i</span></button><span class="info-text" popover id="info:{{ key }}">{{ text }}</span></span>
+{%- endmacro %}
