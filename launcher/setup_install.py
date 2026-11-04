@@ -1195,7 +1195,7 @@ def start_issue(service_name: str, root: Path) -> str:
         if not _node_dependencies_ready(root / "sillytavern/SillyTavern"):
             return "Missing SillyTavern dependencies"
         return ""
-    # Native dispatch remains dormant until N4; helper repair must not block API Start.
+    # Native admission checks the helper; its repair must not block API Start.
     return optional_issue(service_name, root, check_helper=False)
 
 
