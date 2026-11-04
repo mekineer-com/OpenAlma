@@ -918,6 +918,33 @@ def test_atomic_service_uses_existing_debug_binary(tmp_path, monkeypatch):
     assert spec.env["ATOMIC_SERVER_BIN"] == str(debug)
 
 
+@pytest.mark.parametrize("endpoint", ["owner", "souls", "pending", "mentra", "error_body"])
+def test_interrupted_memu_response_uses_existing_unavailable_handling(monkeypatch, endpoint):
+    response = BytesIO(b"partial response")
+
+    def interrupted(*_args, **_kwargs):
+        raise services.http.client.IncompleteRead(b"partial response")
+
+    monkeypatch.setattr(response, "read", interrupted)
+    monkeypatch.setattr(services.urllib.request, "urlopen", lambda *_args, **_kwargs: response)
+    monkeypatch.setattr(services, "memu_server_port", lambda: 8099)
+    monkeypatch.setattr(services, "_port_listener_pid", lambda *_args, **_kwargs: 123)
+    monkeypatch.setattr(services, "all_services", lambda: [])
+    if endpoint == "owner":
+        with pytest.raises(services.OwnerServiceUnavailable):
+            services.read_owner()
+    elif endpoint == "souls":
+        with pytest.raises(services.SoulServiceUnavailable):
+            services.list_souls()
+    elif endpoint == "pending":
+        assert services.memorize_pending("Fable") == {}
+    elif endpoint == "mentra":
+        assert services._read_mentra_status(8099)["state"] == "unavailable"
+    else:
+        error = services.urllib.error.HTTPError("http://localhost", 500, "Failure", {}, response)
+        assert services._http_error_detail(error) is None
+
+
 def test_memorize_pending_sends_user_id(monkeypatch):
     seen = {}
 
@@ -1835,7 +1862,7 @@ def test_force_stop_kills_only_verified_matching_pids(tmp_path, monkeypatch, hel
             assert release.wait(2)
         clear_pid(target)
 
-    def kill(pid):
+    def kill(pid, **_kwargs):
         killed.append(pid)
         live.remove(pid)
 
@@ -1899,7 +1926,7 @@ def test_failed_force_stop_keeps_retry_evidence(tmp_path, monkeypatch, denied_pi
     monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [20, 21])
     attempted = []
 
-    def kill(pid):
+    def kill(pid, **_kwargs):
         attempted.append(pid)
         if pid == denied_pid:
             raise PermissionError("Fictional permission failure")
@@ -1920,7 +1947,7 @@ def test_failed_force_stop_keeps_retry_evidence(tmp_path, monkeypatch, denied_pi
 def test_force_stop_survivors_keep_retry_evidence_but_stale_error_does_not(tmp_path, monkeypatch):
     spec = services.ServiceSpec("atomic", "Atomic", [], tmp_path, tmp_path / "log", tmp_path / "pid")
     monkeypatch.setattr(services, "_verified_pid_candidates", lambda _spec: [20])
-    monkeypatch.setattr(services, "_kill_process_tree", lambda _pid: None)
+    monkeypatch.setattr(services, "_kill_process_tree", lambda _pid, **_kwargs: None)
 
     with pytest.raises(RuntimeError, match="Could not force stop PID"):
         services.force_stop(spec, timeout=0)

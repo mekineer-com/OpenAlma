@@ -2,6 +2,7 @@ import json
 import sqlite3
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -128,6 +129,35 @@ def test_selection_omits_replacement_name_and_creation_refusal_does_not_select(m
     response = client.post(route, data={"soul_id": "Fable", "use_existing": "true", "user_name": "DoNotReplace"}, follow_redirects=False)
     assert response.status_code == (200 if route == "/echo/soul" else 303)
     assert calls[-1] == {"soul_id": "Fable", "use_existing": True}
+
+
+def test_soul_selection_shares_start_lock(monkeypatch):
+    from fastapi.testclient import TestClient
+    import app
+
+    lock, calls = threading.Lock(), []
+    monkeypatch.setattr(app, "_SERVICE_INSTALL_LOCK", lock)
+    monkeypatch.setattr(app, "_find_service", lambda _name: None)
+
+    def locked(stage, result):
+        assert lock.locked(), stage
+        calls.append(stage)
+        return result
+
+    monkeypatch.setattr(app.services, "status", lambda _spec: locked("status", {"state": "stopped"}))
+    monkeypatch.setattr(app, "_resolve_soul", lambda *_args: locked("resolve", "Fable"))
+    monkeypatch.setattr(app.soul, "set_active_soul_id", lambda _soul: locked("write", None))
+    monkeypatch.setattr(app, "_service_start", lambda _name: locked("start", {"ok": True}))
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    with lock:
+        response = client.post("/soul", data={"soul_id": "Fable"}, follow_redirects=False)
+        assert response.status_code == 409
+        assert calls == []
+    assert client.post("/soul", data={"soul_id": "Fable"}, follow_redirects=False).status_code == 303
+    assert not lock.locked()
+    assert client.post("/service/channels-daemon/start").status_code == 200
+    assert calls == ["status", "resolve", "write", "start"]
+    assert not lock.locked()
 
 
 def test_explicit_soul_save_preserves_unrelated_config_source_data_and_activation(tmp_path, monkeypatch):

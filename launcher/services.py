@@ -545,8 +545,6 @@ def _runtime_state(spec: ServiceSpec) -> RuntimeState:
         )
         if not verified:
             _clear_pid(spec)
-            if spec.adopt_pid_path is not None:
-                _clear_dead_pidfile(spec.adopt_pid_path)
             return RuntimeState(port_pid=port_pid, port_blocked=port_blocked)
 
         pid = service_pids[0] if service_pids else verified[0]
@@ -722,7 +720,7 @@ def memorize_pending(soul_id: str, user_id: str = "") -> dict:
     except urllib.error.HTTPError as exc:
         detail = _http_error_detail(exc)
         return {"error": detail if isinstance(detail, str) else f"memU returned HTTP {exc.code}"}
-    except (OSError, ValueError):
+    except (OSError, ValueError, http.client.HTTPException):
         return {}
     return data if isinstance(data, dict) else {}
 
@@ -766,8 +764,11 @@ def _mcp_request(path: str, payload: dict | None = None, *, timeout: float = 2, 
         headers={"Content-Type": "application/json"},
         method=method,
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        data = json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except http.client.HTTPException as exc:
+        raise OSError("memU Server returned an invalid HTTP response") from exc
     if not isinstance(data, dict):
         raise ValueError("Server returned an invalid response")
     return data
@@ -789,7 +790,7 @@ def _http_error_detail(exc: urllib.error.HTTPError) -> object:
     try:
         body = json.load(exc)
         return body.get("detail") if isinstance(body, dict) else None
-    except (OSError, ValueError):
+    except (OSError, ValueError, http.client.HTTPException):
         return None
 
 
@@ -873,7 +874,7 @@ def _read_mentra_status(
             exc.code, f"Mentra status failed (HTTP {exc.code})"
         )
         return {"state": "unavailable", "detail": detail}
-    except (OSError, ValueError):
+    except (OSError, ValueError, http.client.HTTPException):
         return {"state": "unavailable", "detail": "Mentra status unreachable or invalid"}
     return data if isinstance(data, dict) else {"state": "unavailable", "detail": "Invalid Mentra status"}
 
@@ -1835,8 +1836,6 @@ def _finish_graceful_stop(spec: ServiceSpec) -> None:
                   for pid in _verified_pid_candidates(spec)):
             time.sleep(0.1)
         _clear_pid(spec)
-        if spec.adopt_pid_path is not None:
-            _clear_dead_pidfile(spec.adopt_pid_path)
         _clear_port_cache(spec)
         with _STOP_LOCK:
             _STOP_ERRORS.pop(spec.name, None)
@@ -1908,8 +1907,6 @@ def stop(spec: ServiceSpec) -> None:
             service_pids = tuple(dict.fromkeys((*service_pids, *_scan_service_pids_cached(spec, refresh=True))))
         if not runtime.verified_pids and not service_pids:
             _clear_pid(spec)
-            if spec.adopt_pid_path is not None:
-                _clear_dead_pidfile(spec.adopt_pid_path)
             return
         if spec.name != "memu-server" and not service_pids:
             raise RuntimeError(f"{spec.label} supervisor is not running; use Force Stop")
@@ -1957,10 +1954,7 @@ def force_stop(spec: ServiceSpec, *, timeout: float = 10.0) -> None:
         errors: list[str] = []
         for pid in _verified_pid_candidates(spec):
             try:
-                if preserve is None:
-                    _kill_process_tree(pid)
-                else:
-                    _kill_process_tree(pid, preserve_service=preserve)
+                _kill_process_tree(pid, preserve_service=preserve)
             except PermissionError as exc:
                 errors.append(str(exc))
         if errors:
@@ -1973,8 +1967,6 @@ def force_stop(spec: ServiceSpec, *, timeout: float = 10.0) -> None:
             if survivors:
                 raise RuntimeError(f"Could not force stop PID(s): {', '.join(map(str, survivors))}")
             _clear_pid(spec)
-            if spec.adopt_pid_path is not None:
-                _clear_dead_pidfile(spec.adopt_pid_path)
             _clear_port_cache(spec)
             _STOP_ERRORS.pop(spec.name, None)
             if spec.name not in _STOP_THREADS:
@@ -1991,3 +1983,5 @@ def _clear_pid(spec: ServiceSpec) -> None:
             spec.pid_path.unlink()
         except FileNotFoundError:
             pass
+        if spec.adopt_pid_path is not None:
+            _clear_dead_pidfile(spec.adopt_pid_path)

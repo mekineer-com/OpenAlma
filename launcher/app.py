@@ -1324,18 +1324,22 @@ async def policy_save(request: Request) -> RedirectResponse:
 
 @app.post("/soul")
 def soul_save(soul_id: str = Form(default=""), use_existing: bool = Form(default=False)) -> RedirectResponse:
-    channels = services.status(_find_service("channels-daemon"))
-    if (
-        channels.get("running")
-        or channels.get("stuck")
-        or channels.get("orphaned")
-        or channels.get("state") == "stopping"
-    ):
-        raise HTTPException(status_code=409, detail="Stop Hermes Channels before changing its Soul")
+    if not _SERVICE_INSTALL_LOCK.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Another service change is in progress; wait and try again")
     try:
+        channels = services.status(_find_service("channels-daemon"))
+        if (
+            channels.get("running")
+            or channels.get("stuck")
+            or channels.get("orphaned")
+            or channels.get("state") == "stopping"
+        ):
+            raise HTTPException(status_code=409, detail="Stop Hermes Channels before changing its Soul")
         soul.set_active_soul_id(_resolve_soul(soul_id, use_existing))
     except (RuntimeError, OSError, sqlite3.Error) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    finally:
+        _SERVICE_INSTALL_LOCK.release()
     return RedirectResponse("/hermes", status_code=303)
 
 
