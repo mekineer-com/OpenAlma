@@ -92,3 +92,246 @@ test('first-run conflicts stay inline without offering unsupported adoption', as
   }
   assert.deepEqual(messages, ['Already exists', 'Already exists']);
 });
+
+function settingsHarness(active = 'Lumen', names = ['Lumen', 'Fable']) {
+  function node() {
+    return {value: '', hidden: true, disabled: false, checked: false, events: {}, children: [],
+      addEventListener(event, callback) { this.events[event] = callback; },
+      setAttribute() {}, appendChild(child) { this.children.push(child); }};
+  }
+  const input = node(), ready = node(), checkbox = node(), menu = node();
+  input.value = active;
+  ready.hidden = !names.includes(active);
+  checkbox.disabled = true;
+  const fields = {'[name=soul_id]': input, '.soul-ready': ready, '.soul-options': menu,
+    '.soul-new': node(), '[name=use_existing]': node()};
+  const form = {...node(), action: '/soul', querySelector: selector => fields[selector]};
+  const messages = [], requests = [], windowEvents = {}, documentEvents = {};
+  const document = {hidden: false, createElement: node, getElementById: () => checkbox,
+    addEventListener(event, callback) { documentEvents[event] = callback; }};
+  const context = sharedContext({document,
+    window: {addEventListener(event, callback) { windowEvents[event] = callback; }},
+    FormData: class extends Map {
+      constructor() { super([['soul_id', input.value], ['use_existing', fields['[name=use_existing]'].value]]); }
+    },
+    fetch: (url, options) => new Promise((resolve, reject) => requests.push({url, options, resolve, reject})),
+    showLauncherMessage: message => messages.push(message), clearLauncherMessage() {},
+    alert: () => assert.fail('Soul settings errors must remain inline'),
+  });
+  vm.runInContext(fs.readFileSync(__dirname + '/soul-selector.js', 'utf8'), context);
+  context.bindHermesSoulSettings(form, names);
+  return {context, input, ready, checkbox, menu, messages, requests, windowEvents, documentEvents, document,
+    reply(index, settings) { requests[index].resolve(Response.json({settings})); },
+    draft(name) { input.value = name; input.events.input(); },
+    submit() { form.events.submit({preventDefault() {}}); },
+    async select(name) {
+      this.draft(name);
+      this.submit();
+      assert.equal(checkbox.disabled, true, 'pending Soul selection must disable settings');
+      const request = requests.at(-1);
+      assert.equal(request.url, '/soul');
+      request.resolve({ok: true, url: '/hermes'});
+      await settle();
+    },
+    toggle(value) { checkbox.checked = value; return checkbox.events.change(); },
+  };
+}
+
+const settle = () => new Promise(setImmediate);
+
+test('MH loads sparse settings without saving defaults; absent/unknown Soul stays disabled', async () => {
+  for (const active of ['', 'MissingSoul']) {
+    const h = settingsHarness(active);
+    h.windowEvents.focus();
+    assert.equal(h.checkbox.disabled, true);
+    assert.equal(h.requests.length, 0);
+  }
+  for (const settings of [{}, {mental_health_addon: false}, {mental_health_addon: true}]) {
+    const h = settingsHarness();
+    assert.equal(h.checkbox.disabled, true);
+    assert.equal(h.requests[0].url, '/souls/Lumen/settings');
+    assert.equal(h.requests[0].options.method, 'GET');
+    assert.equal(h.requests[0].options.cache, 'no-store');
+    assert.equal(h.requests[0].options.body, undefined);
+    h.reply(0, settings);
+    await settle();
+    assert.equal(h.checkbox.disabled, false);
+    assert.equal(h.checkbox.checked, settings.mental_health_addon === true);
+    assert.equal(h.requests.length, 1);
+  }
+});
+
+test('MH PATCH captures the Soul, sends only its Boolean and uses winning sparse settings', async () => {
+  for (const winning of [{}, {mental_health_addon: false}, {mental_health_addon: true}]) {
+    const h = settingsHarness('Test Soul%?#', ['Test Soul%?#']);
+    h.reply(0, {mental_health_addon: true});
+    await settle();
+    const save = h.toggle(false);
+    const request = h.requests[1];
+    assert.equal(h.checkbox.disabled, true);
+    assert.equal(request.url, '/souls/Test%20Soul%25%3F%23/settings');
+    assert.equal(request.options.method, 'PATCH');
+    assert.equal(request.options.headers['Content-Type'], 'application/json');
+    assert.deepEqual(JSON.parse(request.options.body), {mental_health_addon: false});
+    h.reply(1, winning);
+    await save;
+    assert.equal(h.checkbox.checked, winning.mental_health_addon === true);
+    assert.equal(h.checkbox.disabled, false);
+  }
+});
+
+test('MH keeps different saved choices when switching Souls and never writes during loads', async () => {
+  const h = settingsHarness();
+  h.reply(0, {});
+  await settle();
+  const save = h.toggle(true);
+  h.reply(1, {mental_health_addon: true});
+  await save;
+  // Choosing a menu option is still a draft until its arrow is submitted.
+  h.menu.children[1].events.click();
+  assert.equal(h.checkbox.disabled, true);
+  assert.equal(h.input.value, 'Fable');
+  h.submit();
+  h.requests[2].resolve({ok: true, url: '/hermes'});
+  await settle();
+  h.reply(3, {mental_health_addon: false});
+  await settle();
+  assert.equal(h.checkbox.checked, false);
+  await h.select('Lumen');
+  h.reply(5, {mental_health_addon: true});
+  await settle();
+  assert.equal(h.checkbox.checked, true);
+  assert.equal(h.requests.filter(request => request.options.method === 'PATCH').length, 1);
+});
+
+test('MH loads newly created Souls only after confirmed selector save', async () => {
+  for (const active of ['', 'MissingSoul']) {
+    const h = settingsHarness(active);
+    if (!active) h.draft('NewSoul');
+    h.submit();
+    assert.equal(h.requests.length, 0, 'first arrow only confirms creation');
+    assert.equal(h.checkbox.disabled, true);
+    h.submit();
+    assert.equal(h.requests[0].url, '/soul');
+    assert.equal(h.checkbox.disabled, true);
+    h.requests[0].resolve({ok: true, url: '/hermes'});
+    await settle();
+    assert.equal(h.requests[1].url, '/souls/' + (active || 'NewSoul') + '/settings');
+    h.reply(1, {});
+    await settle();
+    assert.equal(h.checkbox.checked, false);
+    assert.equal(h.checkbox.disabled, false);
+    assert.equal(h.requests.some(request => request.options.method === 'PATCH'), false);
+  }
+});
+
+test('MH ignores stale GET success/failure including an A-to-B-to-A switch', async () => {
+  for (const fails of [false, true]) {
+    const h = settingsHarness();
+    await h.select('Fable');
+    await h.select('Lumen');
+    h.reply(4, {mental_health_addon: true});
+    await settle();
+    h.reply(2, {mental_health_addon: false});
+    if (fails) h.requests[0].reject(new Error('Old outage'));
+    else h.reply(0, {});
+    await settle();
+    assert.equal(h.checkbox.checked, true);
+    assert.equal(h.checkbox.disabled, false);
+    assert.deepEqual(h.messages, []);
+  }
+});
+
+test('MH focus/visibility refresh saved values but never replace a pending typed Soul draft', async () => {
+  const h = settingsHarness();
+  h.reply(0, {});
+  await settle();
+  h.windowEvents.focus();
+  assert.equal(h.checkbox.disabled, true);
+  h.reply(1, {mental_health_addon: true});
+  await settle();
+  assert.equal(h.checkbox.checked, true);
+  h.document.hidden = true;
+  h.documentEvents.visibilitychange();
+  assert.equal(h.requests.length, 2);
+  h.document.hidden = false;
+  h.documentEvents.visibilitychange();
+  h.draft('Unsaved Soul draft');
+  h.reply(2, {mental_health_addon: false});
+  await settle();
+  h.windowEvents.focus();
+  h.documentEvents.visibilitychange();
+  assert.equal(h.input.value, 'Unsaved Soul draft');
+  assert.equal(h.checkbox.disabled, true);
+  assert.equal(h.requests.length, 3);
+  assert.equal(h.requests.every(request => request.options.method === 'GET'), true);
+});
+
+test('MH blocks a switched Soul load until PATCH settles and ignores stale save outcomes', async () => {
+  for (const fails of [false, true]) {
+    const h = settingsHarness();
+    h.reply(0, {mental_health_addon: false});
+    await settle();
+    const save = h.toggle(true);
+    await h.select('Fable');
+    assert.equal(h.requests.length, 3, 'do not read settings ahead of the pending write');
+    if (fails) h.requests[1].reject(new Error('Old save failed'));
+    else h.reply(1, {mental_health_addon: true});
+    await save;
+    await settle();
+    assert.equal(h.requests[3].url, '/souls/Fable/settings');
+    h.reply(3, {});
+    await settle();
+    assert.equal(h.checkbox.checked, false);
+    assert.equal(h.checkbox.disabled, false);
+    assert.deepEqual(h.messages, []);
+  }
+});
+
+test('MH switch back or focus during PATCH reads the server only after its write', async () => {
+  for (const switchBack of [false, true]) {
+    const h = settingsHarness();
+    h.reply(0, {});
+    await settle();
+    const save = h.toggle(true);
+    if (switchBack) {
+      await h.select('Fable');
+      await h.select('Lumen');
+    } else h.windowEvents.focus();
+    const count = h.requests.length;
+    h.reply(1, {mental_health_addon: true});
+    await save;
+    await settle();
+    assert.equal(h.requests.length, count + 1);
+    assert.equal(h.requests.at(-1).url, '/souls/Lumen/settings');
+    h.reply(count, {mental_health_addon: true});
+    await settle();
+    assert.equal(h.checkbox.checked, true);
+    assert.equal(h.checkbox.disabled, false);
+  }
+});
+
+test('MH load/save errors stay inline and disabled until a successful refresh', async () => {
+  for (const failure of ['load', 'save', 'malformed']) {
+    const h = settingsHarness();
+    if (failure === 'malformed') h.reply(0, {mental_health_addon: 'false'});
+    else h.requests[0].resolve(Response.json({detail: 'Fictional outage'}, {status: 503}));
+    await settle();
+    assert.equal(h.checkbox.disabled, true);
+    assert.equal(h.messages.length, 1);
+    assert.match(h.messages[0], failure === 'malformed' ? /invalid Soul settings/ : /Fictional outage/);
+    h.windowEvents.focus();
+    h.reply(1, {mental_health_addon: true});
+    await settle();
+    assert.equal(h.checkbox.disabled, false);
+    assert.equal(h.checkbox.checked, true);
+    if (failure === 'save') {
+      const save = h.toggle(false);
+      h.requests[2].resolve(Response.json({detail: 'Fictional save refusal'}, {status: 422}));
+      await save;
+      assert.equal(h.checkbox.checked, true, 'restore the last confirmed value');
+      assert.equal(h.checkbox.disabled, true);
+      assert.equal(h.messages.at(-1), 'Fictional save refusal');
+    }
+  }
+});

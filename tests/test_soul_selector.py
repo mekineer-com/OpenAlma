@@ -2,6 +2,11 @@ import subprocess
 from pathlib import Path
 
 
+def test_soul_selector_node_regressions():
+    script = Path(__file__).resolve().parents[1] / "launcher/static/soul-selector.test.cjs"
+    subprocess.run(["node", "--test", str(script)], check=True, timeout=30)
+
+
 def test_combobox_selection_preserves_pending_and_current_souls():
     script = Path(__file__).resolve().parents[1] / "launcher/static/soul-selector.js"
     subprocess.run(["node", "-e", r'''

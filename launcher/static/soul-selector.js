@@ -105,3 +105,88 @@ function bindSoulCombobox(soulForm, names, onSaved, onChanged) {
         saveSoul(name);
       });
     }
+
+function bindHermesSoulSettings(soulForm, names, onSaved) {
+  const checkbox = document.getElementById('mental-health-addon');
+  const input = soulForm.querySelector('[name=soul_id]');
+  const ready = soulForm.querySelector('.soul-ready');
+  let selectedSoul = names.includes(input.value.trim()) ? input.value.trim() : '';
+  let generation = 0;
+  let saving = null;
+  let savedValue = false;
+
+  function invalidate() {
+    generation++;
+    selectedSoul = '';
+    checkbox.checked = false;
+    checkbox.disabled = true;
+  }
+
+  async function request(name, changes) {
+    const response = await fetch('/souls/' + encodeURIComponent(name) + '/settings', {
+      method: changes ? 'PATCH' : 'GET', cache: 'no-store',
+      ...(changes ? {headers: {'Content-Type': 'application/json'}, body: JSON.stringify(changes)} : {}),
+    });
+    if (!response.ok) throw new Error(await launcherErrorMessage(response, 'Could not read or save Soul settings'));
+    const data = await response.json();
+    if (!data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings) ||
+        ('mental_health_addon' in data.settings && typeof data.settings.mental_health_addon !== 'boolean')) {
+      throw new Error('Server returned invalid Soul settings');
+    }
+    return data.settings.mental_health_addon === true;
+  }
+
+  async function load(name) {
+    const current = ++generation;
+    selectedSoul = name;
+    checkbox.disabled = true;
+    checkbox.checked = false;
+    if (!name) return;
+    try {
+      // A switch back to the saving Soul must read after its PATCH has settled.
+      if (saving) await saving.catch(() => {});
+      if (current !== generation) return;
+      const value = await request(name);
+      if (current !== generation || name !== selectedSoul) return;
+      savedValue = checkbox.checked = value;
+      checkbox.disabled = false;
+    } catch (error) {
+      if (current === generation) showLauncherMessage(error.message);
+    }
+  }
+
+  bindSoulCombobox(soulForm, names, function(name) {
+    void load(name);
+    if (onSaved) onSaved(name);
+  }, invalidate);
+
+  checkbox.addEventListener('change', async function() {
+    if (checkbox.disabled || !selectedSoul) return;
+    const name = selectedSoul;
+    const current = ++generation;
+    checkbox.disabled = true;
+    clearLauncherMessage();
+    saving = request(name, {mental_health_addon: checkbox.checked});
+    try {
+      const value = await saving;
+      if (current !== generation || name !== selectedSoul) return;
+      savedValue = checkbox.checked = value;
+      checkbox.disabled = false;
+    } catch (error) {
+      if (current !== generation || name !== selectedSoul) return;
+      checkbox.checked = savedValue;
+      showLauncherMessage(error.message);
+    } finally {
+      saving = null;
+    }
+  });
+
+  function refresh() {
+    if (!ready.hidden && selectedSoul) void load(selectedSoul);
+  }
+  window.addEventListener('focus', refresh);
+  document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) refresh();
+  });
+  void load(selectedSoul);
+}

@@ -47,7 +47,7 @@ class DOMParser {
 const context = {
  document, DOMParser, URLSearchParams, console,
  window:{location:{search:''}}, location:{href:'/hermes', reload(){reloads++; Object.assign(policy,{routing:'excluded',memorize:true});}},
- bindSoulCombobox(form,names,saved){bindings.push({form,names,saved});},
+ bindHermesSoulSettings(form,names,saved){bindings.push({form,names,saved});},
  setInterval(fn){tick=fn;return 41;}, clearInterval(id){assert.equal(id,41);cleared++;},
  fetch: async(url) => {
    if(url === '/souls') {

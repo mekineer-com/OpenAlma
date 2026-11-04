@@ -893,8 +893,8 @@ class MentraStatusTest(TestCase):
             ):
                 client = TestClient(app.app, base_url="http://127.0.0.1")
                 page = client.get("/hermes").text
-                self.assertIn('bindSoulCombobox(soulForm, ["Codexia"])', page)
-                self.assertNotIn('bindSoulCombobox(soulForm, ["Wrong Source"])', page)
+                self.assertIn('bindHermesSoulSettings(soulForm, ["Codexia"])', page)
+                self.assertNotIn('bindHermesSoulSettings(soulForm, ["Wrong Source"])', page)
                 with patch.object(services, "list_souls", side_effect=services.SoulServiceUnavailable("Soul service unavailable")):
                     unavailable = client.get("/hermes")
                     self.assertEqual(unavailable.status_code, 200)

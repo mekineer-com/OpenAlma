@@ -1246,6 +1246,28 @@ def souls() -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _soul_settings_request(soul_id: str, changes: dict | None = None) -> dict:
+    try:
+        return services._mcp_request(
+            f"/souls/{urllib.parse.quote(soul_id, safe='')}/settings", changes,
+            method="GET" if changes is None else "PATCH",
+        )
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(status_code=exc.code, detail=services._http_error_detail(exc)) from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="Soul settings unavailable; check memU Server before retrying") from exc
+
+
+@app.get("/souls/{soul_id}/settings")
+def soul_settings(soul_id: str) -> dict:
+    return _soul_settings_request(soul_id)
+
+
+@app.patch("/souls/{soul_id}/settings")
+def soul_settings_save(soul_id: str, changes: dict) -> dict:
+    return _soul_settings_request(soul_id, changes)
+
+
 @app.get("/owner")
 def owner() -> dict:
     try:

@@ -5,10 +5,17 @@
 <style>    .pair-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-top: 1rem; }
     .pair-card { border: 1px solid #333; border-radius: 4px; padding: 0.8rem; background: #202020; }
     .pair-card h3 { margin: 0 0 0.4rem 0; color: #f0f0f0; }
-    .pair-card canvas { width: 220px; height: 220px; background: #fff; border: 8px solid #fff; display: block; }</style>
+    .pair-card canvas { width: 220px; height: 220px; background: #fff; border: 8px solid #fff; display: block; }
+    .mental-health-addon { display: block; margin: 0.8rem 0; }
+    .mental-health-addon:has(input:disabled) { opacity: 0.5; }
+    .mental-health-addon .info { cursor: help; }</style>
   <div id="channels-soul-selector">
   <h2>Hermes Channels soul selector</h2>
   <p class="muted">Choose an existing soul or enter a new name. Stored in hermes-channels/data/config.json</p>
+  <div class="mental-health-addon">
+    <label><input id="mental-health-addon" type="checkbox" disabled> Mental Health Addon</label>
+    <span class="info" tabindex="0" title="Per character. Enable the mental-health sidecar: when the soul's retrieval router detects an MH theme, it pulls from a curated procedural-memory store alongside regular memories.">(i)</span>
+  </div>
   {% if channels_error %}
   <p class="failure">Channels configuration needs repair: {{ channels_error }}</p>
   {% elif soul_error %}
@@ -24,7 +31,7 @@
         <span id="channels-soul-options" class="soul-options" role="listbox" hidden></span>
       </span>
       <button class="btn" type="submit" aria-label="Use soul" title="Use soul">&#10148;</button>
-      <span id="channels-soul-ready" class="soul-ready" title="Soul exists and is active" {% if not active_soul %}hidden{% endif %}>&#10003;</span>
+      <span id="channels-soul-ready" class="soul-ready" title="Soul exists and is active" {% if active_soul not in soul_ids %}hidden{% endif %}>&#10003;</span>
       <span id="channels-soul-new" class="soul-new" hidden>New soul will be created. Press the arrow again to confirm.</span>
     </span>
     <input id="soul-use-existing" type="hidden" name="use_existing" value="false">
@@ -130,7 +137,7 @@
 <script src="/static/soul-selector.js"></script>
 <script>
 const soulForm = document.getElementById("channels-soul-form");
-if (soulForm) bindSoulCombobox(soulForm, {{ soul_ids|tojson }}{% if not channels_configured %}, function() { location.href = "/hermes"; }{% endif %});
+if (soulForm) bindHermesSoulSettings(soulForm, {{ soul_ids|tojson }}{% if not channels_configured %}, function() { location.href = "/hermes"; }{% endif %});
 
 function syncMemorize(chatId, policy) {
   var box = document.getElementById('memorize-' + chatId);
@@ -235,7 +242,7 @@ const recoveryTimer = setInterval(async function() {
     const form = recovered && recovered.querySelector('#channels-soul-form');
     if (!form || document.getElementById('channels-soul-form')) return;
     document.getElementById('channels-soul-selector').replaceWith(recovered);
-    bindSoulCombobox(form, names{% if not channels_configured %}, function() { location.href = '/hermes'; }{% endif %});
+    bindHermesSoulSettings(form, names{% if not channels_configured %}, function() { location.href = '/hermes'; }{% endif %});
     clearInterval(recoveryTimer);
   } catch (error) {
     console.warn('Soul selector recovery failed:', error);

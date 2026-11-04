@@ -16,6 +16,81 @@ def _write_cfg(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data), encoding="utf-8")
 
 
+def test_soul_settings_proxy_uses_captured_soul_and_sparse_server_response(monkeypatch):
+    from fastapi.testclient import TestClient
+    import app
+
+    calls = []
+    settings = {}
+
+    def request(path, payload, *, method):
+        calls.append((path, payload, method))
+        if payload is not None:
+            settings.update(payload)
+        return {"settings": dict(settings)}
+
+    monkeypatch.setattr(app.services, "_mcp_request", request)
+    monkeypatch.setattr(soul, "read_active_soul_id", lambda: pytest.fail("Do not substitute the active Soul"))
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    route = "/souls/Test%20Soul%25%3F%23/settings"
+    assert client.get(route).json() == {"settings": {}}
+    assert settings == {}
+    assert client.patch(route, json={"mental_health_addon": True}).json() == {
+        "settings": {"mental_health_addon": True},
+    }
+    assert client.patch(route, json={"mental_health_addon": False}).json() == {
+        "settings": {"mental_health_addon": False},
+    }
+    assert calls == [
+        (route, None, "GET"),
+        (route, {"mental_health_addon": True}, "PATCH"),
+        (route, {"mental_health_addon": False}, "PATCH"),
+    ]
+
+
+@pytest.mark.parametrize("method", ["GET", "PATCH"])
+@pytest.mark.parametrize("status", [404, 422, 503, None])
+def test_soul_settings_proxy_preserves_server_errors(monkeypatch, method, status):
+    from io import BytesIO
+    from urllib.error import HTTPError
+    from fastapi.testclient import TestClient
+    import app
+
+    detail = {"message": "Fictional refusal"}
+
+    def request(*args, **kwargs):
+        if status is None:
+            raise ConnectionRefusedError("Fictional outage")
+        raise HTTPError("http://test.invalid", status, "refused", {},
+                        BytesIO(json.dumps({"detail": detail}).encode()))
+
+    monkeypatch.setattr(app.services, "_mcp_request", request)
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    response = client.request(method, "/souls/Fable/settings",
+                              **({"json": {"mental_health_addon": True}} if method == "PATCH" else {}))
+    assert response.status_code == (status or 503)
+    assert response.json() == {"detail": detail if status else
+                               "Soul settings unavailable; check memU Server before retrying"}
+
+
+@pytest.mark.parametrize("soul_error,channels_error", [("", ""), ("Fictional outage", ""), ("", "Bad config")])
+def test_hermes_mental_health_row_has_exact_tooltip_and_starts_disabled(soul_error, channels_error):
+    from jinja2 import Environment, FileSystemLoader
+
+    templates = Path(__file__).resolve().parents[1] / "launcher/templates"
+    html = Environment(loader=FileSystemLoader(templates), autoescape=True).get_template("hermes.html").render(
+        soul_ids=["Fable"], active_soul="Fable", soul_error=soul_error, channels_error=channels_error,
+        channels_configured=True, policies=[], chats=[], visible_chats=[], excluded_chats=[],
+    )
+    assert html.count('id="mental-health-addon"') == 1
+    assert 'id="mental-health-addon" type="checkbox" disabled' in html
+    row = html.split('<div class="mental-health-addon">', 1)[1].split('</div>', 1)[0]
+    assert 'Mental Health Addon</label>\n    <span class="info"' in row
+    assert 'title="Per character. Enable the mental-health sidecar: when the soul\'s retrieval router detects an MH theme, it pulls from a curated procedural-memory store alongside regular memories.">(i)</span>' in html
+    if not channels_error:
+        assert html.index('id="mental-health-addon"') < html.index('Active soul:')
+
+
 @pytest.mark.parametrize("soul_ids", [[], ["TestSoul"]])
 def test_fresh_channels_config_is_created_by_soul_selection(tmp_path, monkeypatch, soul_ids):
     from fastapi.testclient import TestClient
@@ -42,12 +117,14 @@ def test_fresh_channels_config_is_created_by_soul_selection(tmp_path, monkeypatc
     assert response.status_code == 303 and response.headers["location"] == "/hermes"
     configured = client.get(response.headers["location"]).text
     assert "WhatsApp channel policy" in configured
+    ready = next(line for line in configured.splitlines() if 'id="channels-soul-ready"' in line)
+    assert ('hidden' in ready) == ("TestSoul" not in soul_ids)
     bindings = [next(line for line in html.splitlines() if line.startswith("if (soulForm)"))
                 for html in (fresh, configured)]
     subprocess.run(["node", "-e", r'''
 const assert=require('node:assert/strict');
 const soulForm={}; const location={href:'/original'}; let callback;
-function bindSoulCombobox(_form, _names, saved) {callback=saved;}
+function bindHermesSoulSettings(_form, _names, saved) {callback=saved;}
 eval(process.argv[1]); assert.equal(typeof callback,'function');
 callback(); assert.equal(location.href,'/hermes');
 eval(process.argv[2]); assert.equal(callback,undefined);
