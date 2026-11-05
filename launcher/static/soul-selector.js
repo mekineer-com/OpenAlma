@@ -31,6 +31,7 @@ function bindSoulCombobox(soulForm, names, onSaved, onChanged) {
       const soulUseExisting = soulForm.querySelector("[name=use_existing]");
       const knownSouls = new Set(names);
       let pendingNewSoul = "";
+      let saving = false;
 
       function closeSoulMenu() {
         soulMenu.hidden = true;
@@ -61,6 +62,10 @@ function bindSoulCombobox(soulForm, names, onSaved, onChanged) {
         soulMenu.appendChild(option);
       }
       function saveSoul(name) {
+        if (saving) return;
+        saving = true;
+        soulForm.inert = true;
+        closeSoulMenu();
         void submitSoulForm(soulForm, function() {
           if (soulInput.value.trim() !== name) return;
           const wasReady = !soulReady.hidden;
@@ -73,6 +78,9 @@ function bindSoulCombobox(soulForm, names, onSaved, onChanged) {
           soulReady.hidden = false;
           closeSoulMenu();
           if (onSaved && !wasReady) onSaved(name);
+        }).finally(function() {
+          soulForm.inert = false;
+          saving = false;
         });
       }
       knownSouls.forEach(addSoulOption);
@@ -89,6 +97,7 @@ function bindSoulCombobox(soulForm, names, onSaved, onChanged) {
       });
       soulForm.addEventListener("submit", function(event) {
         event.preventDefault();
+        if (saving) return;
         const name = soulInput.value.trim();
         if (!name) return;
         if (knownSouls.has(name)) {

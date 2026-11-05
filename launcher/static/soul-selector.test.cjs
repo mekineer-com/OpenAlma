@@ -95,7 +95,7 @@ test('first-run conflicts stay inline without offering unsupported adoption', as
 
 function settingsHarness(active = 'Lumen', names = ['Lumen', 'Fable']) {
   function node() {
-    return {value: '', hidden: true, disabled: false, checked: false, events: {}, children: [],
+    return {value: '', hidden: true, disabled: false, inert: false, checked: false, events: {}, children: [],
       addEventListener(event, callback) { this.events[event] = callback; },
       setAttribute() {}, appendChild(child) { this.children.push(child); }};
   }
@@ -105,7 +105,7 @@ function settingsHarness(active = 'Lumen', names = ['Lumen', 'Fable']) {
   checkbox.disabled = true;
   const fields = {'[name=soul_id]': input, '.soul-ready': ready, '.soul-options': menu,
     '.soul-new': node(), '[name=use_existing]': node()};
-  const form = {...node(), action: '/soul', querySelector: selector => fields[selector]};
+  const form = {...node(), action: '/soul', querySelector: selector => fields[selector.replaceAll('"', '')]};
   const messages = [], requests = [], windowEvents = {}, documentEvents = {};
   const document = {hidden: false, createElement: node, getElementById: () => checkbox,
     addEventListener(event, callback) { documentEvents[event] = callback; }};
@@ -120,9 +120,9 @@ function settingsHarness(active = 'Lumen', names = ['Lumen', 'Fable']) {
   });
   vm.runInContext(fs.readFileSync(__dirname + '/soul-selector.js', 'utf8'), context);
   context.bindHermesSoulSettings(form, names);
-  return {context, input, ready, checkbox, menu, messages, requests, windowEvents, documentEvents, document,
+  return {context, form, input, ready, checkbox, menu, messages, requests, windowEvents, documentEvents, document,
     reply(index, settings) { requests[index].resolve(Response.json({settings})); },
-    draft(name) { input.value = name; input.events.input(); },
+    draft(name) { if (!form.inert) { input.value = name; input.events.input(); } },
     submit() { form.events.submit({preventDefault() {}}); },
     async select(name) {
       this.draft(name);
@@ -138,6 +138,127 @@ function settingsHarness(active = 'Lumen', names = ['Lumen', 'Fable']) {
 }
 
 const settle = () => new Promise(setImmediate);
+
+test('Soul selection is single-flight and preserves FormData until the save settles', async () => {
+  const h = settingsHarness();
+  h.reply(0, {});
+  await settle();
+  let configuredSoul = 'Lumen';
+  for (const name of ['Fable', 'Lumen']) {
+    h.draft(name);
+    const index = h.requests.length;
+    h.submit();
+    assert.equal(h.form.inert, true);
+    assert.equal(h.input.disabled, false, 'Inert must not disable FormData controls');
+    assert.equal(h.form.querySelector('[name=use_existing]').disabled, false);
+    assert.deepEqual(Object.fromEntries(h.requests[index].options.body), {soul_id: name, use_existing: 'true'});
+    h.submit(); // Programmatic submit events bypass native inert handling.
+    h.draft(name === 'Fable' ? 'Lumen' : 'Fable');
+    assert.equal(h.input.value, name);
+    assert.equal(h.requests.length, index + 1, 'A second selection POST must not be dispatched');
+    configuredSoul = h.requests[index].options.body.get('soul_id');
+    h.requests[index].resolve({ok: true, url: '/hermes'});
+    await settle();
+    assert.equal(h.form.inert, false);
+    h.reply(index + 1, {});
+    await settle();
+    assert.equal(h.ready.hidden, false);
+    assert.equal(h.input.value, configuredSoul);
+    assert.equal(h.checkbox.disabled, false);
+  }
+});
+
+test('Soul selection unlocks after refusal or network failure and permits retry', async () => {
+  for (const networkFailure of [false, true]) {
+    const h = settingsHarness();
+    h.reply(0, {});
+    await settle();
+    h.draft('Fable');
+    h.submit();
+    assert.equal(h.form.inert, true);
+    if (networkFailure) h.requests[1].reject(new Error('Fictional outage'));
+    else h.requests[1].resolve(Response.json({detail: 'Fictional refusal'}, {status: 503}));
+    await settle();
+    assert.equal(h.form.inert, false);
+    assert.equal(h.input.value, 'Fable');
+    assert.equal(h.ready.hidden, true);
+    assert.equal(h.checkbox.disabled, true);
+    assert.match(h.messages.at(-1), /Fictional (outage|refusal)/);
+    h.submit();
+    assert.equal(h.form.inert, true);
+    assert.equal(h.requests[2].options.body.get('soul_id'), 'Fable');
+    h.requests[2].resolve({ok: true, url: '/hermes'});
+    await settle();
+    h.reply(3, {});
+    await settle();
+    assert.equal(h.form.inert, false);
+    assert.equal(h.ready.hidden, false);
+  }
+});
+
+test('New-Soul confirmation and existing-Soul retry hold the same selection lock', async () => {
+  for (const accept of [false, true]) {
+    const h = settingsHarness('');
+    h.context.confirm = () => {
+      assert.equal(h.form.inert, true);
+      h.submit();
+      return accept;
+    };
+    h.draft('NewSoul');
+    h.submit();
+    assert.equal(h.form.inert, false);
+    assert.equal(h.requests.length, 0, 'First arrow still only confirms creation');
+    h.submit();
+    assert.equal(h.form.inert, true);
+    assert.deepEqual(Object.fromEntries(h.requests[0].options.body), {soul_id: 'NewSoul', use_existing: 'false'});
+    h.requests[0].resolve(Response.json({detail: {reason: 'existing_exact', message: 'Use it?'}}, {status: 409}));
+    await settle();
+    if (accept) {
+      assert.equal(h.form.inert, true, 'The confirmation retry must retain the lock');
+      assert.deepEqual(Object.fromEntries(h.requests[1].options.body), {soul_id: 'NewSoul', use_existing: 'true'});
+      h.submit();
+      assert.equal(h.requests.length, 2);
+      assert.equal(h.form.querySelector('[name=use_existing]').value, 'true', 'Ignored submits must not reset confirmed consent');
+      h.requests[1].resolve({ok: true, url: '/hermes'});
+      await settle();
+      h.reply(2, {});
+      await settle();
+      assert.equal(h.ready.hidden, false);
+    } else {
+      assert.equal(h.requests.length, 1);
+      assert.equal(h.ready.hidden, true);
+      assert.deepEqual(h.messages, ['Use it?']);
+    }
+    assert.equal(h.input.value, 'NewSoul');
+    assert.equal(h.form.inert, false);
+  }
+});
+
+test('Selection locking does not retarget an outstanding Mental Health PATCH', async () => {
+  const h = settingsHarness();
+  h.reply(0, {});
+  await settle();
+  const save = h.toggle(true);
+  h.draft('Fable');
+  h.submit();
+  assert.equal(h.form.inert, true);
+  h.submit();
+  assert.equal(h.requests.length, 3);
+  assert.equal(h.requests[1].url, '/souls/Lumen/settings');
+  h.reply(1, {mental_health_addon: true});
+  await save;
+  assert.equal(h.checkbox.disabled, true);
+  assert.equal(h.form.inert, true);
+  h.requests[2].resolve({ok: true, url: '/hermes'});
+  await settle();
+  assert.equal(h.requests[3].url, '/souls/Fable/settings');
+  h.reply(3, {mental_health_addon: false});
+  await settle();
+  assert.equal(h.form.inert, false);
+  assert.equal(h.checkbox.checked, false);
+  assert.equal(h.checkbox.disabled, false);
+  assert.equal(h.requests.filter(request => request.options.method === 'PATCH').length, 1);
+});
 
 test('MH loads sparse settings without saving defaults; absent/unknown Soul stays disabled', async () => {
   for (const active of ['', 'MissingSoul']) {
