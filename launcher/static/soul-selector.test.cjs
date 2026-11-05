@@ -432,6 +432,25 @@ test('MH switch back or focus during PATCH reads the server only after its write
   }
 });
 
+test('MH focus during a failed PATCH preserves its error and refreshes the saved value', async () => {
+  const h = settingsHarness();
+  h.reply(0, {});
+  await settle();
+  const save = h.toggle(true);
+  h.windowEvents.focus();
+  h.windowEvents.focus();
+  assert.equal(h.requests.length, 2);
+  h.requests[1].resolve(Response.json({detail: 'Fictional save refusal'}, {status: 422}));
+  await save;
+  await settle();
+  assert.equal(h.requests.length, 3);
+  h.reply(2, {mental_health_addon: false});
+  await settle();
+  assert.equal(h.checkbox.checked, false);
+  assert.equal(h.checkbox.disabled, false);
+  assert.deepEqual(h.messages, ['Fictional save refusal']);
+});
+
 test('MH load/save errors stay inline and disabled until a successful refresh', async () => {
   for (const failure of ['load', 'save', 'malformed']) {
     const h = settingsHarness();

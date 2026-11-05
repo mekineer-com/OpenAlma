@@ -23,7 +23,8 @@ def test_soul_settings_proxy_uses_captured_soul_and_sparse_server_response(monke
     calls = []
     settings = {}
 
-    def request(path, payload, *, method):
+    def request(path, payload, *, method, timeout):
+        assert timeout > 5
         calls.append((path, payload, method))
         if payload is not None:
             settings.update(payload)

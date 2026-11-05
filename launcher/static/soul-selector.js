@@ -122,6 +122,7 @@ function bindHermesSoulSettings(soulForm, names, onSaved) {
   let selectedSoul = names.includes(input.value.trim()) ? input.value.trim() : '';
   let generation = 0;
   let saving = null;
+  let refreshAfterSave = false;
   let savedValue = false;
 
   function invalidate() {
@@ -187,11 +188,16 @@ function bindHermesSoulSettings(soulForm, names, onSaved) {
       showLauncherMessage(error.message);
     } finally {
       saving = null;
+      if (refreshAfterSave && current === generation && name === selectedSoul) void load(name);
+      refreshAfterSave = false;
     }
   });
 
   function refresh() {
-    if (!ready.hidden && selectedSoul) void load(selectedSoul);
+    if (!ready.hidden && selectedSoul) {
+      if (saving) refreshAfterSave = true;
+      else void load(selectedSoul);
+    }
   }
   window.addEventListener('focus', refresh);
   document.addEventListener('visibilitychange', function() {

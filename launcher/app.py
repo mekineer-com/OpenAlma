@@ -1251,6 +1251,7 @@ def _soul_settings_request(soul_id: str, changes: dict | None = None) -> dict:
         return services._mcp_request(
             f"/souls/{urllib.parse.quote(soul_id, safe='')}/settings", changes,
             method="GET" if changes is None else "PATCH",
+            timeout=10.0,
         )
     except urllib.error.HTTPError as exc:
         raise HTTPException(status_code=exc.code, detail=services._http_error_detail(exc)) from exc
