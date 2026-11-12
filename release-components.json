@@ -5,12 +5,12 @@
       "repositories": [
         {
           "repository": "https://github.com/mekineer-com/mcp-memu-server.git",
-          "ref": "v0.1.28",
+          "ref": "$OPENALMA_RELEASE_TAG",
           "destination": "mcp-memu-server"
         },
         {
           "repository": "https://github.com/mekineer-com/memU.git",
-          "ref": "v0.1.28",
+          "ref": "$OPENALMA_RELEASE_TAG",
           "destination": "memu"
         }
       ]
@@ -28,7 +28,7 @@
       "repositories": [
         {
           "repository": "https://github.com/mekineer-com/hermes-channels.git",
-          "ref": "v0.1.27",
+          "ref": "$OPENALMA_RELEASE_TAG",
           "destination": "hermes-channels"
         }
       ]
@@ -37,7 +37,7 @@
       "repositories": [
         {
           "repository": "https://github.com/mekineer-com/atomic.git",
-          "ref": "v0.1.18",
+          "ref": "$OPENALMA_RELEASE_TAG",
           "destination": "atomic"
         }
       ]
@@ -51,12 +51,12 @@
         },
         {
           "repository": "https://github.com/mekineer-com/memu-sillytavern-plugin.git",
-          "ref": "v0.1.25",
+          "ref": "$OPENALMA_RELEASE_TAG",
           "destination": "sillytavern/SillyTavern/plugins/memu-plugin"
         },
         {
           "repository": "https://github.com/mekineer-com/memu-sillytavern-extension.git",
-          "ref": "v0.1.25",
+          "ref": "$OPENALMA_RELEASE_TAG",
           "destination": "sillytavern/SillyTavern/data/default-user/extensions/memu-extension"
         }
       ]

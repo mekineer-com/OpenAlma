@@ -821,7 +821,7 @@ class MentraStatusTest(TestCase):
             thread = Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
-                with patch.object(services, "MEMU_SERVER_PORT", server.server_port):
+                with patch.object(services, "memu_server_port", return_value=server.server_port):
                     self.assertEqual(services.list_souls(), ["Codexia", "Echo"])
                     self.assertEqual(services.resolve_soul("Codexia", True), "Codexia")
                     with self.assertRaisesRegex(services.SoulServiceUnavailable, "different soul"):
@@ -853,7 +853,7 @@ class MentraStatusTest(TestCase):
             thread = Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
-                with patch.object(services, "MEMU_SERVER_PORT", server.server_port):
+                with patch.object(services, "memu_server_port", return_value=server.server_port):
                     with self.assertRaisesRegex(ValueError, "Fictional existing soul"):
                         services.resolve_soul("Codexia", False)
                     with self.assertRaisesRegex(ValueError, "Fictional validation failure"):

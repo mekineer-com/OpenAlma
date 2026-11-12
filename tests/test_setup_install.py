@@ -78,7 +78,7 @@ def test_manifest_requires_safe_exact_core_entries(tmp_path):
         setup_install.validate_manifest(unexpected, tmp_path)
 
 
-def test_packaged_manifest_keeps_component_refs_independent_of_launcher_version(tmp_path):
+def test_packaged_manifest_coordinates_core_but_keeps_client_and_upstream_versions(tmp_path):
     manifest = json.loads(
         (Path(__file__).resolve().parents[1] / "release-components.json").read_text(encoding="utf-8")
     )
@@ -89,10 +89,16 @@ def test_packaged_manifest_keeps_component_refs_independent_of_launcher_version(
         entry["repository"]: entry["ref"]
         for service in parsed.values()
         for entry in service
-        if entry["repository"] != "https://github.com/SillyTavern/SillyTavern.git"
+        if entry["repository"] not in {
+            "https://github.com/SillyTavern/SillyTavern.git",
+            "https://github.com/mekineer-com/iris.git",
+        }
     }
-    assert all(ref != "v9.8.7" for ref in coordinated.values())
+    assert len(coordinated) == 6
+    assert set(coordinated.values()) == {"v9.8.7"}
     assert parsed["sillytavern"][0]["repository"] == "https://github.com/SillyTavern/SillyTavern.git"
+    assert parsed["sillytavern"][0]["ref"] == "1.19.0"
+    assert parsed["iris-server"][0]["ref"] == "v0.1.30"
 
 
 def test_discover_release_rejects_prerelease(tmp_path, monkeypatch):
